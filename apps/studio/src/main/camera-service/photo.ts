@@ -40,7 +40,6 @@ export const photoOperations: PhotoOperations & ThisType<CameraService> = {
             previewData: previewable ? data : undefined,
         }
         this.broadcast(IPC_EVENTS.Capture, result)
-        await this.resumeShooting()
         this.scheduleFilesRefresh()
         return result
     },

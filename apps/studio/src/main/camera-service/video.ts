@@ -83,7 +83,6 @@ export const videoOperations: VideoOperations & ThisType<CameraService> = {
                 this.broadcastState()
             }
         })
-        await this.resumeShooting()
         this.scheduleFilesRefresh()
         this.broadcastState()
         return this.getState()

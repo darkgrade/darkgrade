@@ -27,6 +27,7 @@ import type { PropertyDefinition } from '@ptp/types/property'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
+import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
 import { CameraConfirmationError } from '@camera/confirmation'
 import { CameraOutcomeUnknownError, CameraRefusedError } from '@camera/errors'
 import type { FocusResult } from '@camera/driver/focus'
@@ -43,9 +44,6 @@ const SONY_DATE_TIME_RESULT_TIMEOUT_MS = 5_000
 const SONY_CONTENT_LIST_LIMIT = 1000
 const SONY_CONTENT_LIST_MAX_BYTES = 64 * 1024 * 1024
 const SONY_CONTENT_PREVIEW_MAX_BYTES = 8 * 1024 * 1024
-const SONY_CAMERA_OPERATING_MODE = 0xd0bc
-const SONY_OPERATING_MODE_PLAYBACK = 2
-const SONY_MOVIE_RECORDING_STATE = 0xd21d
 const SONY_DATE_TIME_RESULTS: Record<number, string> = {
     0: 'invalid',
     2: 'parameter error',
@@ -185,8 +183,18 @@ interface ZoomTelemetry {
 export class SonyCamera extends GenericCamera {
     private liveViewPostViewEnabled = false
     private contentTransferModeEnabled = false
-    /** Set by any card read; the next live-view frame returns the body to shooting first. */
-    private cardReadSinceShooting = false
+    /** Set by Slate's own media downloads, which leave the body in Playback; the next live-view frame returns it. */
+    private mediaReadSinceShooting = false
+    /** Set after a shot or a stopped recording, which can leave review up; the next live-view frame re-arms shooting. */
+    private shootingResumeNeeded = false
+    /**
+     * Set when a caller reads object handles to compare against later (a recording or capture
+     * baseline). Sony numbers handles per session, so this session is never reopened until the
+     * next connect: a reopen would renumber them and the comparison could report an old file as new.
+     */
+    private objectHandleBaselineHeld = false
+    /** When the full property inventory was last read (performance.now()), for reusing a fresh snapshot. */
+    private propertyStatesReadAtMs?: number
     private sessionDevice?: DeviceDescriptor
     private sessionOptions: { mode?: 'remote' | 'menus'; configure?: boolean } = {}
     private osdImageModeEnabled = false
@@ -216,7 +224,10 @@ export class SonyCamera extends GenericCamera {
         this.negotiatedProtocolVersion = undefined
         this.sessionDevice = device
         this.sessionOptions = options
-        this.cardReadSinceShooting = false
+        this.mediaReadSinceShooting = false
+        this.shootingResumeNeeded = false
+        this.objectHandleBaselineHeld = false
+        this.propertyStatesReadAtMs = undefined
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
@@ -374,6 +385,7 @@ export class SonyCamera extends GenericCamera {
         for (const descriptor of response.data.properties) {
             this.propertyCache.set(descriptor.devicePropertyCode, descriptor)
         }
+        this.propertyStatesReadAtMs = performance.now()
         // The inventory is authoritative. Probing absent legacy properties can
         // stall newer bodies (FX2 hangs on unadvertised CompressionSetting).
         const states = this.listPropertyStates()
@@ -382,6 +394,17 @@ export class SonyCamera extends GenericCamera {
         if (iso?.writable && iso.enabled && gain?.value !== 'Auto')
             this.manualIsoChoices = iso.allowedValues ? [...iso.allowedValues] : undefined
         return states
+    }
+
+    /**
+     * The property snapshot read within the last `maximumAgeMs`, or a fresh one. For read-only
+     * reports (card space) that follow a full refresh in the same operation; never for admitting a write.
+     */
+    async recentPropertyStates(maximumAgeMs: number): Promise<SonyPropertyState[]> {
+        const readAtMs = this.propertyStatesReadAtMs
+        if (readAtMs !== undefined && performance.now() - readAtMs <= maximumAgeMs && !this.contentTransferModeEnabled)
+            return this.listPropertyStates()
+        return this.refreshPropertyStates()
     }
 
     /** Application ISO includes the advertised gain-mode switch. Raw descriptors stay unchanged.
@@ -922,6 +945,7 @@ export class SonyCamera extends GenericCamera {
             failure = error
             throw error
         } finally {
+            this.shootingResumeNeeded = true
             const restorationErrors: unknown[] = []
             if (originalFocus !== undefined && originalFocus !== 'Manual') {
                 try {
@@ -1047,10 +1071,27 @@ export class SonyCamera extends GenericCamera {
         /** The frames the camera draws over this picture: its focus area, faces and tracked subjects. */
         sonyFocalFrames?: SonyFocalFrame[]
     }> {
-        if (this.cardReadSinceShooting) await this.returnToShooting()
+        if (this.mediaReadSinceShooting) await this.returnToShooting()
+        else if (this.shootingResumeNeeded) await this.resumeShooting()
         else await this.disableContentTransferMode()
         await this.startLiveView()
+        try {
+            return await this.readLiveViewFrame(includeInfo, includeData)
+        } catch (error) {
+            if (!(error instanceof PTPResponseError) || error.code !== SONY_ACCESS_DENIED) throw error
+            // Still refused after the frame deadline: the body is showing its card or a shot review.
+            // Return it to shooting once (reads only; no capture or record command), then ask again.
+            await this.returnToShooting()
+            await this.startLiveView()
+            return this.readLiveViewFrame(includeInfo, includeData)
+        }
+    }
 
+    private async readLiveViewFrame(includeInfo: boolean, includeData: boolean): Promise<{
+        info?: ObjectInfo
+        data?: Uint8Array
+        sonyFocalFrames?: SonyFocalFrame[]
+    }> {
         let info: ObjectInfo | undefined = undefined
         let data: Uint8Array | undefined = undefined
         let sonyFocalFrames: SonyFocalFrame[] | undefined = undefined
@@ -1151,7 +1192,11 @@ export class SonyCamera extends GenericCamera {
 
     async stopRecording(): Promise<void> {
         await this.disableContentTransferMode()
-        await this.setMovieButton('UP')
+        try {
+            await this.setMovieButton('UP')
+        } finally {
+            this.shootingResumeNeeded = true
+        }
     }
 
     private async setMovieButton(value: 'DOWN' | 'UP'): Promise<void> {
@@ -1182,8 +1227,23 @@ export class SonyCamera extends GenericCamera {
         return objects
     }
 
-    /** Card enumeration requires Sony content-transfer mode, even before any download. */
+    /**
+     * Card enumeration requires Sony content-transfer mode, even before any download. Callers read
+     * object handles here to compare against later, so this session keeps its handle numbering
+     * (it is not reopened) until the next connect.
+     */
     async prepareStorageRead(): Promise<void> {
+        this.objectHandleBaselineHeld = true
+        await this.enableContentTransferMode()
+    }
+
+    /**
+     * Content-transfer mode for one of Slate's own media downloads, which finds its file by name and
+     * holds no handle baseline. The body is left in Playback, so the next live-view frame returns it
+     * to shooting.
+     */
+    async prepareMediaDownload(): Promise<void> {
+        this.mediaReadSinceShooting = true
         await this.enableContentTransferMode()
     }
 
@@ -1499,7 +1559,6 @@ export class SonyCamera extends GenericCamera {
     }
 
     private async enableContentTransferMode(): Promise<void> {
-        this.cardReadSinceShooting = true
         if (this.contentTransferModeEnabled) return
         await this.stopLiveView()
         for (let attempt = 1; attempt <= SONY_TRANSFER_MODE_MAXIMUM_ATTEMPTS; attempt += 1) {
@@ -1526,31 +1585,31 @@ export class SonyCamera extends GenericCamera {
      * live view answers AccessDenied (0x200F) because the body is still showing playback.
      */
     async resumeShooting(): Promise<void> {
+        this.shootingResumeNeeded = false
         this.contentTransferModeEnabled = true
         await this.disableContentTransferMode()
         this.liveViewPostViewEnabled = false
     }
 
     /**
-     * Returns the body to remote shooting after a card read. Reading the card switches the body's
-     * CameraOperatingMode (0xD0BC) to Playback, which is read-only over PTP and survives leaving
+     * Returns the body to remote shooting; the next live-view frame calls this after one of Slate's
+     * own media downloads, or when live view is still refused after its frame deadline. Reading the
+     * card switches CameraOperatingMode to Playback, which is read-only over PTP and survives leaving
      * content-transfer mode; live view then serves the playback image. When the body still reports
      * Playback, this reopens the session (about 350 ms on an α7 V), which restores Record mode, and
-     * returns true, since object handles may change with the session. It never reopens a session
-     * while the body reports a movie recording. The next live-view frame calls this after any card
-     * read, so callers never need to.
+     * returns true. It reopens only when the native recording state reads exactly idle (missing or
+     * unknown telemetry never proves idle) and no caller holds an object-handle baseline this session.
+     * The photo capability calls it before a release, under the same guards.
+     * @internal
      */
     async returnToShooting(): Promise<boolean> {
+        this.mediaReadSinceShooting = false
         await this.resumeShooting()
         const states = await this.refreshPropertyStates()
-        const raw = (code: number) => states.find(state => state.code === code)?.rawValue
-        if (raw(SONY_CAMERA_OPERATING_MODE) !== SONY_OPERATING_MODE_PLAYBACK) {
-            this.cardReadSinceShooting = false
-            return false
-        }
-        const recording = raw(SONY_MOVIE_RECORDING_STATE)
-        if (recording !== undefined && Number(recording) !== 0) return false
-        this.cardReadSinceShooting = false
+        const operatingMode = states.find(state => state.code === this.registry.properties.CameraOperatingMode.code)
+        if (operatingMode?.value !== 'Playback') return false
+        if (this.objectHandleBaselineHeld) return false
+        if ((await readSonyPtpRecordingState({ getSonyPropertyStates: async () => states })) !== 0) return false
         await this.reopenSession(this.sessionDevice)
         return true
     }

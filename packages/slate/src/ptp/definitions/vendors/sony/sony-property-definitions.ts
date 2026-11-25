@@ -743,6 +743,28 @@ export const MovieRecordingState = {
         ),
 } as const satisfies PropertyDefinition
 
+/**
+ * Whether the body is shooting or showing its card (CrSDK CrDeviceProperty_CameraOperatingMode,
+ * CrCameraOperatingMode Record 1, Playback 2). Read-only over PTP: a card read switches the body
+ * to Playback, and leaving content-transfer mode does not switch it back.
+ */
+export const CameraOperatingMode = {
+    code: 0xd0bc,
+    name: 'CameraOperatingMode',
+    description: 'Sony camera operating mode: shooting (Record) or showing the card (Playback).',
+    datatype: UINT8,
+    access: 'Get',
+    codec: registry =>
+        createEnumCodec(
+            registry,
+            [
+                { value: 1, name: 'Record', description: 'Shooting' },
+                { value: 2, name: 'Playback', description: 'Showing the card' },
+            ] as const,
+            registry.codecs.uint8
+        ),
+} as const satisfies PropertyDefinition
+
 export const ZoomEnableStatus = {
     code: 0xd25b,
     name: 'ZoomEnableStatus',
@@ -1958,6 +1980,7 @@ export const sonyPropertyRegistry = {
     MovieFileFormat,
     MovieRecordingSetting,
     MovieRecordingState,
+    CameraOperatingMode,
     ZoomEnableStatus,
     ZoomScale,
     ZoomBarInfo,

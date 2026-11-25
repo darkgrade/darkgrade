@@ -1,4 +1,5 @@
 import type { ExposureContext, ExposureTime, ExposureTimeInput } from '@camera/exposure-time'
+import type { CameraOperationName } from '@camera/operations/table/index'
 import type { TypedSettingMethods } from '@camera/settings/typed-settings'
 import { colourControlDefinitions } from '@camera/settings/colour'
 import { exposureControlDefinitions } from '@camera/settings/exposure'
@@ -73,7 +74,7 @@ export interface CameraCapabilities {
      * fills this from its driver's capability groups; an operation absent here has no availability
      * report yet, and a call still answers CameraUnsupportedError when it cannot run.
      */
-    operations?: Partial<Record<string, OperationAvailability>>
+    operations?: Partial<Record<CameraOperationName, OperationAvailability>>
 }
 
 /** The attached lens as the camera reports it. Each field is null when the camera does not report it. */

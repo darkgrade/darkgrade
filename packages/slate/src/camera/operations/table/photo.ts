@@ -29,13 +29,6 @@ export const photoOperationTable = {
                 note: "'computer' saves to the card and returns the bytes; host-only and SDRAM delivery ('memory') is not offered. Nikon lossless RAW is setRawCompression('Lossless') before the photo",
             },
         },
-        resumeSonyShooting: {
-            area: 'photo',
-            disposition: {
-                kind: 'private',
-                handledBy: 'takePhoto and listMedia (resuming shooting after a card read)',
-            },
-        },
     },
     planned: {},
 } as const satisfies AreaOperationTable

@@ -33,14 +33,6 @@ export interface PhotoOperations {
     takePhoto(options: TakePhotoOptions & { destination: 'computer' }): Promise<ComputerPhoto>
     takePhoto(options?: TakePhotoOptions): Promise<Photo>
     captureImage(params?: CaptureImageOptions): Promise<{ info?: ObjectInfo; data?: Uint8Array }>
-    /**
-     * Sony: return the body to remote shooting after card access. Reading the card switches the
-     * body's CameraOperatingMode (0xD0BC) to Playback, which is read-only over PTP and survives
-     * leaving content-transfer mode; live view then serves the playback image. When the body still
-     * reports Playback, this reopens the session (about 350 ms on an α7 V), which restores Record
-     * mode. Returns true when it reopened, since object handles may change with the session.
-     */
-    resumeSonyShooting(): Promise<boolean>
 }
 
 function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): Photo {
@@ -99,11 +91,5 @@ export const photoOperations: PhotoOperations & ThisType<Camera> = {
         if (driver instanceof SonyCamera) return withSonyPhotoMode(sonyPhotoModeDriver(driver), capture)
         if (driver instanceof CanonCamera) return withCanonPhotoMode(driver, capture)
         return capture()
-    },
-
-    async resumeSonyShooting(): Promise<boolean> {
-        const { driver } = cameraContext(this)
-        if (!(driver instanceof SonyCamera)) return false
-        return driver.returnToShooting()
     },
 }

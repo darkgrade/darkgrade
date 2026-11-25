@@ -45,20 +45,25 @@ export function sonySdkCardStatus(properties: { name: string; value: string }[])
     })
 }
 
+function contentFileReference(slot: 1 | 2, content: SonyContent, file: SonyContentFile): SonyContentMediaReference {
+    return {
+        source: 'sony-content',
+        slot,
+        contentId: content.contentId,
+        fileId: file.fileId,
+        name: file.path.split('/').pop() || file.path,
+        sizeBytes: file.sizeBytes,
+    }
+}
+
 function sonyItem(slot: 1 | 2, content: SonyContent, file: SonyContentFile): MediaItem {
-    const name = file.path.split('/').pop() || file.path
+    const reference = contentFileReference(slot, content, file)
+    const name = reference.name
     const kind = file.video ? 'clip' : mediaKind(name)
     const width = file.video?.width ?? file.width
     const height = file.video?.height ?? file.height
     return {
-        id: encodeMediaId({
-            source: 'sony-content',
-            slot,
-            contentId: content.contentId,
-            fileId: file.fileId,
-            name,
-            sizeBytes: file.sizeBytes,
-        }),
+        id: encodeMediaId(reference),
         name,
         kind,
         slot,
@@ -70,10 +75,17 @@ function sonyItem(slot: 1 | 2, content: SonyContent, file: SonyContentFile): Med
     }
 }
 
+/**
+ * How old a property snapshot may be for a card-status report. A settings refresh reads the full
+ * inventory and then the card status in the same queued operation; this reuses that read.
+ */
+const CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS = 1_000
+
 /** Slots whose card is ready; a body that reports no slot status still has its first slot read. */
 async function readableSlots(driver: SonyCamera): Promise<(1 | 2)[]> {
-    const cards = sonyCardStatus(await driver.refreshPropertyStates())
+    const cards = sonyCardStatus(await driver.recentPropertyStates(CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS))
     const slots = SLOTS.filter(slot => cards.some(card => card.slot === slot && card.state === 'ready'))
+    // A body that reports no slot status still has its first slot read.
     return slots.length || cards.length ? slots : [1]
 }
 
@@ -134,17 +146,62 @@ function contentReference(operation: string, id: string): SonyContentMediaRefere
     return reference
 }
 
+const contentKey = (reference: SonyContentMediaReference) => `${reference.slot}:${reference.contentId}:${reference.fileId}`
+const contentIdentity = (reference: SonyContentMediaReference) => `${reference.name}:${reference.sizeBytes}`
+
+/** The card-index entries this session has read, as `slot:contentId:fileId` to `name:size`. */
+class SonyContentIndex {
+    private sessionId: number | null = null
+    private entries = new Map<string, string>()
+
+    constructor(private readonly driver: SonyCamera) {}
+
+    private current(): Map<string, string> {
+        if (this.driver.sessionId !== this.sessionId) {
+            this.sessionId = this.driver.sessionId
+            this.entries.clear()
+        }
+        return this.entries
+    }
+
+    remember(reference: SonyContentMediaReference): void {
+        this.current().set(contentKey(reference), contentIdentity(reference))
+    }
+
+    /**
+     * The reference as this session's card index numbers it. Content ids can change across a
+     * reconnect or after files are deleted on the body, so an id this session has not read is
+     * checked against the index once and, when its entry now holds another file, found by name and size.
+     */
+    async resolve(operation: string, reference: SonyContentMediaReference): Promise<SonyContentMediaReference> {
+        if (this.current().get(contentKey(reference)) === contentIdentity(reference)) return reference
+        const list = await this.driver.listContents({ slot: reference.slot })
+        let found: SonyContentMediaReference | undefined
+        for (const content of list.contents)
+            for (const file of content.files) {
+                const listed = contentFileReference(reference.slot, content, file)
+                this.remember(listed)
+                if (contentIdentity(listed) === contentIdentity(reference) && (!found || contentKey(listed) === contentKey(reference)))
+                    found = listed
+            }
+        if (!found) throw new CameraRefusedError(operation, `${reference.name} is no longer on the card`)
+        return found
+    }
+}
+
 /**
  * Sony card media. The list and previews come from the camera's own card index (Remote Control
  * with Transfer Mode), which needs no content-transfer mode, so live view keeps running. A
  * download enters content-transfer mode and finds the file's object handle by name; the next
- * live-view frame returns the body to shooting by itself (SonyCamera.returnToShooting).
+ * live-view frame returns the body to shooting by itself.
  */
 export function sonyMediaCapability(driver: SonyCamera): MediaCapability {
     const objects = new PtpObjectIndex(driver)
+    const contents = new SonyContentIndex(driver)
+    const cardStatus = async () => sonyCardStatus(await driver.recentPropertyStates(CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS))
 
     return {
-        getCardStatus: async () => reportingRefusals('getCardStatus', async () => sonyCardStatus(await driver.refreshPropertyStates())),
+        getCardStatus: async () => reportingRefusals('getCardStatus', cardStatus),
 
         async listMedia(): Promise<MediaItem[]> {
             const items: MediaItem[] = []
@@ -153,6 +210,7 @@ export function sonyMediaCapability(driver: SonyCamera): MediaCapability {
                 const list = await listSlot(driver, 'listMedia', slot)
                 for (const content of list.contents)
                     for (const file of content.files) {
+                        contents.remember(contentFileReference(slot, content, file))
                         const item = sonyItem(slot, content, file)
                         // Content ids grow with each capture; files within a content keep their order.
                         order.set(item.id, content.contentId * 0x10000 - file.fileId)
@@ -163,10 +221,11 @@ export function sonyMediaCapability(driver: SonyCamera): MediaCapability {
         },
 
         async getMediaPreview(id: string, size: MediaPreviewSize): Promise<Uint8Array> {
-            const reference = contentReference('getMediaPreview', id)
-            if (mediaKind(reference.name) === 'other')
-                throw new CameraUnsupportedError('getMediaPreview', `The camera has no preview of ${reference.name}`)
+            const requested = contentReference('getMediaPreview', id)
+            if (mediaKind(requested.name) === 'other')
+                throw new CameraUnsupportedError('getMediaPreview', `The camera has no preview of ${requested.name}`)
             return reportingRefusals('getMediaPreview', async () => {
+                const reference = await contents.resolve('getMediaPreview', requested)
                 try {
                     return await driver.getContentPreview(reference.contentId, reference.fileId, {
                         slot: reference.slot,
@@ -184,7 +243,7 @@ export function sonyMediaCapability(driver: SonyCamera): MediaCapability {
             const reference = contentReference('downloadMedia', id)
             return reportingRefusals('downloadMedia', async () => {
                 // Card enumeration and transfer require content-transfer mode.
-                await driver.prepareStorageRead()
+                await driver.prepareMediaDownload()
                 const storages = (await objects.storageIds('downloadMedia')).filter(
                     storageId => storageId >>> 16 === reference.slot
                 )

@@ -14,13 +14,12 @@ const EVENT_DEFINITION_NAMES: Record<CameraEventName, readonly string[]> = {
     mediaAdded: ['ObjectAdded', 'SDIE_ObjectAdded'],
 }
 
-/**
- * EOS GetEvent record codes (libgphoto2 ptp.h, PTP_EC_CANON_EOS_*): PropValueChanged and
- * AvailListChanged for settings, ObjectAddedEx and ObjectAddedEx64 for new card files.
- */
-const CANON_EVENT_CODES: Record<CameraEventName, readonly number[]> = {
-    settingsChanged: [0xc189, 0xc18a],
-    mediaAdded: [0xc181, 0xc1a7],
+/** EOS GetEvent records: a value or its choices changed, or a new file reached the card. */
+function canonEventCodes(driver: CanonCamera, event: CameraEventName): readonly number[] {
+    const events = driver.registry.events
+    return event === 'settingsChanged'
+        ? [events.CanonValueChanged.code, events.CanonAllowedValuesChanged.code]
+        : [events.CanonObjectAddedEx.code, events.CanonObjectAddedEx64.code]
 }
 
 /**
@@ -57,8 +56,9 @@ function emittedEvents(driver: CameraDriverInstance, event: CameraEventName, han
 }
 
 function canonEvents(driver: CanonCamera, event: CameraEventName, handler: CameraEventHandler): () => void {
+    const codes = canonEventCodes(driver, event)
     const listener = (raw: CanonRawEvent) => {
-        if (CANON_EVENT_CODES[event].includes(raw.code)) handler()
+        if (codes.includes(raw.code)) handler()
     }
     driver.onRawEvent(listener)
     return () => driver.offRawEvent(listener)

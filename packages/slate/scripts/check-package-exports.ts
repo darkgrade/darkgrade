@@ -314,6 +314,8 @@ try {
             camera.getCapabilities().then(current => current.operations?.listMedia)
         camera.on('mediaAdded', () => {})
         camera.off('settingsChanged')
+        // @ts-expect-error Operation availability is keyed by Camera's own method names.
+        camera.getCapabilities().then(current => current.operations?.listMedias)
         // @ts-expect-error Preview sizes are thumbnail or preview.
         camera.getMediaPreview('id', 'large')
         // @ts-expect-error Media ids are the strings listMedia returns, not object handles.

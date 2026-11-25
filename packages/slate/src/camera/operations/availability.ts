@@ -2,7 +2,7 @@ import type { CameraCapabilities, OperationAvailability } from '@camera/controls
 import type { CameraDriverCapabilities, CapabilityArea } from '@camera/driver/contract'
 import type { Camera } from '@camera/index'
 import { driverCapabilities } from '@camera/operations/context'
-import { publicOperations, type OperationArea } from '@camera/operations/table'
+import { cameraOperationTable, publicOperations, type CameraOperationName, type OperationArea } from '@camera/operations/table'
 
 /** The capability group behind each operation-table area that has one. */
 const areaCapabilities: Partial<Record<OperationArea, CapabilityArea>> = {
@@ -16,15 +16,20 @@ const areaCapabilities: Partial<Record<OperationArea, CapabilityArea>> = {
     body: 'body',
 }
 
-let checked: { name: string; area: CapabilityArea }[] | undefined
+let checked: { name: CameraOperationName; area: CapabilityArea }[] | undefined
 
 /** The implemented public operations in an area with a capability group, from the operation table. */
 function checkedOperations() {
     checked ??= publicOperations().flatMap(operation => {
         const area = areaCapabilities[operation.entry.area]
-        return operation.implemented && area ? [{ name: operation.name, area }] : []
+        return operation.implemented && area && isCameraOperation(operation.name) ? [{ name: operation.name, area }] : []
     })
     return checked
+}
+
+const cameraOperationNames = new Set<string>(Object.keys(cameraOperationTable))
+function isCameraOperation(name: string): name is CameraOperationName {
+    return cameraOperationNames.has(name)
 }
 
 type AvailabilityReport = Partial<Record<string, OperationAvailability>>
@@ -47,7 +52,7 @@ function reportsAvailability(
 export async function readOperationAvailability(
     camera: Camera,
     capabilities: CameraCapabilities
-): Promise<Record<string, OperationAvailability>> {
+): Promise<Partial<Record<CameraOperationName, OperationAvailability>>> {
     const groups = driverCapabilities(camera)
     const reported: AvailabilityReport = {}
     const unreported = new Set<CapabilityArea>()
@@ -59,7 +64,7 @@ export async function readOperationAvailability(
             unreported.add(area)
         }
     }
-    const availability: Record<string, OperationAvailability> = {}
+    const availability: Partial<Record<CameraOperationName, OperationAvailability>> = {}
     for (const operation of checkedOperations()) {
         if (unreported.has(operation.area)) continue
         availability[operation.name] = groups[operation.area]
