@@ -109,6 +109,8 @@ interface LensMechanics {
     readMs: number
     /** When set, the lens can rest only on multiples of this (a stepped zoom). */
     detentMillimetres?: number
+    /** A stop sooner than this after a fresh start leaves the lens where it was: the motor never engaged. */
+    minimumPulseMs?: number
 }
 
 /** The bench a6700 with the E PZ 16-50mm II. */
@@ -127,6 +129,8 @@ const A6700_PZ_16_50: LensMechanics = {
     stepMillimetres: 1,
     // Each read takes about 80 ms on the bench; tests that time a zoom on fake timers set it.
     readMs: 0,
+    // A pulse of about 4 ms left the bench lens where it was; 141 ms moved it (SUITE5b-3491b29a, Z5restore3-5ac3113a).
+    minimumPulseMs: 100,
 }
 
 /**
@@ -228,7 +232,7 @@ function sonyBody(
     const history: number[] = [body.position]
     let historyStart = 0
     let simulatedTo = 0
-    const motor = { level: 0, sign: 0, moveFrom: 0, stopping: false, coastLeft: 0, lastSign: 0 }
+    const motor = { level: 0, sign: 0, moveFrom: 0, startedAt: 0, stopping: false, coastLeft: 0, lastSign: 0 }
     const advance = (to: number) => {
         while (simulatedTo + STEP_MS <= to) {
             simulatedTo += STEP_MS
@@ -277,7 +281,10 @@ function sonyBody(
             const delay = mechanics.startMs + (reversing ? mechanics.reversalMs : 0)
             const moving = motor.level !== 0 && !motor.stopping && motor.sign === sign
             Object.assign(motor, { level: Math.abs(speed), sign, stopping: false, lastSign: sign })
-            if (!moving) motor.moveFrom = time + delay
+            if (!moving) Object.assign(motor, { moveFrom: time + delay, startedAt: time })
+        } else if (motor.level !== 0 && !motor.stopping && time - motor.startedAt < (mechanics.minimumPulseMs ?? 0)) {
+            motor.level = 0
+            body.rests.push(body.position)
         } else if (motor.level !== 0 && !motor.stopping) {
             motor.stopping = true
             // Stopped before it started, it still makes this much movement.
@@ -528,14 +535,19 @@ describe('digitalZoom and liveViewQuality typed settings', () => {
  * simulated lens moves at the driver's own pace without the test waiting for it.
  */
 async function zoomTo(camera: Camera, focalLengthMillimetres: number): Promise<number> {
+    return onFakeClock(() => camera.zoomTo(focalLengthMillimetres))
+}
+
+/** Runs one camera call on fake timers, advancing the clock one poll at a time until it settles. */
+async function onFakeClock<T>(call: () => Promise<T>): Promise<T> {
     const alreadyFake = vi.isFakeTimers()
     if (!alreadyFake) vi.useFakeTimers()
     let settled = false
-    const zooming = camera.zoomTo(focalLengthMillimetres).finally(() => (settled = true))
-    zooming.catch(() => undefined)
+    const running = call().finally(() => (settled = true))
+    running.catch(() => undefined)
     try {
         while (!settled) await vi.advanceTimersByTimeAsync(20)
-        return await zooming
+        return await running
     } finally {
         if (!alreadyFake) vi.useRealTimers()
     }
@@ -597,7 +609,7 @@ describe('Sony zoom', () => {
         const { camera, zoomCommands } = sonyBody()
         vi.useFakeTimers()
         await camera.startZoom('out', { speed: 'fast' })
-        await camera.stopZoom()
+        await onFakeClock(() => camera.stopZoom())
         await vi.advanceTimersByTimeAsync(20_000)
         expect(zoomCommands).toEqual([-8, 0])
     })
@@ -689,6 +701,66 @@ describe('Sony zoom', () => {
             expect(Math.abs((await zoomTo(camera, target)) - target)).toBeLessThanOrEqual(1)
             expect(starts(zoomCommands, before)).toHaveLength(1)
         }
+    })
+
+    // On the bench a6700 (2026-11-25), a zoomTo(25) right after a 300 ms press from 25 read the
+    // ZoomDistance the lens had shown before the press (it trails 0.16–0.4 s) and returned at once at 29.
+    it('waits after stopZoom until the lens has come to rest, so a zoomTo right after starts from where it is', async () => {
+        vi.useFakeTimers()
+        const { camera, body } = a6700({}, 25)
+        await onFakeClock(() => camera.startZoom('in', { speed: 'slow' }))
+        await vi.advanceTimersByTimeAsync(300)
+        await onFakeClock(() => camera.stopZoom())
+        // Resolved once the lens stopped: its reading is where it rests.
+        expect(Number(body.properties.get(ZOOM_DISTANCE)!.value) / 1000).toBe(Math.round(body.position))
+        const pressedTo = body.position
+        expect(pressedTo).toBeGreaterThan(27)
+        const landed = await zoomTo(camera, 25)
+        expect(Math.abs(landed - 25), `from ${pressedTo} landed at ${landed}`).toBeLessThanOrEqual(1)
+        expect(landed).toBe(Math.round(body.position))
+    })
+
+    it('stops a press still driving and settles before zoomTo trusts the focal length', async () => {
+        // startZoom then zoomTo, no stopZoom: zoomTo stops the press itself, and the reading still trails.
+        vi.useFakeTimers()
+        const { camera, body } = a6700({}, 25)
+        await onFakeClock(() => camera.startZoom('in', { speed: 'slow' }))
+        await vi.advanceTimersByTimeAsync(300)
+        const landed = await zoomTo(camera, 25)
+        expect(Math.abs(landed - 25), `landed at ${landed}`).toBeLessThanOrEqual(1)
+        expect(landed).toBe(Math.round(body.position))
+    })
+
+    // From 26 mm the bench a6700's zoomTo(24) stopped a 4 ms pulse (the learned coast and lag left
+    // nothing to drive), the lens never moved, and zoomTo reported a lens without power zoom.
+    it.each([
+        ['in', 2],
+        ['out', -2],
+        ['in', 3],
+        ['out', -3],
+    ])('lands a %s move of %d mm after learning, never with a pulse too short to start the motor', async (_way, by) => {
+        vi.useFakeTimers()
+        const { camera, body, zoomCommands } = a6700()
+        const from = await zoomTo(camera, 26)
+        await zoomTo(camera, 30)
+        expect(Math.abs((await zoomTo(camera, from)) - from)).toBeLessThanOrEqual(1)
+        const at = Math.round(body.position)
+        const before = body.rests.length
+        const landed = await zoomTo(camera, at + by)
+        expect(Math.abs(landed - (at + by)), `${at} to ${at + by} landed at ${landed}`).toBeLessThanOrEqual(1)
+        expect(landed).toBe(Math.round(body.position))
+        // Every movement moved the lens.
+        const rests = [at, ...body.rests.slice(before)]
+        expect(rests.slice(1).every((rest, index) => rest !== rests[index])).toBe(true)
+        expect(zoomCommands.at(-1)).toBe(0)
+    })
+
+    it('lands a target just inside the end of the range, approaching from the far side', async () => {
+        vi.useFakeTimers()
+        const { camera, body } = a6700()
+        const landed = await zoomTo(camera, 18)
+        expect(Math.abs(landed - 18), `landed at ${landed}`).toBeLessThanOrEqual(1)
+        expect(landed).toBe(Math.round(body.position))
     })
 
     it('backs off a lens that goes past, then approaches again from the side it started on', async () => {
@@ -783,7 +855,7 @@ describe('Sony zoom', () => {
         const { camera, zoomCommands } = sonyBody()
         await camera.stopZoom()
         await camera.startZoom('out', { speed: 'slow' })
-        await camera.stopZoom()
+        await onFakeClock(() => camera.stopZoom())
         expect(zoomCommands).toEqual([0, -1, 0])
     })
 

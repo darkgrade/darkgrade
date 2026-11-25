@@ -234,8 +234,10 @@ export class Camera {
     }
 
     /**
-     * Stops zooming. Always allowed: it never waits behind another operation. On a camera without
-     * zoom it is CameraUnsupportedError, as getCapabilities says, and sends nothing.
+     * Stops zooming. Always allowed: it never waits behind another operation. It resolves once the
+     * lens has come to rest where the camera reads its focal length (Sony: up to 2.5 s, as the lens
+     * coasts on and its reading trails it), so the next getCapabilities or zoomTo starts from where it
+     * is. On a camera without zoom it is CameraUnsupportedError, as getCapabilities says, and sends nothing.
      */
     async stopZoom(): Promise<void> {
         await supported(this, 'stopZoom').stopZoom()

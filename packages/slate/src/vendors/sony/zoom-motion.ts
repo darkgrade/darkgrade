@@ -30,6 +30,13 @@ export const SONY_ZOOM_MOTION: Readonly<Record<ZoomSpeed, ZoomMotion>> = {
 
 /** The lens starts moving about this long after the camera accepts the zoom command. */
 const ZOOM_MOTOR_START_MILLISECONDS = 50
+/**
+ * A stop sent sooner than this after the start may never engage the motor: on the darkgrade01 a6700
+ * (2026-11-25, traces SUITE5b-3491b29a and Z5restore3-5ac3113a) a pulse of about 4 ms left the lens
+ * where it was and zoomTo took it for a lens without power zoom, while 141 ms at speed 1 moved it
+ * about 3 mm. No movement is stopped sooner, whatever the estimate says.
+ */
+const ZOOM_MINIMUM_PULSE_MILLISECONDS = 150
 /** A rate is measured only over readings at least this far apart in time and focal length. */
 const RATE_SPAN_MILLISECONDS = 250
 const RATE_SPAN_MILLIMETRES = 2
@@ -39,6 +46,14 @@ const COAST_LIMIT = 4
 const LAG_LIMIT = 4
 /** Whole-millimetre readings: a landing up to this far behind the estimate is rounding, not motion. */
 const READING_ROUNDING_MILLIMETRES = 1
+
+/**
+ * The shortest movement the lens makes: driving from when its motor starts to the end of the
+ * shortest pulse, then its coast. A target closer than this cannot be reached without going past it.
+ */
+export function minimumZoomTravel(motion: ZoomMotion): number {
+    return motion.coast + (motion.rate * (ZOOM_MINIMUM_PULSE_MILLISECONDS - ZOOM_MOTOR_START_MILLISECONDS)) / 1000
+}
 
 /**
  * Estimates where one zoom movement is from the readings so far: dead reckoning from the start
@@ -112,12 +127,16 @@ export class ZoomMovement {
         return last.reading + (this.#sign * this.rate * since) / 1000
     }
 
-    /** How long to keep driving so the lens comes to rest at `aim` after its coast; 0 means stop now. */
+    /**
+     * How long to keep driving so the lens comes to rest at `aim` after its coast, and never less than
+     * the rest of ZOOM_MINIMUM_PULSE_MILLISECONDS; 0 means stop now.
+     */
     millisecondsUntilStop(aim: number, nowMs: number): number {
+        const minimum = Math.max(0, this.#startedAtMs + ZOOM_MINIMUM_PULSE_MILLISECONDS - nowMs)
         const short = (aim - this.position(nowMs)) * this.#sign - this.#motion.coast
-        if (short <= 0) return 0
+        if (short <= 0) return minimum
         const notStarted = Math.max(0, this.#startedAtMs + ZOOM_MOTOR_START_MILLISECONDS - nowMs)
-        return (short / this.rate) * 1000 + notStarted
+        return Math.max(minimum, (short / this.rate) * 1000 + notStarted)
     }
 
     /** The stop was sent on this movement's estimate; later reads no longer count. */

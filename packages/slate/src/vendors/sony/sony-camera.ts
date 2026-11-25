@@ -77,7 +77,7 @@ import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datas
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { sonyFocalLengthMillimetres, sonyLens } from '@vendors/sony/lens'
-import { SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } from '@vendors/sony/zoom-motion'
+import { minimumZoomTravel, SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } from '@vendors/sony/zoom-motion'
 import { findSonyCardItem, sonyMediaCapability, type SonyNewestContent } from '@vendors/sony/media'
 import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
@@ -109,7 +109,7 @@ const ZOOM_REVERSAL_MILLISECONDS = 2500
  * new ZoomDistance values (a repeated report can be stale)...
  */
 const ZOOM_STILL_MILLISECONDS = 400
-/** ...within this long. */
+/** ...within this long; for this long after a stop, a focal-length reading not seen to hold still is not trusted. */
 const ZOOM_SETTLE_MILLISECONDS = 2500
 /** Movements in one zoomTo: a medium one, then slow ones that land or reposition. */
 const ZOOM_PASSES = 6
@@ -1487,6 +1487,8 @@ export class SonyCamera extends GenericCamera {
     #zooming = false
     /** Advanced by every stopZoom call, so a start or zoomTo in progress sends nothing more once the caller stops. */
     #zoomStops = 0
+    /** When Slate last stopped a zoom it started, until the reading is seen to hold still: the lens may still be coasting. */
+    #zoomStoppedAtMs?: number
     /** How each lens has moved at each speed in this session, learned from zoomTo landings. */
     readonly #zoomMotion = new Map<string, ZoomMotion>()
     #video?: VideoCapability
@@ -1940,10 +1942,22 @@ export class SonyCamera extends GenericCamera {
         await this.driveZoom('startZoom', direction, options.speed, states, stopsAtStart)
     }
 
-    /** Always sent: a stop wins over a start or zoomTo still being prepared. */
+    /**
+     * Always sent: a stop wins over a start or zoomTo still being prepared. After stopping a zoom Slate
+     * started, it resolves once the focal length holds still (the lens coasts on and ZoomDistance
+     * trails it by up to 0.4 s), so what the caller reads next is where the lens rests. The stop is what
+     * was asked: a reading that cannot be had, or does not settle, leaves the next zoomTo to settle first.
+     */
     async stopZoom(): Promise<void> {
         this.#zoomStops++
         await this.haltZoom()
+        if (this.zoomSettling) await this.settledFocalLength(false).catch(() => undefined)
+    }
+
+    /** True for a while after Slate stopped a zoom, until the reading is seen to hold still. */
+    private get zoomSettling(): boolean {
+        const stoppedAtMs = this.#zoomStoppedAtMs
+        return stoppedAtMs !== undefined && Date.now() - stoppedAtMs < ZOOM_SETTLE_MILLISECONDS
     }
 
     /**
@@ -1956,51 +1970,69 @@ export class SonyCamera extends GenericCamera {
      * off and approaches again. Within a millimetre (readings are whole millimetres) it has arrived.
      * Stalling on the way is the end of the lens's range, and resolves there. A lens not brought within
      * a millimetre in ZOOM_PASSES movements fails with CameraOutcomeUnknownError naming where it is.
+     * No movement is shorter than the lens's shortest (minimumZoomTravel): a target nearer than that is
+     * approached from farther back, and from the other side when the end of the range is in the way.
+     * Right after a zoom Slate stopped, the starting focal length is read once it holds still.
      */
     async zoomTo(focalLengthMillimetres: number): Promise<number> {
         const stopsAtStart = this.#zoomStops
         if (!Number.isFinite(focalLengthMillimetres) || focalLengthMillimetres <= 0)
             throw new CameraRefusedError('zoomTo', 'The focal length must be a positive number of millimetres')
-        const states = await this.refreshPropertyStates()
+        // A press still driving is stopped first: zoomTo starts from where the lens comes to rest.
+        if (this.#zooming) await this.haltZoom()
+        let states = await this.refreshPropertyStates()
         if (!remoteZoomAvailable(states)) throw new CameraUnsupportedError('zoomTo', zoomUnavailableReason)
-        const start = sonyFocalLengthMillimetres(states)
+        let start = sonyFocalLengthMillimetres(states)
         if (start === null) throw new CameraUnsupportedError('zoomTo', noFocalLengthReason)
+        if (this.zoomSettling) {
+            start = await this.settledFocalLength(false)
+            states = this.listPropertyStates()
+        }
         const target = focalLengthMillimetres
         const arrived = (landed: number) => Math.abs(landed - target) <= ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES
         if (arrived(start)) return start
 
         const scaleBefore = zoomScale(states)
-        const approach = Math.sign(target - start)
+        const towards = Math.sign(target - start)
+        // The way the last movement goes. It changes only when backing off is blocked by the end of the range.
+        let approach = towards
         let at = start
         let previousSign = 0
         let repositioned = false
         for (let passes = 0; passes < ZOOM_PASSES; passes++) {
             const first = passes === 0
             const last = passes === ZOOM_PASSES - 1
-            const coast = this.zoomMotion(states, 'slow', approach).coast
-            // Short by less than the lens coasts even when stopped at once, a movement on would go past:
-            // it backs off first, unless it just did (it may be at the end of its range).
+            const shortest = minimumZoomTravel(this.zoomMotion(states, 'slow', approach))
+            // Nearer than the shortest movement, a movement on would go past: it backs off first, unless it
+            // just did (the approach is then as long as the lens allows).
             const shortBy = (target - at) * approach
-            const short: boolean = shortBy > 0 && (first || repositioned || shortBy >= coast - ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES)
+            const short: boolean = shortBy > 0 && (repositioned || shortBy >= shortest - ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES)
             // With one movement left there is no backing off: it goes straight for the target, whichever side.
             const direct = last && !short
             const medium = first && Math.abs(target - start) > ZOOM_MEDIUM_SPEED_DISTANCE_MILLIMETRES
+            const backOff = Math.max(ZOOM_REPOSITION_MILLIMETRES, shortest + 1)
             const aim = medium
                 ? target - approach * ZOOM_MEDIUM_SHORT_MILLIMETRES
                 : short || direct
                   ? target
-                  : // Far enough back that the approach can be a movement longer than the lens's coast.
-                    target - approach * Math.max(ZOOM_REPOSITION_MILLIMETRES, coast + 1)
+                  : // Far enough back that the approach can be longer than the shortest movement.
+                    target - approach * backOff
             const sign = Math.sign(aim - at)
             const startMilliseconds = previousSign !== 0 && sign !== previousSign ? ZOOM_REVERSAL_MILLISECONDS : ZOOM_STALL_MILLISECONDS
             // A reposition's landing is not learned from: it may have aimed past the end of the range.
             const pass = await this.zoomPass(at, aim, medium ? 'medium' : 'slow', first ? states : this.listPropertyStates(), stopsAtStart, startMilliseconds, short || direct)
-            if (first && pass.sent && pass.landed === start) this.reportUnmovedLens(start, scaleBefore)
-            if (pass.interrupted || arrived(pass.landed)) return pass.landed
+            if (pass.interrupted) return pass.landed
+            // A movement towards the target, at least the shortest pulse long, left a lens that had never moved where it was.
+            if (pass.sent && sign === towards && at === start && pass.landed === start)
+                this.reportUnmovedLens(start, scaleBefore)
+            if (arrived(pass.landed)) return pass.landed
             // Driving towards the target, the lens stopped by itself: the end of its range.
             if (pass.stalled && short) return pass.landed
+            // Backing off could not get far enough back: the end of the range. Approach from the other side.
+            const backedOff = (target - pass.landed) * approach >= shortest - ZOOM_ARRIVAL_TOLERANCE_MILLIMETRES
+            if (!short && !direct && !medium && !backedOff) approach = -approach
             previousSign = sign
-            repositioned = !short
+            repositioned = !short && backedOff
             at = pass.landed
         }
         const off = Math.round(Math.abs(at - target) * 10) / 10
@@ -2087,7 +2119,7 @@ export class SonyCamera extends GenericCamera {
         const interrupted = this.#zoomStops !== stopsAtStart
         movement.stopped(Date.now())
         if (!interrupted) await this.haltZoom()
-        const landed = await this.settledFocalLength(last, movement.moved)
+        const landed = await this.settledFocalLength(movement.moved)
         const learned = learn && onEstimate ? movement.learn(landed) : undefined
         if (learned) this.#zoomMotion.set(zoomMotionKey(states, speed, sign), learned)
         return { landed, interrupted, sent, stalled }
@@ -2111,7 +2143,8 @@ export class SonyCamera extends GenericCamera {
      * stopped before ZoomDistance showed it, which takes up to 0.4 s on the a6700), it must hold for
      * ZOOM_STALL_MILLISECONDS instead.
      */
-    private async settledFocalLength(fallback: number, moved: boolean): Promise<number> {
+    private async settledFocalLength(moved: boolean): Promise<number> {
+        const stoppedAtMs = this.#zoomStoppedAtMs
         const deadline = Date.now() + ZOOM_SETTLE_MILLISECONDS
         let previous: number | null = null
         let stillSinceMs = Date.now()
@@ -2122,11 +2155,14 @@ export class SonyCamera extends GenericCamera {
             if (previous !== null && current !== previous) moved = true
             const stillFor = moved ? ZOOM_STILL_MILLISECONDS : ZOOM_STALL_MILLISECONDS
             if (current !== previous) stillSinceMs = Date.now()
-            else if (Date.now() - stillSinceMs >= stillFor) return current
+            else if (Date.now() - stillSinceMs >= stillFor) {
+                // Seen at rest since the last stop; a later stop needs its own settle.
+                if (this.#zoomStoppedAtMs === stoppedAtMs) this.#zoomStoppedAtMs = undefined
+                return current
+            }
             previous = current
             await this.waitMs(ZOOM_POLL_MILLISECONDS)
         }
-        if (previous === null) return fallback
         throw new CameraOutcomeUnknownError(
             'zoomTo',
             `The focal length was still changing (${previous} mm) after the zoom stopped`
@@ -2171,6 +2207,8 @@ export class SonyCamera extends GenericCamera {
         this.clearZoomSafetyStop()
         const wasZooming = this.#zooming
         this.#zooming = false
+        // Confirmed or not, the lens may coast on: the next reading is not trusted until it holds still.
+        if (wasZooming) this.#zoomStoppedAtMs = Date.now()
         try {
             await this.sendZoomOperation(0, 'Sony zoom stop')
         } catch (error) {
