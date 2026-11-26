@@ -78,6 +78,25 @@ function operationName(bytes: Uint8Array, manufacturer: string): string | undefi
 }
 
 /**
+ * Commands whose OK response carries the camera's own result in its first parameter, by
+ * manufacturer: Canon's RemoteReleaseOn (0x9128) answers OK with its AF/shutter result (1: it could
+ * not focus; EDSDK's TAKE_PICTURE list), Nikon's navigation service (0x94FD) with its inner response.
+ * Fixed status codes only: no other response parameter is ever read.
+ */
+const RESULT_COMMANDS: readonly { manufacturer: RegExp; commands: ReadonlySet<number> }[] = [
+    { manufacturer: /^canon(?:\b|$)/i, commands: new Set([0x9128]) },
+    { manufacturer: /^nikon(?:\b|$)/i, commands: new Set([0x94fd]) },
+]
+
+/** The result an OK response to such a command carries, when the container has one. */
+function responseResult(bytes: Uint8Array, command: number, manufacturer: string): number | undefined {
+    if (!RESULT_COMMANDS.some(entry => entry.manufacturer.test(manufacturer) && entry.commands.has(command))) return
+    const fields = header(bytes)
+    if (fields.kind !== 'response' || fields.code !== 0x2001 || bytes.byteLength < CONTAINER_HEADER_BYTES + 4) return
+    return new DataView(bytes.buffer, bytes.byteOffset + CONTAINER_HEADER_BYTES, 4).getUint32(0, true)
+}
+
+/**
  * The diagnostics session of each connection, so an observer replacing another on the same transport
  * keeps it. `started` is false until the session's first entry: a connect, or the attach marker of
  * observation that began on a connection already open.
@@ -138,11 +157,14 @@ export function observeTransport<Device, Kind extends string>(
                     pending.set(fields.transactionId!, { code: fields.code!, ...(label && { operation: label }), generation: epoch })
                 }
                 const answers = !command && owner && (completed.kind === 'data' || completed.kind === 'response')
+                const resultCode =
+                    answers && result instanceof Uint8Array ? responseResult(result, owner.code, camera().manufacturer) : undefined
                 save({
                     ...fields,
                     ...((name ?? label) ? { operation: name ?? label } : {}),
                     ...(result instanceof Uint8Array && header(result)),
                     ...(answers && { commandCode: owner.code }),
+                    ...(resultCode !== undefined && { resultCode }),
                     direction,
                     bytes: bytes?.byteLength ?? (result instanceof Uint8Array ? result.byteLength : 0),
                     durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),

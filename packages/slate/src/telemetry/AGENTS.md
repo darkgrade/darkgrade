@@ -135,6 +135,15 @@ starts on a connection already open begins with an `attach` entry. An older coll
 these fields; the client then sends what it knows (no calls, attach, commandCode, new evidence types
 or prior) for the rest of the process. The Matrix export leaves the new kinds, types and fields out.
 
+Results inside an OK (2026-11-26, from the R8 II bench run): Canon's RemoteReleaseOn (0x9128) answers
+OK and carries its AF/shutter result in the first response parameter (1: it could not focus, EDSDK's
+TAKE_PICTURE list), and Nikon's navigation service (0x94FD) its inner response. The observer reads that
+one parameter for those commands only (`RESULT_COMMANDS` in `contribute/observe.ts`; no other parameter
+is read) and records it as the response's `resultCode`. A Canon result other than 0 or a Nikon one other
+than 0x2001 is the signal `response:0x2001:result-0x<result>` ("OK carrying camera result"), which the
+filter `response:0x2001` also selects; it is not counted as an error, so Issues list it only through
+that filter. An older collector rejects `resultCode`; the client then leaves it out.
+
 Recording diagnostics retain bounded observed-cache snapshots around preparation, start/stop,
 failure and cleanup. Each setting keeps its numeric PTP value and observation age. Acknowledged
 writes never update this cache; reconnect/disconnect clear it. Snapshotting adds no USB reads,

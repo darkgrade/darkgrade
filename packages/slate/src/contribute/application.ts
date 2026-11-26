@@ -78,7 +78,7 @@ const LEGACY_PROTOCOL_TYPES = new Set(['inventory', 'unknown', 'state-snapshot',
 function legacyEntry(entry: DiagnosticEntry): DiagnosticEntry | undefined {
     if (entry.kind === 'call' || entry.kind === 'attach') return
     if (entry.protocol && !LEGACY_PROTOCOL_TYPES.has(entry.protocol.type)) return
-    const { callId: _callId, commandCode: _commandCode, ...rest } = entry
+    const { callId: _callId, commandCode: _commandCode, resultCode: _resultCode, ...rest } = entry
     if (rest.protocol?.type !== 'property-write') return rest
     const { prior: _prior, priorAgeMilliseconds: _age, ...protocol } = rest.protocol
     return { ...rest, protocol }

@@ -23,6 +23,11 @@ export interface DiagnosticEntry {
     code?: number
     /** On `data` and `response` entries: the operation code of the command in the same transaction. */
     commandCode?: number
+    /**
+     * On an OK `response` to a command that carries the camera's own result (Canon's release, Nikon's
+     * navigation service): that result, so a release the camera refused inside an OK is told apart.
+     */
+    resultCode?: number
     bytes: number
     durationMilliseconds: number
     failed: boolean
@@ -247,6 +252,7 @@ export function validateContribution(value: unknown): asserts value is Contribut
                 'callId',
                 'call',
                 'commandCode',
+                'resultCode',
             ]) ||
             ![
                 'connect',
@@ -262,6 +268,8 @@ export function validateContribution(value: unknown): asserts value is Contribut
             ].includes(String(entry.kind)) ||
             (entry.commandCode !== undefined &&
                 (!integer(entry.commandCode, 65535) || !['data', 'response'].includes(String(entry.kind)))) ||
+            (entry.resultCode !== undefined &&
+                (!integer(entry.resultCode, 2 ** 32 - 1) || entry.kind !== 'response' || entry.commandCode === undefined)) ||
             (entry.kind === 'attach' && (entry.direction !== 'lifecycle' || entry.code !== undefined)) ||
             (entry.callId !== undefined && !isContributionId(entry.callId)) ||
             (entry.kind === 'call') !== (entry.call !== undefined) ||

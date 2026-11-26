@@ -6,11 +6,13 @@ import { runOperation } from '@runtime/operations'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { Logger } from '@core/logger'
+import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfoCodec } from '@ptp/datasets/object-info-dataset'
 import { concatenate, encodedDeviceInfo, encodedObjectInfo } from '@tests/fixtures/camera-fixtures'
 import { answeringTransport, ptpContainer, type SentContainer } from '@tests/fixtures/ptp-wire'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { CanonRemoteReleaseOn } from '@vendors/canon/definitions/canon-operation-definitions'
 import { protocolEvidence, requestEvidence } from '@vendors/protocol-evidence'
 import { createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@vendors/registry'
 
@@ -601,6 +603,35 @@ test('a session spans a driver replacing another on the same connection, and obs
     } finally { client.close() }
 })
 
+
+test("a result the camera carries inside an OK response is recorded: Canon's release that could not focus", async () => {
+    const { client, saved } = await telemetryClient()
+    const registry = createPTPRegistry(true)
+    const canon = new DeviceInfoCodec(registry).encode(encodedDeviceInfo(registry, { manufacturer: 'Canon Inc.', model: 'Canon EOS R8 Mark II' }))
+    const results = [1, 0]
+    const { transport } = answeringTransport(command => {
+        if (command.code === 0x1001) return [ptpContainer(2, 0x1001, command.transactionId, canon), ptpContainer(3, 0x2001, command.transactionId)]
+        // RemoteReleaseOn answers OK with its AF/shutter result; CloseSession carries a stray parameter.
+        const parameter = command.code === 0x9128 ? results.shift()! : 7
+        return [ptpContainer(3, 0x2001, command.transactionId, uint(4, parameter))]
+    }, { connected: false })
+    const camera = new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false }))
+    try {
+        await camera.connectTransport()
+        await camera.send(camera.registry.operations.GetDeviceInfo, {})
+        for (let press = 0; press < 2; press++) await camera.send(CanonRemoteReleaseOn, { ReleaseMode: 'FOCUS', AFMode: 'AF' })
+        await camera.send(camera.registry.operations.CloseSession, {})
+        const entries = saved.map(item => item.entry)
+        const responses = entries.filter(entry => entry.kind === 'response' && !entry.protocol)
+        expect(responses.map(entry => [entry.commandCode, entry.resultCode])).toEqual([
+            [0x1001, undefined], [0x9128, 1], [0x9128, 0], [0x1003, undefined]])
+        validateContribution({ schema: 'darkgrade.diagnostics/v1', disclosure: 'protocol-metadata-only/v1', id: crypto.randomUUID(),
+            camera: saved.at(-1).camera, entries, droppedEntries: 0 })
+        expect(() => validateContribution({ schema: 'darkgrade.diagnostics/v1', disclosure: 'protocol-metadata-only/v1',
+            id: crypto.randomUUID(), camera: saved.at(-1).camera, droppedEntries: 0,
+            entries: [{ ...responses[1], kind: 'data' }] })).toThrow(/Invalid diagnostic entry/)
+    } finally { client.close() }
+})
 
 test('Sony writes keep the value seen before them, and its AF-area control is recorded as a position', () => {
     const operations = createSonyRegistry(true).operations
