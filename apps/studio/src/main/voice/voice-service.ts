@@ -1,7 +1,9 @@
-import { ModelCache, SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
+import { LocalEngine } from '@main/models/local-engine'
+import type { LocalServerProcess } from '@main/models/local-server'
+import { SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
+import { studioModelCache, studioPythonRuntime } from '@main/models/studio-models'
 import { preferences } from '@main/preferences'
-import { BarkSidecarProcess } from '@main/voice/bark-sidecar-process'
-import { PythonRuntime } from '@main/voice/python-runtime'
+import { barkSidecarProcess, ensureBarkEnvironment } from '@main/voice/bark-sidecar-process'
 import { IPC_EVENTS, type LogEntry, type VoiceEngineStatus } from '@shared/ipc'
 import { speechModel, type SpeechModelId } from '@shared/speech-models'
 import { wavFile } from '@shared/wav'
@@ -19,9 +21,11 @@ const KEPT_SESSION_RECORDINGS = 5
 /** Downloads the speech model once, then runs it in the Bark sidecar while voice is in use. */
 class VoiceService {
     private broadcast: Broadcast = () => {}
-    private cache = new ModelCache(join(app.getPath('userData'), 'models'))
-    private server: BarkSidecarProcess | null = null
-    private preparing: Promise<number> | null = null
+    private cache = studioModelCache()
+    private engine = new LocalEngine<SpeechModelId>({
+        start: model => this.startEngine(model),
+        stopped: () => this.setStatus({ phase: 'idle', port: null, message: null, setupStep: null }),
+    })
     private engineLog: WriteStream | null = null
     private status: VoiceEngineStatus = {
         phase: 'idle',
@@ -32,15 +36,9 @@ class VoiceService {
         setupStep: null,
         speechModelBytes: 0,
     }
-    /** The model the running engine loaded, so a change of choice unloads it. */
-    private loadedModel: SpeechModelId | null = null
-
-    /** A release in progress, so a prepare that races it waits instead of returning the dying engine's port. */
-    private releasing: Promise<void> | null = null
-
     constructor() {
         preferences.onChange(({ speechModel: chosen }) => {
-            if (this.loadedModel && this.loadedModel !== chosen) void this.release()
+            if (this.engine.loaded && this.engine.loaded !== chosen) void this.release()
             else this.setStatus({})
         })
     }
@@ -63,51 +61,41 @@ class VoiceService {
     }
 
     /** Downloads the model if needed and starts the engine; resolves with its local port. */
-    async prepare(): Promise<number> {
-        await this.releasing
-        if (this.loadedModel && this.loadedModel !== this.chosenModel) await this.release()
-        if (this.server?.port) return this.server.port
-        this.preparing ??= this.startEngine().finally(() => {
-            this.preparing = null
-        })
-        return this.preparing
+    prepare(): Promise<number> {
+        return this.engine.prepare(this.chosenModel)
     }
 
     /** Stops the engine to give its memory back; the model stays cached. */
     release(): Promise<void> {
-        this.releasing ??= this.stopEngine().finally(() => {
-            this.releasing = null
-        })
-        return this.releasing
+        return this.engine.release()
     }
 
-    private async stopEngine(): Promise<void> {
-        await this.preparing?.catch(() => undefined)
-        await this.server?.stop()
-        this.server = null
-        this.loadedModel = null
-        this.setStatus({ phase: 'idle', port: null, message: null, setupStep: null })
-    }
-
-    private async startEngine(): Promise<number> {
+    private async startEngine(model: SpeechModelId): Promise<LocalServerProcess> {
         try {
-            const model = this.chosenModel
             const files = SPEECH_MODEL_FILES[model]
-            const server = new BarkSidecarProcess({
+            const runner = speechModel(model).runner
+            const pythonPath = await ensureBarkEnvironment(
+                {
+                    directory: join(app.getPath('userData'), 'bark-sidecar-environment'),
+                    pythonRuntime: studioPythonRuntime(),
+                    onSetupProgress: ({ step, receivedBytes, totalBytes }) =>
+                        this.setStatus({
+                            phase: step === 'python' ? 'downloading' : 'starting',
+                            setupStep: step,
+                            receivedBytes,
+                            totalBytes,
+                        }),
+                    onLog: line => this.writeEngineLog(line),
+                },
+                runner
+            )
+            const server = barkSidecarProcess({
+                pythonPath,
                 modelDirectory: this.cache.modelDirectory(files),
-                runner: speechModel(model).runner,
-                environmentDirectory: join(app.getPath('userData'), 'bark-sidecar-environment'),
-                pythonRuntime: new PythonRuntime({ directory: join(app.getPath('userData'), 'python-runtime') }),
-                onSetupProgress: ({ step, receivedBytes, totalBytes }) =>
-                    this.setStatus({
-                        phase: step === 'python' ? 'downloading' : 'starting',
-                        setupStep: step,
-                        receivedBytes,
-                        totalBytes,
-                    }),
+                runner,
                 onLog: line => this.writeEngineLog(line),
                 onUnexpectedExit: description => {
-                    this.server = null
+                    this.engine.lost()
                     this.log(`The speech engine stopped (${description})`, 'error')
                     this.setStatus({
                         phase: 'error',
@@ -117,18 +105,15 @@ class VoiceService {
                     })
                 },
             })
-            await server.ensureEnvironment()
             await this.downloadModel(model)
             this.setStatus({ phase: 'starting', setupStep: 'loading', message: null })
             this.writeEngineLog(
                 `[studio] loading ${speechModel(model).name} (revision ${SPEECH_MODEL_REVISIONS[model]})`
             )
             const port = await server.start()
-            this.server = server
-            this.loadedModel = model
             this.setStatus({ phase: 'ready', port, setupStep: null })
             this.log(`Speech engine ready (${speechModel(model).name})`)
-            return port
+            return server
         } catch (error) {
             const message = errorMessage(error)
             this.log(message, 'error')

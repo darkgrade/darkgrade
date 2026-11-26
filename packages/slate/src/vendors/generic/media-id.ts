@@ -1,5 +1,6 @@
 import { CameraRefusedError } from '@camera/errors'
 import type { MediaItem } from '@camera/driver'
+import { ptpDateTimeFields } from '@ptp/datasets/codecs/date-time'
 
 /** A file found through standard PTP object handles. */
 export interface ObjectMediaReference {
@@ -91,9 +92,9 @@ export function mediaKind(name: string): MediaItem['kind'] {
 
 /** PTP's `YYYYMMDDThhmmss[.s][zone]` as ISO 8601 local wall time, or undefined when unreadable. */
 export function ptpDateToIso(value: string | undefined): string | undefined {
-    const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(value ?? '')
-    if (!match) return undefined
-    const [, year, month, day, hour, minute, second] = match
+    const fields = ptpDateTimeFields(value)
+    if (!fields) return undefined
+    const [year, month, day, hour, minute, second] = fields
     return `${year}-${month}-${day}T${hour}:${minute}:${second}`
 }
 

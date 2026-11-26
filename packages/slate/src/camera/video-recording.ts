@@ -1,10 +1,9 @@
 import { protocolAccess } from '@camera/protocol-session'
 import { CameraClipNotFoundError } from '@camera/errors'
-import { readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
+import { pollNewCardObjects, readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import type { TakeMedia } from '@workflows/video-take'
-
-const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
+import { mediaKind } from '@vendors/generic/media-id'
 
 /** Camera.stopRecording confirms the stop first; a clip it did not find is looked for again by the recorder. */
 export async function stopCameraRecording(camera: { stopRecording(): Promise<unknown> }): Promise<void> {
@@ -85,14 +84,13 @@ export class UsbVideoRecording {
         if (!this.attempted) return { stopped: true, media: [] as TakeMedia[] }
         await stopCameraRecording(this.camera)
         this.attempted = false
-        const deadline = Date.now() + 15000
-        let media: TakeMedia[] = []
-        let lastIndexError: string | undefined
-        do {
-            try {
-                media = []
-                for (const handle of await this.handles()) {
-                    if (this.baseline.has(handle)) continue
+        const { found, lastError } = await pollNewCardObjects(protocolAccess(this.camera).driver, this.baseline, {
+            timeoutMilliseconds: 15000,
+            intervalMilliseconds: 300,
+            // Every new clip the stop left on the card.
+            scan: async handles => {
+                const media: TakeMedia[] = []
+                for (const handle of handles) {
                     const result = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
                         info = result.data
                     const reported = Number(info?.objectCompressedSize)
@@ -101,16 +99,15 @@ export class UsbVideoRecording {
                         result.code === 0x2001 &&
                         Number.isSafeInteger(bytes) &&
                         bytes > 0 &&
-                        /\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename || '')
+                        mediaKind(info?.filename || '') === 'clip'
                     )
                         media.push({ id: String(handle), filename: String(info.filename), bytes, verified: true })
                 }
-                if (media.length) break
-            } catch (error) {
-                lastIndexError = error instanceof Error ? error.message : String(error)
-            }
-            await sleep(300)
-        } while (Date.now() < deadline)
+                return media.length ? media : undefined
+            },
+        })
+        const media = found ?? []
+        const lastIndexError = lastError === undefined ? undefined : lastError instanceof Error ? lastError.message : String(lastError)
         const warning = 'Recording stopped, but a new card movie is not yet available. Originals remain on the card.'
         return { stopped: true, media, ...(!media.length && { warning: warning + (lastIndexError ? ' ' + lastIndexError : '') }) }
     }

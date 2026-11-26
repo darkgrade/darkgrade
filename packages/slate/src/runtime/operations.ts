@@ -1,6 +1,6 @@
 import { cameraOperations } from '@runtime/camera-operations'
 import type { Camera } from '@camera/index'
-import { callFromSurface } from '@core/call-context'
+import { callFromSurface, type CallSurface } from '@core/call-context'
 
 /**
  * The public Camera operations as the MCP tools and the CLI run them. The list is generated from
@@ -212,7 +212,7 @@ export async function runOperation(
     camera: Camera,
     name: string,
     input: Record<string, unknown>,
-    surface?: 'mcp' | 'cli'
+    surface?: CallSurface
 ): Promise<OperationOutcome> {
     const operation = surfaceOperation(name)
     const method: unknown = operation && !operation.static ? Reflect.get(camera, name) : undefined

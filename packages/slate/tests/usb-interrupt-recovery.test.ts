@@ -56,11 +56,18 @@ describe('USB halt recovery errors', () => {
   await expect(transport.clearHalt(type)).rejects.toBe(failure)
   expect(transport.device.clearHalt).toHaveBeenCalledWith(type === 'bulkOut' ? 'out' : 'in', type === 'interrupt' ? 3 : type === 'bulkOut' ? 2 : 1)
  })
- it.each(['LIBUSB_TRANSFER_CANCELLED','LIBUSB_TRANSFER_ERROR'])('allows the existing %s recovery case', async message => {
+ it('treats a cancelled clear as the endpoint\'s own teardown', async () => {
   const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
-  transport.device = {clearHalt:vi.fn().mockRejectedValue(new Error(message))}
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(new Error('LIBUSB_TRANSFER_CANCELLED'))}
   transport.endpoints = {interrupt:{endpointNumber:3}}
   await expect(transport.clearHalt('interrupt')).resolves.toBeUndefined()
+ })
+ it('reports a clear that failed: the halt is still there', async () => {
+  const transport:any = new USBTransport(new Logger({captureConsole:false,renderInTerminal:false}))
+  const failure = new Error('LIBUSB_TRANSFER_ERROR')
+  transport.device = {clearHalt:vi.fn().mockRejectedValue(failure)}
+  transport.endpoints = {interrupt:{endpointNumber:3}}
+  await expect(transport.clearHalt('interrupt')).rejects.toBe(failure)
  })
 })
 

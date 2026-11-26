@@ -7,7 +7,6 @@ import {
     LIVE_VIEW_STATISTICS_INTERVAL_MS,
     OSD_FRAME_INTERVAL_MS,
     PTP_ACCESS_DENIED,
-    RECOVERY_RECONNECT_DELAY_MS,
     delay,
     errorMessage,
     requiresReconnect,
@@ -190,18 +189,7 @@ export const liveViewOperations: LiveViewOperations & ThisType<CameraService> = 
         }
         this.recoveryInProgress = true
         this.log('system', `USB transport changed to ${choice}: reconnecting…`)
-        void (async () => {
-            try {
-                await this.disconnect()
-                await delay(RECOVERY_RECONNECT_DELAY_MS)
-                await this.connect()
-            } catch (error) {
-                this.log('system', `Reconnecting failed: ${errorMessage(error)}: replug the camera`, 'error')
-            } finally {
-                this.recoveryInProgress = false
-                this.broadcastState()
-            }
-        })()
+        this.reconnect('Reconnecting failed')
     },
 
     /** EXPERIMENT(usb-transport): true once the Swift live-view loop has run and ended; false when it isn't chosen. */

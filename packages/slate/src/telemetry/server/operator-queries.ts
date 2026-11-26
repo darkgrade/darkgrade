@@ -32,6 +32,7 @@ const signalName=`CASE WHEN signal='failed' THEN 'Failed'
     WHEN signal='response:0x2019:device-ready' THEN 'Device busy · 0x2019 (DeviceReady poll)'
     WHEN signal='response:0xa102:object-not-ready' THEN 'Object not ready · 0xA102'
     WHEN signal='attach' THEN 'Attached to an open connection'
+    WHEN signal LIKE 'response:0x2001:result-%' THEN 'OK carrying camera result '||split_part(signal,'result-',2)
     WHEN signal='ok' THEN 'OK'
     WHEN signal LIKE 'call:%:%' THEN split_part(signal,':',2)||' · '||initcap(replace(split_part(signal,':',3),'-',' '))
     WHEN signal LIKE 'call:%' THEN split_part(signal,':',2)||' · any outcome'

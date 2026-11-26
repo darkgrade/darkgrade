@@ -52,9 +52,15 @@ export class PythonRuntime {
         return this.archive.sha256
     }
 
+    /** A download under way, which a second caller (speech and vision at once) waits for. */
+    private downloading: Promise<void> | null = null
+
     /** Studio always runs its own Python, never one the Mac already has, so it cannot clash with it. */
     async ensure(onProgress: (progress: PythonDownloadProgress) => void): Promise<string> {
-        if (!existsSync(this.downloadedPythonPath)) await this.download(onProgress)
+        if (!existsSync(this.downloadedPythonPath))
+            await (this.downloading ??= this.download(onProgress).finally(() => {
+                this.downloading = null
+            }))
         return this.downloadedPythonPath
     }
 

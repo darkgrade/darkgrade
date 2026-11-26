@@ -131,3 +131,17 @@ it('reports the physical selector requirement without releasing or retrying movi
     expect(capture).not.toHaveBeenCalled()
     expect(body.enter).not.toHaveBeenCalled()
 })
+
+it('waits the settle time after a mode change even when FixedMovie reads back at once', async () => {
+    // FixedMovie reading back is not readiness: the R6 III's AF photo straight after it failed (bench, 2026-11-26).
+    const body = canon()
+    const opened = body.openMovieMode()
+    let done = false
+    void opened.then(() => (done = true))
+    await vi.advanceTimersByTimeAsync(650)
+    expect(body.movie()).toBe(1)
+    expect(done).toBe(false)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(done).toBe(true)
+    await settled((await opened)())
+})

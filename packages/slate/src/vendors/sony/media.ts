@@ -5,7 +5,8 @@ import type { SonyCamera, SonyPropertyState } from '@vendors/sony/sony-camera'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { SonyContent, SonyContentFile } from '@vendors/sony/content-info-list'
 import { encodeMediaId, decodeMediaId, mediaKind, newestFirst, type SonyContentMediaReference } from '@vendors/generic/media-id'
-import { OBJECT_SIZE_UNREPORTED, PtpObjectIndex, reportingRefusals } from '@vendors/generic/ptp-object-index'
+import { PtpObjectIndex, reportingRefusals } from '@vendors/generic/ptp-object-index'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
 import { sonyPtpCardSlot, sonyPtpMovieMode } from '@vendors/sony/ptp-recording-card'
 
 const OPERATION_NOT_SUPPORTED = 0x2005

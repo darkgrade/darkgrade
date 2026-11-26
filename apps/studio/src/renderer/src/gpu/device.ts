@@ -334,3 +334,46 @@ struct Varyings { @builtin(position) position: vec4f, @location(0) uv: vec2f }
     return out;
 }
 `
+
+/** A number as a WGSL float literal: `1` → `1.0`, so generated shader constants type as f32. */
+export const wgslFloat = (value: number): string => (Number.isInteger(value) ? `${value}.0` : String(value))
+
+/** What a draw loop makes once the GPU is ready: its draw, and what to free when it stops. */
+export interface GpuLoop {
+    draw(now: number): void
+    /** Buffers, textures and subscriptions to free (anything with `destroy`). */
+    resources?: { destroy(): void }[]
+}
+
+/**
+ * One canvas's draw loop on the shared GPU device, the lifecycle every GPU view shares: `setup` makes
+ * its pipelines and buffers once the device is ready, `draw` runs on every display frame (timed under
+ * `label` while the performance monitor is open), and the returned stop ends the loop and frees what
+ * setup made, also when it comes before the device. Without WebGPU, `unavailable` is called instead.
+ */
+export function startGpuLoop(
+    canvas: HTMLCanvasElement,
+    label: string,
+    setup: (gpu: Gpu, context: GPUCanvasContext, timer: PassTimer) => GpuLoop,
+    unavailable?: () => void
+): () => void {
+    let stop = (): void => {}
+    let stopped = false
+    void getGpu().then(gpu => {
+        if (stopped) return
+        const context = gpu && configureCanvas(gpu, canvas)
+        if (!gpu || !context) return unavailable?.()
+        const timer = passTimer(gpu, label)
+        const loop = setup(gpu, context, timer)
+        const cancel = animate(label, loop.draw)
+        stop = () => {
+            cancel()
+            for (const resource of loop.resources ?? []) resource.destroy()
+            timer.destroy()
+        }
+    })
+    return () => {
+        stopped = true
+        stop()
+    }
+}

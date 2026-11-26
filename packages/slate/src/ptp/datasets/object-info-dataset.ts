@@ -1,6 +1,9 @@
 import { concatenateBytes, SequentialReader } from '@ptp/datasets/codecs/byte-sequence'
 import { CustomCodec, type CodecInstance } from '@ptp/types/codec'
 
+/** ObjectCompressedSize when the object is 4 GiB or larger: its real size needs a 64-bit query. */
+export const OBJECT_SIZE_UNREPORTED = 0xffffffff
+
 export interface ObjectInfo {
     storageID: number
     objectFormat: number

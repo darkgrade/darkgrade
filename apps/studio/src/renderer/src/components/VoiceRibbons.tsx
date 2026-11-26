@@ -1,4 +1,4 @@
-import { animate, configureCanvas, fitCanvas, FULLSCREEN_VERTEX, getGpu, passTimer } from '@renderer/gpu/device'
+import { fitCanvas, FULLSCREEN_VERTEX, startGpuLoop, wgslFloat as f } from '@renderer/gpu/device'
 import { useEffect, useRef } from 'react'
 
 /**
@@ -46,7 +46,6 @@ const SENSITIVITY = 5
 const ATTACK_SECONDS = 0.03
 const RELEASE_SECONDS = 0.2
 
-const f = (value: number): string => (Number.isInteger(value) ? `${value}.0` : String(value))
 const rgb = ([r, g, b]: [number, number, number]): string => `vec3f(${f(r / 255)}, ${f(g / 255)}, ${f(b / 255)})`
 
 /**
@@ -176,8 +175,6 @@ export function VoiceRibbons({
         const heard: Heard = { level: 0, bands: [0, 0, 0] }
         let last = performance.now()
         let clock = 0
-        let stop = (): void => {}
-        let cancelled = false
 
         // The voice's level and its low, mid and high bands, 0–1.
         const listen = (): Heard => {
@@ -201,9 +198,7 @@ export function VoiceRibbons({
             }
         }
 
-        void getGpu().then(gpu => {
-            const context = gpu && configureCanvas(gpu, canvas)
-            if (cancelled || !gpu || !context) return
+        return startGpuLoop(canvas, 'Voice glow', (gpu, context, timer) => {
             const { device } = gpu
             const module = device.createShaderModule({ code: RIBBONS_SHADER })
             const pipeline = device.createRenderPipeline({
@@ -217,9 +212,8 @@ export function VoiceRibbons({
                 entries: [{ binding: 0, resource: { buffer: uniforms } }],
             })
             const values = new Float32Array(16)
-            const timer = passTimer(gpu, 'Voice glow')
             let idle = false
-            stop = animate('Voice glow', now => {
+            const draw = (now: number): void => {
                 const dt = Math.min(0.05, (now - last) / 1000)
                 last = now
                 clock += still ? 0 : dt
@@ -270,18 +264,9 @@ export function VoiceRibbons({
                 timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
                 timer.collect()
-            })
-            const previous = stop
-            stop = () => {
-                previous()
-                uniforms.destroy()
-                timer.destroy()
             }
+            return { draw, resources: [uniforms] }
         })
-        return () => {
-            cancelled = true
-            stop()
-        }
     }, [])
 
     return <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%', ...style }} aria-hidden />

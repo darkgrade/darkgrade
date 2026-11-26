@@ -7,9 +7,8 @@ import { cardSlotNumbers } from '@vendors/generic/media-id'
 import { GetDeviceInfo, GetObjectHandles, GetObjectInfo, GetStorageIDs, GetThumb } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
 import { encodeMediaId, mediaKind, ptpDateToIso, type ObjectMediaReference } from '@vendors/generic/media-id'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
 
-/** ObjectInfo's 32-bit size field holds this when the real size needs a 64-bit query. */
-export const OBJECT_SIZE_UNREPORTED = 0xffffffff
 const ASSOCIATION_FORMAT = 0x3001
 
 export interface IndexedObject {

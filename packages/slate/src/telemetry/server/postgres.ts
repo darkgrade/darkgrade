@@ -133,6 +133,9 @@ RETURNS text LANGUAGE sql IMMUTABLE AS $f$
         WHEN failed THEN 'failed'
         WHEN coalesce((properties->>'droppedEntries')::int,0)>0 THEN 'dropped-events'
         WHEN properties ? 'operation' THEN 'operation:'||(properties->>'operation')
+        WHEN kind='response' AND code=8193 AND properties ? 'resultCode' AND properties->>'resultCode'
+                <> CASE WHEN manufacturer ILIKE 'nikon%' THEN '8193' ELSE '0' END
+            THEN 'response:0x2001:result-0x'||to_hex((properties->>'resultCode')::bigint)
         WHEN kind='response' AND code=8193 THEN 'ok'
         WHEN kind='response' AND code=8217 AND manufacturer ILIKE 'nikon%' AND properties->>'commandCode'='37064'
             THEN 'response:0x2019:device-ready'

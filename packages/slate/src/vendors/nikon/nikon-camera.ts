@@ -44,7 +44,6 @@ import {
     requireNudge,
     requirePoint,
     restoreAll,
-    unstatedSize,
     unsupported,
 } from '@vendors/generic/generic-operations'
 import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
@@ -63,6 +62,7 @@ import type { ControlWrite } from '@vendors/generic/control-observation'
 import { decodeNikonVendorCodes, NIKON_VENDOR_CODES_MAXIMUM } from '@vendors/nikon/vendor-codes'
 import { matchesNikonShutter } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
 
 /** How often Nikon's event queue is read while someone is listening. */
 const NIKON_EVENT_POLL_INTERVAL_MILLISECONDS = 500
@@ -1299,13 +1299,13 @@ export class NikonCamera extends GenericCamera {
     /** A clip named with the id `listMedia()` gives the same card object. */
     private async clipFile(objectHandle: number, info: ObjectInfo): Promise<Clip> {
         const { objectCompressedSize: reported, filename: name, storageID: storageId } = info
-        const mediaId = encodeMediaId({ source: 'object', storageId, objectHandle, name, ...(reported !== unstatedSize && { sizeBytes: reported }) })
+        const mediaId = encodeMediaId({ source: 'object', storageId, objectHandle, name, ...(reported !== OBJECT_SIZE_UNREPORTED && { sizeBytes: reported }) })
         return { mediaId, name, sizeBytes: await this.fullObjectSize(objectHandle, reported, 'stopRecording') }
     }
 
     /** A card object's full size: ObjectInfo's 0xffffffff means Nikon's 64-bit GetObjectSize holds it. */
     async fullObjectSize(objectHandle: number, reportedBytes: number, operation = 'downloadMedia'): Promise<number> {
-        if (reportedBytes !== unstatedSize) return reportedBytes
+        if (reportedBytes !== OBJECT_SIZE_UNREPORTED) return reportedBytes
         const response = await this.send(this.registry.operations.GetObjectSize, { ObjectHandle: objectHandle })
         const value = response.data
         const size = typeof value === 'bigint' || typeof value === 'number' ? Number(value) : NaN

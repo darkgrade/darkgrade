@@ -1,7 +1,7 @@
 import { CameraClipNotFoundError } from '@camera/errors'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
-import { cardSlotNumbers } from '@vendors/generic/media-id'
+import { cardSlotNumbers, mediaKind } from '@vendors/generic/media-id'
 
 /** What the card readings need from a driver; Sony also switches to content transfer first. */
 export type StorageDriver = Pick<GenericCamera, 'registry' | 'send' | 'storageCanRecord'> & { prepareStorageRead?(): Promise<void> }
@@ -55,26 +55,57 @@ export async function readCameraObjectHandles(driver: HandleDriver): Promise<Set
     return handles
 }
 
+/**
+ * The one way the card is watched for a new file: list it until `scan`, given the handles not in
+ * `baseline`, returns a result, or the deadline passes. A failed listing or scan is kept and the card
+ * read again, unless `tolerate` says otherwise (it is then thrown). Callers say what counts as their
+ * new file; the poll stays (a recorded exchange is never replayed for it).
+ */
+export async function pollNewCardObjects<Result>(
+    driver: HandleDriver,
+    baseline: ReadonlySet<number>,
+    options: {
+        scan: (handles: number[]) => Promise<Result | undefined>
+        timeoutMilliseconds: number
+        intervalMilliseconds?: number
+        tolerate?: (error: unknown) => boolean
+    }
+): Promise<{ found?: Result; lastError?: unknown }> {
+    const interval = options.intervalMilliseconds ?? 250
+    const deadline = Date.now() + options.timeoutMilliseconds
+    let lastError: unknown
+    do {
+        try {
+            const fresh = [...(await readCameraObjectHandles(driver))].filter(handle => !baseline.has(handle))
+            const found = await options.scan(fresh)
+            if (found !== undefined) return { found }
+        } catch (error) {
+            if (options.tolerate && !options.tolerate(error)) throw error
+            lastError = error
+        }
+        const remaining = deadline - Date.now()
+        if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(interval, remaining)))
+    } while (Date.now() < deadline)
+    return { lastError }
+}
+
 /** Wait for a newly recorded card movie, tolerating the body's temporary index rejection while it finalizes. */
 export async function waitForNewCameraMovie(driver: HandleDriver, baseline: Set<number>, timeoutMilliseconds = 12000) {
     if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 1 || timeoutMilliseconds > 60000)
         throw new Error('Movie finalization timeout must be 1–60000 milliseconds')
     const operations = driver.registry.operations
-    const deadline = Date.now() + timeoutMilliseconds
-    let lastError: unknown
-    do {
-        try {
-            for (const handle of await readCameraObjectHandles(driver)) {
-                if (baseline.has(handle)) continue
+    const { found, lastError } = await pollNewCardObjects(driver, baseline, {
+        timeoutMilliseconds,
+        scan: async handles => {
+            for (const handle of handles) {
                 const response = await driver.send(operations.GetObjectInfo, {ObjectHandle: handle})
                 const info = response.data, bytes = Number(info?.objectCompressedSize)
                 if (response.code === 0x2001 && Number.isSafeInteger(bytes) && bytes > 0 && info?.associationType === 0
-                    && /\.(mp4|mov|mxf|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}
+                    && mediaKind(info?.filename || '') === 'clip') return {...info, handle}
             }
-        } catch (error) { lastError = error }
-        const remaining = deadline - Date.now()
-        if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(250, remaining)))
-    } while (Date.now() < deadline)
+        },
+    })
+    if (found) return found
     throw new CameraClipNotFoundError('stopRecording', 'Recording stopped, but a new movie was not finalized on the card within ' + timeoutMilliseconds / 1000 + ' seconds'
         + (lastError ? ': ' + String(lastError) : ''))
 }

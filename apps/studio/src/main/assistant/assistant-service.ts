@@ -2,8 +2,11 @@ import { describeDone, resolveFollowUp } from '@main/assistant/follow-ups'
 import { INTENT_GRAMMAR, INTENT_INSTRUCTIONS, intentHasStarted, parseIntentLine, type FoundRequest } from '@main/assistant/intent-schema'
 import { toolCallsWrittenAsText } from '@main/assistant/text-tool-calls'
 import { cameraService } from '@main/camera-service'
-import { llamaServerBinary, LlamaServerProcess } from '@main/models/llama-server-process'
-import { ModelCache, NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
+import { llamaServerBinary, llamaServerProcess } from '@main/models/llama-server-process'
+import { LocalEngine } from '@main/models/local-engine'
+import type { LocalServerProcess } from '@main/models/local-server'
+import { studioModelCache } from '@main/models/studio-models'
+import { NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
 import { beginChangeGroup, cameraStatus, endChangeGroup, findTool, STUDIO_TOOLS } from '@main/tools/studio-tools'
 import {
     CAMERA_CONTROL_LABELS,
@@ -219,9 +222,14 @@ export interface AgentProgress {
  */
 class AssistantService {
     private broadcast: Broadcast = () => {}
-    private cache = new ModelCache(join(app.getPath('userData'), 'models'))
-    private server: LlamaServerProcess | null = null
-    private preparing: Promise<number> | null = null
+    private cache = studioModelCache()
+    private engine = new LocalEngine({
+        start: () => this.startEngine(),
+        stopped: () => {
+            this.findingTemplate = null
+            this.setStatus({ phase: 'idle', port: null, message: null })
+        },
+    })
     private status: LocalModelStatus = { phase: 'idle', receivedBytes: 0, totalBytes: 0, port: null, message: null }
     private nextIntentId = 1
     /** Direct actions done for speech, most recent last: what follow-ups refer to, and the model's DONE line. */
@@ -247,18 +255,12 @@ class AssistantService {
     }
 
     prepare(): Promise<number> {
-        if (this.server?.port) return Promise.resolve(this.server.port)
-        this.preparing ??= this.startEngine().finally(() => {
-            this.preparing = null
-        })
-        return this.preparing
+        return this.engine.prepare(NEMOTRON_ASSISTANT.id)
     }
 
-    async release(): Promise<void> {
-        await this.server?.stop()
-        this.server = null
-        this.findingTemplate = null
-        this.setStatus({ phase: 'idle', port: null, message: null })
+    /** Stops the model server; a start under way finishes first, so it is stopped too. */
+    release(): Promise<void> {
+        return this.engine.release()
     }
 
     /** Runs a conversation to completion: the model calls tools until it has an answer. */
@@ -312,7 +314,8 @@ class AssistantService {
      * One at a time; newer words replace a queued warm-up.
      */
     warmUp(preview: { text: string; context: string }): void {
-        if (!this.server?.port || !this.findingTemplate || !preview.text.trim()) return
+        const port = this.engine.port
+        if (!port || !this.findingTemplate || !preview.text.trim()) return
         if (this.warming) {
             this.nextWarmUp = preview
             return
@@ -321,7 +324,7 @@ class AssistantService {
         // The prompt stops right after the words so far, so the final prompt (more words, then the
         // template's closing) extends it exactly and only the new end has to be read.
         const prompt = this.findingTemplate.before + findingUserText(preview.text, preview.context, this.doneSummary())
-        void fetch(`http://127.0.0.1:${this.server.port}/completion`, {
+        void fetch(`http://127.0.0.1:${port}/completion`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ prompt, n_predict: 0, id_slot: INTENT_SLOT, cache_prompt: true }),
@@ -759,7 +762,7 @@ class AssistantService {
         return json.choices[0].message
     }
 
-    private async startEngine(): Promise<number> {
+    private async startEngine(): Promise<LocalServerProcess> {
         try {
             if (!this.cache.isCached(NEMOTRON_ASSISTANT)) this.log('Downloading the assistant model (one time)')
             const report = progressThrottle(MODEL_PROGRESS_INTERVAL_MS)
@@ -768,7 +771,7 @@ class AssistantService {
                 this.setStatus({ phase: 'downloading', ...progress })
             })
             this.setStatus({ phase: 'starting', message: null })
-            const server = new LlamaServerProcess({
+            const server = llamaServerProcess({
                 binaryPath: llamaServerBinary(),
                 modelPath,
                 projectorPath,
@@ -786,18 +789,17 @@ class AssistantService {
                         this.trace(`server ${line}`)
                 },
                 onUnexpectedExit: description => {
-                    this.server = null
+                    this.engine.lost()
                     this.log(`The assistant stopped (${description})`, 'error')
                     this.setStatus({ phase: 'error', port: null, message: 'The assistant stopped unexpectedly' })
                 },
             })
             const port = await server.start()
-            this.server = server
             await this.loadFindingTemplate(port).catch(() => {})
             void this.preloadAgentPrompt(port)
             this.setStatus({ phase: 'ready', port })
             this.log('Assistant ready')
-            return port
+            return server
         } catch (error) {
             const message = errorMessage(error)
             this.log(message, 'error')

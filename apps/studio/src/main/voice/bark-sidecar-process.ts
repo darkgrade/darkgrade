@@ -1,31 +1,20 @@
-import { findFreePort, isHealthy } from '@main/models/local-server'
-import type { PythonDownloadProgress, PythonRuntime } from '@main/voice/python-runtime'
+import { LocalServerProcess } from '@main/models/local-server'
+import {
+    addPythonRequirements,
+    ensurePythonEnvironment,
+    type PythonEnvironmentOptions,
+} from '@main/models/python-environment'
 import type { SpeechModelChoice } from '@shared/speech-models'
 import { app } from 'electron'
-import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
-
-const runFile = promisify(execFile)
 
 /** Bark ships only Python code, so it runs in a Python sidecar (an approved exception to Studio's TypeScript-only rule). */
-const HEALTH_POLL_INTERVAL_MS = 250
-/** The first start unpacks model.bark into an MLX folder, which takes about a minute. */
-const STARTUP_TIMEOUT_MS = 300_000
-const STOP_GRACE_MS = 3000
-
 export interface BarkSidecarOptions {
     /** The chosen model's download (see SPEECH_MODEL_FILES in model-cache). */
     modelDirectory: string
     runner: SpeechModelChoice['runner']
-    /** Where the sidecar's Python environment is created and kept. */
-    environmentDirectory: string
-    /** Studio's own Python 3.11; environments are built on it and rebuilt if it changes. */
-    pythonRuntime: Pick<PythonRuntime, 'ensure' | 'identity'>
-    /** Which environment step is under way: getting Python, then installing its packages. */
-    onSetupProgress: (progress: { step: 'python' | 'tools' } & PythonDownloadProgress) => void
+    /** The environment's python, from ensureBarkEnvironment. */
+    pythonPath: string
     onLog: (line: string) => void
     /** The process stopped without being asked to. */
     onUnexpectedExit: (description: string) => void
@@ -37,129 +26,40 @@ export function barkSidecarDirectory(): string {
     return join(base, 'bark-sidecar')
 }
 
-function requirementsStamp(paths: string[], pythonIdentity: string): string {
-    const hash = createHash('sha256').update(pythonIdentity)
-    for (const path of paths) hash.update(readFileSync(path))
-    return hash.digest('hex')
-}
-
-function readStamp(directory: string, name: string): string | null {
-    const path = join(directory, name)
-    return existsSync(path) ? readFileSync(path, 'utf8') : null
-}
-
-/** Runs the Bark transcription server on a private local port and stops it on request. */
-export class BarkSidecarProcess {
-    private child: ChildProcess | null = null
-    private stopping = false
-    port: number | null = null
-
-    constructor(private readonly options: BarkSidecarOptions) {}
-
-    /**
-     * Creates the Python environment once, and again whenever the pinned requirements change. Bark 3.0
-     * Pro's PyTorch and transformers are added the first time Pro is chosen.
-     */
-    async ensureEnvironment(): Promise<string> {
-        const directory = this.options.environmentDirectory
-        const sidecar = barkSidecarDirectory()
-        const pythonPath = join(directory, 'bin', 'python')
-        const pythonIdentity = this.options.pythonRuntime.identity
-        const baseStamp = requirementsStamp(
-            [join(sidecar, 'requirements.txt'), join(sidecar, 'requirements-without-dependencies.txt')],
-            pythonIdentity
-        )
-        if (!existsSync(pythonPath) || readStamp(directory, 'requirements.sha256') !== baseStamp) {
-            this.options.onLog(`[studio] creating the speech environment in ${directory}`)
-            const pythonForEnvironment = await this.options.pythonRuntime.ensure(progress =>
-                this.options.onSetupProgress({ step: 'python', ...progress })
-            )
-            this.options.onSetupProgress({ step: 'tools', receivedBytes: 0, totalBytes: 0 })
-            await runFile(pythonForEnvironment, ['-m', 'venv', '--clear', directory])
-            await this.pipInstall(['--requirement', join(sidecar, 'requirements.txt')])
-            await this.pipInstall([
-                '--no-deps',
-                '--requirement',
-                join(sidecar, 'requirements-without-dependencies.txt'),
-            ])
-            writeFileSync(join(directory, 'requirements.sha256'), baseStamp)
-        }
-        if (this.options.runner !== 'transformers') return pythonPath
-        const transformersRequirements = join(sidecar, 'requirements-transformers.txt')
-        const transformersStamp = requirementsStamp([transformersRequirements], pythonIdentity)
-        if (readStamp(directory, 'requirements-transformers.sha256') !== transformersStamp) {
-            this.options.onSetupProgress({ step: 'tools', receivedBytes: 0, totalBytes: 0 })
-            this.options.onLog('[studio] adding PyTorch and transformers for Bark 3.0 Pro (one time)')
-            await this.pipInstall(['--requirement', transformersRequirements])
-            writeFileSync(join(directory, 'requirements-transformers.sha256'), transformersStamp)
-        }
-        return pythonPath
-    }
-
-    private async pipInstall(pipArguments: string[]): Promise<void> {
-        const pip = join(this.options.environmentDirectory, 'bin', 'pip')
-        await runFile(pip, ['install', '--quiet', ...pipArguments], { maxBuffer: 16 * 1024 * 1024 })
-    }
-
-    async start(): Promise<number> {
-        const pythonPath = await this.ensureEnvironment()
-        const port = await findFreePort()
-        const options = this.options
-        const script = join(barkSidecarDirectory(), 'transcription_server.py')
-        this.stopping = false
-        const child = spawn(
-            pythonPath,
-            ['-I', script, '--runner', options.runner, '--path', options.modelDirectory, '--port', String(port)],
-            {
-                stdio: ['ignore', 'pipe', 'pipe'],
-            }
-        )
-        this.child = child
-        this.port = port
-
-        let lastOutput = ''
-        const collect = (chunk: Buffer): void => {
-            for (const line of chunk.toString().split('\n')) {
-                if (!line.trim()) continue
-                lastOutput = line.trim()
-                options.onLog(lastOutput)
-            }
-        }
-        child.stdout?.on('data', collect)
-        child.stderr?.on('data', collect)
-
-        const exited = new Promise<string>(resolve => {
-            child.once('exit', (code, signal) => {
-                this.child = null
-                this.port = null
-                const description = signal ? `stopped by ${signal}` : `exited with code ${code}`
-                if (!this.stopping) options.onUnexpectedExit(`${description}: ${lastOutput}`)
-                resolve(description)
-            })
-            child.once('error', error => resolve(error.message))
+/**
+ * Creates the speech environment once, and again whenever the pinned requirements change. Bark 3.0
+ * Pro's PyTorch and transformers are added the first time Pro is chosen.
+ */
+export async function ensureBarkEnvironment(
+    environment: PythonEnvironmentOptions,
+    runner: SpeechModelChoice['runner']
+): Promise<string> {
+    const sidecar = barkSidecarDirectory()
+    const pythonPath = await ensurePythonEnvironment({
+        ...environment,
+        requirements: join(sidecar, 'requirements.txt'),
+        withoutDependencies: join(sidecar, 'requirements-without-dependencies.txt'),
+        announce: `[studio] creating the speech environment in ${environment.directory}`,
+    })
+    if (runner === 'transformers')
+        await addPythonRequirements({
+            ...environment,
+            requirements: join(sidecar, 'requirements-transformers.txt'),
+            stampName: 'requirements-transformers.sha256',
+            announce: '[studio] adding PyTorch and transformers for Bark 3.0 Pro (one time)',
         })
+    return pythonPath
+}
 
-        const deadline = Date.now() + STARTUP_TIMEOUT_MS
-        while (Date.now() < deadline) {
-            if (await isHealthy(port)) return port
-            const result = await Promise.race([
-                exited,
-                new Promise<null>(resolve => setTimeout(() => resolve(null), HEALTH_POLL_INTERVAL_MS)),
-            ])
-            if (result !== null) throw new Error(`The speech engine didn't start (${result}): ${lastOutput}`)
-        }
-        await this.stop()
-        throw new Error('The speech engine took too long to start')
-    }
-
-    async stop(): Promise<void> {
-        const child = this.child
-        if (!child) return
-        this.stopping = true
-        const exited = new Promise<void>(resolve => child.once('exit', () => resolve()))
-        child.kill('SIGTERM')
-        const forced = setTimeout(() => child.kill('SIGKILL'), STOP_GRACE_MS)
-        await exited
-        clearTimeout(forced)
-    }
+/** The Bark transcription server on a private local port. The first start unpacks model.bark into an MLX folder (about a minute). */
+export function barkSidecarProcess(options: BarkSidecarOptions): LocalServerProcess {
+    const script = join(barkSidecarDirectory(), 'transcription_server.py')
+    return new LocalServerProcess({
+        name: 'speech engine',
+        command: options.pythonPath,
+        args: port => ['-I', script, '--runner', options.runner, '--path', options.modelDirectory, '--port', String(port)],
+        startupTimeoutMs: 300_000,
+        onLog: options.onLog,
+        onUnexpectedExit: options.onUnexpectedExit,
+    })
 }

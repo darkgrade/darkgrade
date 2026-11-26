@@ -503,8 +503,19 @@ function photoFrom(file: ConfirmedPhotoFile, destination: 'card' | 'computer'): 
  * photo while a recording is observed means Stop never waits behind one. An unreadable or unknown
  * recording state is not a recording: generic bodies report none.
  */
+/**
+ * A photo is refused while the camera records, and when the recorder could not be read: a failed read
+ * says nothing about whether a take is running. A camera without a recorder, or one that reports its
+ * state as unknown (no recording telemetry), takes the photo.
+ */
 async function refuseWhileRecording(camera: Camera): Promise<void> {
-    const state = await camera.getRecordingState().catch(() => 'unknown' as const)
+    let state: CameraRecordingState
+    try {
+        state = await camera.getRecordingState()
+    } catch (error) {
+        if (error instanceof CameraUnsupportedError) return
+        throw new CameraRefusedError('takePhoto', `The camera's recording state could not be read, so no photo was taken: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    }
     if (state !== 'recording' && state !== 'starting' && state !== 'stopping') return
     const activity = state === 'recording' ? 'recording' : `${state} a recording`
     throw new CameraRefusedError('takePhoto', `The camera is ${activity}; stop it before taking a photo`)

@@ -1,6 +1,7 @@
 import {sonyMovieCard} from '@vendors/sony/recording-slots'
 import type {TakeMedia} from '@workflows/video-take'
 import {sonyIndexNeedsReserve} from '@vendors/sony/media-index'
+import { mediaKind } from '@vendors/generic/media-id'
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
 /** Camera-card take over the same official Sony SDK connection on USB or Wi-Fi. */
 export class SonyVideoRecording {
@@ -15,7 +16,7 @@ export class SonyVideoRecording {
         this.baseline=new Set(contents.flatMap((content:any)=>(content.files||[]).map((file:any)=>JSON.stringify([String(file.name),String(file.bytes)]))))
     }
     private newMovies(contents:any[]):TakeMedia[]{
-        return contents.flatMap((content:any)=>(content.files||[]).filter((file:any)=>/\.(mp4|mov|mxf)$/i.test(file.name)&&Number(file.bytes)>0&&!this.baseline.has(JSON.stringify([String(file.name),String(file.bytes)]))).map((file:any)=>({id:`${content.id}:${file.id}`,filename:String(file.name).split(/[\\/]/).pop()||'camera-video.mp4',bytes:Number(file.bytes),verified:true})))
+        return contents.flatMap((content:any)=>(content.files||[]).filter((file:any)=>mediaKind(String(file.name))==='clip'&&Number(file.bytes)>0&&!this.baseline.has(JSON.stringify([String(file.name),String(file.bytes)]))).map((file:any)=>({id:`${content.id}:${file.id}`,filename:String(file.name).split(/[\\/]/).pop()||'camera-video.mp4',bytes:Number(file.bytes),verified:true})))
     }
     async start(){
         this.attempted=true;await this.camera.startRecording()

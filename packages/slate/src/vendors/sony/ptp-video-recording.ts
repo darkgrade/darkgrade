@@ -2,11 +2,14 @@ import { protocolAccess } from '@camera/protocol-session'
 import {readCameraObjectHandles} from '@vendors/generic/storage'
 import {stopCameraRecording} from '@camera/video-recording'
 import type {TakeMedia} from '@workflows/video-take'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
+import { MovieRecordingState } from '@vendors/sony/definitions/sony-property-definitions'
+import { mediaKind } from '@vendors/generic/media-id'
 
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
 /** Native state: 0 idle, 1 recording, 2 recording failed, 3 interval-recording waiting. */
 export async function readSonyPtpRecordingState(camera: {getSonyPropertyStates(): Promise<{code:number;rawValue:unknown}[]>}) {
-    const raw = (await camera.getSonyPropertyStates()).find(state => state.code === 0xd21d)?.rawValue
+    const raw = (await camera.getSonyPropertyStates()).find(state => state.code === MovieRecordingState.code)?.rawValue
     const value = typeof raw === 'number' || typeof raw === 'bigint' ? Number(raw) : NaN
     return Number.isInteger(value) && value >= 0 && value <= 3 ? value : undefined
 }
@@ -61,7 +64,7 @@ export class SonyPtpVideoRecording {
         return {stopped:true,media:[] as TakeMedia[],warning:'Recording stopped; original identity was not retained. Copy unindexed footage from the card.'}
     }
     private async originalSize(handle:number,reported:number,format:number){
-        if(reported!==0xffffffff)return reported
+        if(reported!==OBJECT_SIZE_UNREPORTED)return reported
         // libgphoto2 ptp.h ObjectSize (0xdc04) and ptp.c ptp_object_want at
         // 02d92fea8a269eb94330a4eade204ba799433606: MTP object properties can
         // override ObjectInfo with a UINT64 size. Bind to this exact handle,
@@ -103,7 +106,7 @@ export class SonyPtpVideoRecording {
             size=Number(view.getBigUint64(12,true))
         }
         if(size===undefined)throw new Error('Sony original-size descriptor is unavailable')
-        if(!Number.isSafeInteger(size)||size<0xffffffff)throw new Error('Sony returned an invalid 64-bit original size')
+        if(!Number.isSafeInteger(size)||size<OBJECT_SIZE_UNREPORTED)throw new Error('Sony returned an invalid 64-bit original size')
         return size
     }
     private async info(handle:number):Promise<TakeMedia|undefined>{
@@ -112,7 +115,7 @@ export class SonyPtpVideoRecording {
         const info=response.data
         // Card indexing may create a directory or sidecar before the new movie.
         // Inspect its kind before validating a movie size: folders legitimately have zero bytes.
-        if(info.associationType>0||info.objectFormat===0x3001||!/\.(mp4|mov|mxf|mts|m2ts)$/i.test(info.filename||''))return undefined
+        if(info.associationType>0||info.objectFormat===0x3001||mediaKind(info.filename||'')!=='clip')return undefined
         const bytes=await this.originalSize(handle,Number(info.objectCompressedSize),Number(info.objectFormat))
         if(!Number.isSafeInteger(bytes)||bytes<=0)throw new Error('Sony original size is unavailable')
         return {id:String(handle),filename:String(info.filename),bytes,verified:true}
