@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import type {
     CameraCapabilities,
     CameraControlId,
@@ -1163,6 +1164,11 @@ export class GenericCamera {
      * to host memory, a release without autofocus, a per-capture RAW compression.
      */
     readonly captureOptions: CaptureOptions = { memory: false, withoutAutofocus: false, rawCompression: false }
+
+    /** Sends the vendor's photo/video switch once; the caller confirms it by polled readback. */
+    async sendPhotoVideoMode(_requested: PhotoVideoMode, _state: CameraControlState): Promise<void> {
+        throw new CameraUnsupportedError('photoVideoMode', 'Photo / video is not supported by this camera')
+    }
 
     /** Holds still mode across one capture and its transfer; a body without a movie mode just captures. */
     async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {

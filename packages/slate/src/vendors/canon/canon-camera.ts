@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
 import type {
@@ -531,6 +532,10 @@ export class CanonCamera extends GenericCamera {
     /** @internal Whether this session's DeviceInfo advertised an operation; unknown before connect. */
     advertisesOperation(code: number): boolean {
         return this.supportedOperations?.has(code) === true
+    }
+
+    override async sendPhotoVideoMode(requested: PhotoVideoMode): Promise<void> {
+        return requested === 'video' ? this.enterMovieMode() : this.leaveMovieMode()
     }
 
     async enterMovieMode(): Promise<void> {

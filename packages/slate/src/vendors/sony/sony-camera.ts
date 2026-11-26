@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import { CameraConfirmationError } from '@camera/confirmation'
 import type {
     CameraCapabilities,
@@ -74,7 +75,7 @@ import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-p
 import { parseLiveViewDataset } from '@vendors/sony/datasets/sony-live-view-dataset'
 import { completePreview } from '@vendors/generic/jpeg-end'
 import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datasets/sony-osd-image-dataset'
-import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
+import { SonyExposureProgramCodec, sonyAdvertisedCounterpart, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { sonyFocalLengthMillimetres, sonyLens } from '@vendors/sony/lens'
 import { minimumZoomTravel, SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } from '@vendors/sony/zoom-motion'
@@ -1094,6 +1095,19 @@ export class SonyCamera extends GenericCamera {
     }
 
     override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: false }
+
+    /** Selects the same program in the other half (Manual ↔ Movie Manual), only when the body advertises it. */
+    override async sendPhotoVideoMode(requested: PhotoVideoMode, state: CameraControlState): Promise<void> {
+        // The admission read just refreshed this inventory.
+        const program = this.listPropertyStates().find(candidate => candidate.code === state.source.code)
+        const target = program && sonyAdvertisedCounterpart(program)
+        if (!program || target === undefined || sonyExposureProgramKind(target) !== requested)
+            throw new CameraRefusedError(
+                'photoVideoMode',
+                `The camera advertises no ${requested} counterpart of its current exposure program (${String(program?.value)})`
+            )
+        await this.set(this.registry.properties.ExposureProgramMode, target)
+    }
 
     /** Holds an advertised still mode across one capture and its transfer, then restores the movie mode. */
     override async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {

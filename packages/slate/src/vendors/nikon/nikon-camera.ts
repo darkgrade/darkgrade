@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import type {
     CameraEventHandler,
@@ -1023,6 +1024,10 @@ export class NikonCamera extends GenericCamera {
      * PC-camera mode are restored afterwards, whether or not the camera took the selector. The
      * caller confirms the readback; the selector is sent once.
      */
+    override async sendPhotoVideoMode(requested: PhotoVideoMode): Promise<void> {
+        return this.selectPhotoVideoMode(requested === 'video' ? 'VIDEO' : 'PHOTO')
+    }
+
     async selectPhotoVideoMode(mode: 'PHOTO' | 'VIDEO'): Promise<void> {
         await this.getLiveViewStatus()
         // A failed restoration leaves the body's mode unknown, whatever the selector did.
