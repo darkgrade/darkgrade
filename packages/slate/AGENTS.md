@@ -72,6 +72,10 @@ Matrix and the bench CI build `src` alone; refresh it with `generate:operations`
 
 ## Driver invariants
 
+No vendor SDK in Slate or for USB (root `AGENTS.md`, Vendor SDKs): `transport/usb`, `transport/ip`,
+`ptp` and the native drivers in `vendors` never import `vendors/sony/sdk-*` or `transport/sony-remote`,
+and no SDK file is tracked; `check:guards` enforces both. The one allowlisted import is
+`generic-camera.ts`'s `instanceof SonyRemoteSdkTransport`, which only labels the connection Wi-Fi.
 The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
 Opening the raw transport bypasses event subscription, channel reset and per-connection
 diagnostic/identity cleanup. Test disconnect/connect and recover/connect on the same Camera,
