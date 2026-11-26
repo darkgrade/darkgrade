@@ -65,7 +65,7 @@ function sdkCamera(ignoreFirstPoint = false) {
 describe('Sony Wi-Fi USB control parity', () => {
     it('waits for a temporary camera lock before a verified exposure write', async () => {
         const {camera,properties,requests}=sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         const iso=properties.find(property=>property.code===260)!
         iso.writable=false
         const unlock=setTimeout(()=>{iso.writable=true},200)
@@ -78,14 +78,14 @@ describe('Sony Wi-Fi USB control parity', () => {
     })
     it('does not write a camera setting that remains locked', async () => {
         const {camera,properties,requests}=sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         properties.find(property=>property.code===260)!.writable=false
         await expect(camera.setSonySetting(260,6400)).rejects.toThrow('read-only')
         expect(requests.some(request=>request.cmd==='set'&&request.code==='260')).toBe(false)
     })
     it('converts familiar exposure, focus, format and quality values to SDK choices', async () => {
         const { camera, properties } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         for (const [action, value, code, expected] of [
             ['set-aperture', 'f/16', 256, '1600'],
             ['set-iso', '6400', 260, '6400'],
@@ -110,7 +110,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     }, 15000)
     it('confirms AF placement against live-view frames without changing exposure mode', async () => {
         const { camera, requests } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         expect(await camera.placeSonyFocusPoint(180, 160)).toMatchObject({
             positionVerified: true,
             requested: { x: 180, y: 160 },
@@ -125,7 +125,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     })
     it('repeats only the same AF point once when a new session has not applied its first position', async () => {
         const { camera, requests } = sdkCamera(true)
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         const result = await camera.placeSonyFocusPoint(160, 160)
         expect(result.positionVerified).toBe(true)
         const positions = requests.filter(request => request.cmd === 'set' && request.code === '289')
@@ -135,7 +135,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     })
     it('waits for the SDK download callback and restores the original card destination', async () => {
         const { camera, properties, requests } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         expect(await camera.captureAndDownload('/tmp/sdk-test')).toMatchObject({
             path: '/tmp/sdk-test/DG00001.JPG',
             eventObservation: { kind: 'sony-crsdk-download-callback', status: 'observed' },
@@ -145,7 +145,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     })
     it('waits for both RAW and JPEG callbacks for paired capture', async () => {
         const { camera, properties, requests } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         properties.find(property => property.code === 262)!.value = '3'
         await camera.captureAndDownload('/tmp/sdk-test')
         expect(requests.find(request => request.cmd === 'wait_download')?.count).toBe('2')
@@ -153,7 +153,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     it('prepares PC delivery again when the camera retained a PC-only destination', async () => {
         const { camera, properties, requests } = sdkCamera()
         properties.find(property => property.code === 281)!.value = '1'
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         await camera.captureAndDownload('/tmp/sdk-test')
         const destination = requests.findIndex(request => request.cmd === 'set' && request.code === '281')
         const shutter = requests.findIndex(request => request.cmd === 'command')
@@ -169,7 +169,7 @@ describe('Sony Wi-Fi USB control parity', () => {
     })
     it('restores the destination when photo transfer fails', async () => {
         const { camera, properties, failDownload } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         failDownload()
         await expect(camera.captureAndDownload('/tmp/sdk-test')).rejects.toThrow('Transfer failed')
         expect(properties.find(property => property.code === 281)!.value).toBe('2')
@@ -243,7 +243,7 @@ describe('Sony SDK still capture', () => {
         vi.useFakeTimers()
         try {
             const { camera, values, request } = stillCaptureFixture()
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             request.mockImplementation(async command => {
                 if (command.cmd === 'command') expect(values.StillImageStoreDestination).toBe('3')
                 return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
@@ -257,7 +257,7 @@ describe('Sony SDK still capture', () => {
         vi.useFakeTimers()
         try {
             const { camera, values, request } = stillCaptureFixture()
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             request.mockImplementation(async command => {
                 if (command.cmd === 'command') expect(values.FocusMode).toBe('1')
                 return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
@@ -275,7 +275,7 @@ describe('Sony SDK still capture', () => {
         try {
             const { camera, values } = stillCaptureFixture()
             values.ExposureProgramMode = '32768'
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             const pending = camera.captureAndDownload('/tmp/photos')
             await vi.runAllTimersAsync(); await pending
             expect(camera.setSonySetting).not.toHaveBeenCalledWith('ExposureProgramMode', expect.anything())
@@ -286,7 +286,7 @@ describe('Sony SDK still capture', () => {
         vi.useFakeTimers()
         try {
             const { camera, values, request } = stillCaptureFixture(true)
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             request.mockImplementation(async command => {
                 if (command.cmd === 'command') expect(values.ExposureProgramMode).toBe('1')
                 return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
@@ -302,7 +302,7 @@ describe('Sony SDK still capture', () => {
         vi.useFakeTimers()
         try {
             const { camera, values, request } = stillCaptureFixture(true)
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             request.mockImplementation(async command => {
                 if (command.cmd === 'wait_download') throw new Error('No new photo')
                 return {}
@@ -323,7 +323,7 @@ describe('Sony SDK still capture', () => {
         vi.useFakeTimers()
         try {
             const { camera, values, request } = stillCaptureFixture(true)
-            await camera.connectUsb('test')
+            await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
             const set = camera.setSonySetting
             camera.setSonySetting = vi.fn(async (name: any, value: any) => {
                 const result = await set(name, value)

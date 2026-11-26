@@ -81,19 +81,19 @@ describe('Sony media-index pagination recovery',()=>{
  })
  it('a read-only SDK listing never starts recording to hide a parse failure',async()=>{
   const {bridge,requests}=bridgeForProperties();const request=bridge.request;bridge.request=async command=>{if(command.cmd==='recent_contents')throw new Error('Sony SDK command failed (SDK code 36102)');return request(command)}
-  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('test');await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('36102')
+  const camera=new SonyWifiCamera(bridge);await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' });await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('36102')
   expect(requests.some(r=>r.cmd==='command')).toBe(false)
  })
  it('returns a successful snapshot with a refresh hint instead of replacing it with an old error',async()=>{
   let warning=36102
   const {bridge}=bridgeForProperties();const request=bridge.request;bridge.request=async command=>command.cmd==='recent_contents'?{ok:true,totalCount:1,truncated:false,indexWarningCode:warning,contents:[{id:1}]}:request(command)
-  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('test')
+  const camera=new SonyWifiCamera(bridge);await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
   expect(await camera.getRecentSonyContents({all:true})).toEqual([{id:1}]);expect(camera.shouldRefreshMediaIndex()).toBe(true)
   warning=0;await camera.getRecentSonyContents({all:true});expect(camera.shouldRefreshMediaIndex()).toBe(false)
  })
- it.each(['usb','wifi','direct'])('refreshes only its existing %s transport',async transport=>{
+ it.each(['wifi','direct'])('refreshes only its existing %s transport',async transport=>{
   const {bridge,requests}=bridgeForProperties([{code:'0x705',type:2,value:'0',writable:false}]);const camera=new SonyWifiCamera(bridge)
-  const connect=()=>transport==='usb'?camera.connectUsb('test',{mode:'remote-transfer'}):transport==='wifi'?camera.connect(authentication,{mode:'remote-transfer'}):camera.connectBluetoothDirect({host:'192.0.2.98',mac:'0C:80:2F:A7:36:AD',model:'ILME-FX2',bluetoothAddress:'0C:80:2F:A7:36:AE'},{mode:'remote-transfer'})
+  const connect=()=>transport==='wifi'?camera.connect(authentication,{mode:'remote-transfer'}):camera.connectBluetoothDirect({host:'192.0.2.98',mac:'0C:80:2F:A7:36:AD',model:'ILME-FX2',bluetoothAddress:'0C:80:2F:A7:36:AE'},{mode:'remote-transfer'})
   await connect();const original=requests.find(r=>r.cmd.startsWith('connect'))!;await camera.refreshConnection()
   expect(requests.filter(r=>r.cmd.startsWith('connect'))).toEqual([original,original]);expect(requests.some(r=>r.cmd==='disconnect')).toBe(true);expect(camera.isConnected()).toBe(true)
  })
@@ -198,7 +198,7 @@ describe('Sony SDK Wi-Fi camera', () => {
         const state = { code: 1797, type: 2, value: '2', writable: false }
         const { bridge, requests } = bridgeForProperties([state])
         const camera = new SonyWifiCamera(bridge)
-        await camera.connectUsb('fixture')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         expect(await camera.getRecordingState()).toBe('unknown')
         await expect(camera.startRecording()).rejects.toThrow('idle before starting')
         expect(requests.some(command => command.cmd === 'command')).toBe(false)
@@ -211,16 +211,6 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(requests.filter(command => command.cmd === 'command')).toEqual([{ cmd: 'command', id: '1', param: '0' }])
         expect(await camera.getRecordingState()).toBe('idle')
         await camera.disconnect()
-    })
-    it('opens official SDK USB preparation by serial without runtime Wi-Fi credentials', async () => {
-        const { bridge, requests } = bridgeForProperties()
-        const camera = new SonyWifiCamera(bridge)
-        await expect(camera.connectUsb('../invalid')).rejects.toThrow('serial')
-        await camera.connectUsb('D0CAA016393C')
-        expect(requests).toEqual([{ cmd: 'connect', serial: 'D0CAA016393C' }])
-        expect(camera.isConnected()).toBe(true)
-        await camera.disconnect()
-        expect(camera.isConnected()).toBe(false)
     })
     it('validates camera identity and runtime credentials without exposing them', () => {
         expect(() => validateSonyWifiAuthentication(authentication)).not.toThrow()
@@ -413,12 +403,12 @@ describe('Sony named SDK settings', () => {
         [exposureModes, 'gain', [312]],
     ])('searches advertised settings %#: %s finds %j', async (properties, query, codes) => {
         const camera = new SonyWifiCamera(bridgeForProperties(properties).bridge)
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         expect((await camera.getSonyCapabilities(query)).map(property => property.code)).toEqual(codes)
     })
     it('labels Auto and Manual choices of the exposure mode aliases', async () => {
         const camera = new SonyWifiCamera(bridgeForProperties(exposureModes).bridge)
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         for (const alias of ['ApertureMode', 'ShutterMode', 'IsoMode'] as const) {
             expect((await camera.getSonyProperty(alias)).choices).toEqual([
                 { value: '1', label: 'Auto' }, { value: '2', label: 'Manual' },
@@ -471,7 +461,7 @@ it('waits for the documented Sony contents-list processing status and preserves 
         return {ok:true}
     },close:async()=>undefined}
     const camera=new SonyWifiCamera(bridge)
-    await camera.connectUsb('TEST_SERIAL')
+    await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
     await expect(camera.getRecentSonyContents()).resolves.toEqual([{id:123,files:[]}])
     expect(attempts).toBe(2)
     bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
@@ -483,7 +473,7 @@ it.each([
  [{contents:[]},'rebuild the SDK bridge'],
 ])('refuses a complete-index reply %j without evidence of completeness',async(reply,error)=>{
  const {bridge,requests}=bridgeForProperties(),camera=new SonyWifiCamera(bridge)
- await camera.connectUsb('TEST_SERIAL')
+ await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
  bridge.request=async command=>{requests.push(command);return reply}
  await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow(error)
  expect(requests.at(-1)).toEqual({cmd:'recent_contents',scope:'all'})
@@ -494,7 +484,7 @@ it('marks only exhausted contents-processing errors for one stopped-transfer rec
  vi.useFakeTimers()
  try{
   const bridge:SonySdkBridge={request:async command=>{if(command.cmd==='recent_contents')throw new Error('Sony SDK command failed (SDK code 36101)');return {ok:true}},close:async()=>{}}
-  const camera=new SonyWifiCamera(bridge);await camera.connectUsb('TEST_SERIAL')
+  const camera=new SonyWifiCamera(bridge);await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
   const pending=expect(camera.getRecentSonyContents({all:true})).rejects.toMatchObject({retryableTransfer:true,message:expect.stringContaining('original footage remains on the card')})
   await vi.advanceTimersByTimeAsync(15250);await pending
   bridge.request=async()=>{throw new Error('Sony SDK command failed (SDK code 36102)')}
