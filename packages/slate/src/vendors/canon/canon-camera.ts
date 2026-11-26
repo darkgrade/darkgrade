@@ -435,56 +435,9 @@ export class CanonCamera extends GenericCamera {
         })
     }
 
-    async getAperture(): Promise<string> {
-        return this.get(this.registry.properties.CanonAperture)
-    }
-
     /** Writes a named enum value; the codec rejects a name it does not define. */
     private setNamed<P extends PropertyDefinition>(property: P, value: string): Promise<void> {
         return this.set(property, value as CodecType<P['codec']>)
-    }
-
-    async setAperture(value: string): Promise<void> {
-        return this.setNamed(this.registry.properties.CanonAperture, value)
-    }
-
-    async getShutterSpeed(): Promise<string> {
-        return this.get(this.registry.properties.CanonShutterSpeed)
-    }
-
-    async setShutterSpeed(value: string): Promise<void> {
-        return this.setNamed(this.registry.properties.CanonShutterSpeed, value)
-    }
-
-    async getIso(): Promise<string> {
-        return this.get(this.registry.properties.CanonIso)
-    }
-
-    async setIso(value: string): Promise<void> {
-        return this.setNamed(this.registry.properties.CanonIso, value)
-    }
-
-    async setFocusMode(value: string): Promise<void> {
-        return this.setNamed(this.registry.properties.CanonFocusMode, value)
-    }
-
-    async getColorTemperature(): Promise<number> {
-        return this.get(this.registry.properties.CanonColorTemperature)
-    }
-
-    async setColorTemperature(kelvin: number): Promise<void> {
-        if (!Number.isInteger(kelvin) || kelvin < 2500 || kelvin > 10000)
-            throw new Error('Canon color temperature must be an integer from 2500 to 10000 kelvin')
-        const property = this.registry.properties.CanonColorTemperature
-        if (!this.getPropertyAllowedValues(property)?.includes(kelvin))
-            throw new Error(`Canon ${property.name} value ${kelvin} was not advertised by the attached camera`)
-        await this.set(property, kelvin)
-        if ((await this.get(property)) !== kelvin)
-            throw new Error(`Canon ${property.name} did not apply the requested value ${kelvin}`)
-    }
-
-    async setWhiteBalance(value: string): Promise<void> {
-        return this.setNamed(this.registry.properties.CanonWhiteBalance, value)
     }
 
     async setImageFormat(packed: number): Promise<void> {

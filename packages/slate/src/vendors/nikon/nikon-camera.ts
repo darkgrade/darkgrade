@@ -51,7 +51,6 @@ import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
 import { recordingCapability } from '@vendors/generic/recording-lifecycle'
 import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import type { NikonLiveViewDataset } from '@vendors/nikon/datasets/nikon-live-view-dataset'
-import { ISOAutoControl } from '@vendors/nikon/definitions/nikon-operation-definitions'
 import { NIKON_AF_AREA_VALUES } from '@vendors/nikon/definitions/nikon-property-definitions'
 import { HardwareError, InvalidStatus, MfDriveStepEnd, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
@@ -62,7 +61,7 @@ import { nikonStorageCanRecord } from '@vendors/nikon/card-storage'
 import { observeNikonControls, writeNikonControl } from '@vendors/nikon/controls'
 import type { ControlWrite } from '@vendors/generic/control-observation'
 import { decodeNikonVendorCodes, NIKON_VENDOR_CODES_MAXIMUM } from '@vendors/nikon/vendor-codes'
-import { matchesNikonShutter, nikonShutterLabel } from '@vendors/nikon/shutter-values'
+import { matchesNikonShutter } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
 
 /** How often Nikon's event queue is read while someone is listening. */
@@ -245,14 +244,9 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    async getShutterSpeed(): Promise<string> {
-        const native = await this.shutterDescriptor()
-        return native ? nikonShutterLabel(native.descriptor.currentValueRaw as number) : super.getShutterSpeed()
-    }
-
     async setShutterSpeed(value: string): Promise<void> {
         const native = await this.shutterDescriptor()
-        if (!native) return super.setShutterSpeed(value)
+        if (!native) return this.setStandardProperty('ExposureTime', value)
         const { property, descriptor, mode } = native
         if (mode === 'VIDEO') {
             try {
@@ -358,17 +352,6 @@ export class NikonCamera extends GenericCamera {
             this.handleEvent({ ...event, transactionId: 0 })
         }
         return events
-    }
-
-    async getIso(): Promise<string> {
-        if ((await this.get(ISOAutoControl)) === 'ON') return 'ISO AUTO'
-        return super.getIso()
-    }
-
-    async setIso(value: string): Promise<void> {
-        if (value.toLowerCase().includes('auto')) return this.set(ISOAutoControl, 'ON')
-        await this.set(ISOAutoControl, 'OFF')
-        await this.set(this.registry.properties.ExposureIndex, value)
     }
 
     /**

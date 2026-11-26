@@ -561,13 +561,6 @@ export class SonyCamera extends GenericCamera {
             .sort((left, right) => left.code - right.code)
     }
 
-    async getIso(): Promise<string> {
-        await this.refreshPropertyStates()
-        const mode = this.propertyCache.get(this.registry.properties.GainControlSetting.code)
-        if (mode?.vendorExtensions.enabled && mode.currentValueRaw === 1) return 'ISO AUTO'
-        return this.get(this.registry.properties.Iso)
-    }
-
     async setIso(value: string): Promise<void> {
         await this.refreshPropertyStates()
         const modeProperty = this.registry.properties.GainControlSetting

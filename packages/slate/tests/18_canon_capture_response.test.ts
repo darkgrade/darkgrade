@@ -1,6 +1,6 @@
 import { CameraRefusedError } from '@camera/errors'
 import { canonTestCamera } from '@tests/fixtures/canon-camera'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 type CannedResponse = number | { code: number; parameters?: number[] } | Error
 
@@ -46,10 +46,8 @@ describe('Canon capture response handling', () => {
 
     it('explicit no-autofocus capture uses only MF release parameters without changing body focus mode', async () => {
         const { camera, operations } = cameraWithResponses([])
-        const setFocusMode = vi.spyOn(camera, 'setFocusMode')
         await expect(camera.captureImage({ includeInfo: false, includeData: false, autofocus: false })).resolves.toEqual({})
         expect(operations).toEqual([manualFocusPress, manualShutterPress, shutterRelease, focusRelease])
-        expect(setFocusMode).not.toHaveBeenCalled()
     })
 
     it.each([

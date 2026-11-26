@@ -1136,30 +1136,6 @@ export class GenericCamera {
         else this.emitter.removeAllListeners(event.name)
     }
 
-    async getAperture(): Promise<string> {
-        return this.get(this.registry.properties.FNumber)
-    }
-
-    async setAperture(value: string): Promise<void> {
-        return this.setStandardProperty('FNumber', value)
-    }
-
-    async getShutterSpeed(): Promise<string> {
-        return this.get(this.registry.properties.ExposureTime)
-    }
-
-    async setShutterSpeed(value: string): Promise<void> {
-        return this.setStandardProperty('ExposureTime', value)
-    }
-
-    async getIso(): Promise<string> {
-        return this.get(this.registry.properties.ExposureIndex)
-    }
-
-    async setIso(value: string): Promise<void> {
-        return this.setStandardProperty('ExposureIndex', value)
-    }
-
     /**
      * The release options this driver's captureImage takes beyond a plain card release: a transfer
      * to host memory, a release without autofocus, a per-capture RAW compression.
