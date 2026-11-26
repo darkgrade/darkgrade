@@ -14,7 +14,8 @@ driver. Deployment assets are in `telemetry/`, and server tests in `tests/teleme
 with `test:telemetry` or the full suite. Do not create another telemetry app or package.
 
 Diagnostics live in `packages/slate/src/contribute` and are exported as
-`@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
+`@darkgrade/slate/telemetry` and `/telemetry/{application,batch,protocol,schema,settings,installation-store}`
+(the `/contribute/*` aliases and the v1 `createContributions` client were removed on 2026-11-26).
 Use `@contribute/*` for imports inside Slate. Node settings stay separate from browser clients.
 The Node diagnostics tests live in `packages/slate/tests/contribute` and run in Slate's full
 test suite or with `bun run --cwd packages/slate test:contribute`.

@@ -1,4 +1,4 @@
-export { runBenchmark, runCameraBenchmark } from '@workflows/telemetry-benchmark'
+export { runBenchmark } from '@workflows/telemetry-benchmark'
 export type { BenchmarkCheck, BenchmarkOptions } from '@workflows/telemetry-benchmark'
 export { recordFirstContact } from '@workflows/first-contact'
 export { isValidatedModel, isVerifiedFeature, validatedCameraModels, verifiedFeatureModels } from '@camera/validated-models'

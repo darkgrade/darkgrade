@@ -13,7 +13,6 @@ Telemetry ingestion, Postgres, email confirmation, authenticated support queries
 withdrawal and Matrix export belong in Slate's `src/telemetry/server`. Do not recreate a
 collector workspace or app. The portable client reuses `src/contribute`; canonical imports
 are `@darkgrade/slate/telemetry` and `/telemetry/{application,batch,schema,protocol,settings}`.
-The earlier `/contribute/*` exports are compatibility aliases, not parallel implementations.
 Importing `/telemetry/server` never starts a service or connects Postgres; only the explicit
 `/telemetry/postgres` adapter and `telemetry:start` use the optional `pg` peer.
 Keep deployment assets in `packages/slate/telemetry`, and reuse its Dockerfile and workflows.

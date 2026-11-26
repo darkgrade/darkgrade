@@ -1,6 +1,6 @@
 import { Camera } from '@camera/index'
 import { SonyCamera } from '@vendors/sony/sony-camera'
-import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import { runBenchmark } from '@workflows/telemetry-benchmark'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { createPTPRegistry, createNikonRegistry } from '@vendors/registry'
@@ -64,7 +64,7 @@ it('Sony profile storage reads enter transfer mode and restore shooting after a 
         calls.push('storage')
         throw new Error('Read refused')
     }} as unknown as Camera
-    const result=await runCameraBenchmark(camera)
+    const result=await runBenchmark(camera)
     expect(result.profile.status).toBe('partial')
     expect(calls).toEqual(['prepare','storage','restore'])
 })
@@ -457,7 +457,7 @@ it('deep benchmark exports a sanitized profile on the owned session and preserve
     const camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
     await camera.connect()
     let flushes=0
-    const result=await runCameraBenchmark(camera,{flushEvidence:async()=>{flushes++;if(flushes===2)throw new Error('Collector offline')}})
+    const result=await runBenchmark(camera,{flushEvidence:async()=>{flushes++;if(flushes===2)throw new Error('Collector offline')}})
     expect(result.passed).toBe(true)
     expect(flushes).toBeGreaterThanOrEqual(3)
     expect(result.profile.status).toBe('complete')
@@ -468,10 +468,10 @@ it('deep benchmark exports a sanitized profile on the owned session and preserve
     expect(result.profile.datasets.some(item=>'property' in item&&item.property===0x5011)).toBe(false)
     expect(source.transport.isConnected()).toBe(true)
     const cancel=new AbortController();cancel.abort()
-    expect((await runCameraBenchmark(camera,{signal:cancel.signal})).profile.status).toBe('cancelled')
+    expect((await runBenchmark(camera,{signal:cancel.signal})).profile.status).toBe('cancelled')
     await camera.disconnect()
     const failed=fixture(true),other=new Camera({transport:failed.transport,logger:{renderInTerminal:false,captureConsole:false}})
-    await other.connect();const partial=await runCameraBenchmark(other)
+    await other.connect();const partial=await runBenchmark(other)
     expect(partial.profile.status).toBe('partial');expect(partial.checks.some(check=>!check.passed)).toBe(true)
     await other.disconnect()
 })
@@ -509,12 +509,12 @@ it('benchmark includes preexisting observations with age and never substitutes a
   const instance=protocolSession(camera).driver
   instance.recordProtocol({type:'property-value',vendorId:0,property:0x5001,dataType:4,current:63},0x1015)
   instance.recordProtocol({type:'property-write',vendorId:0,property:0x5001,dataType:4,requested:99,transactionId:8,outcome:'response',response:0x2001},0x1016)
-  const result=await runCameraBenchmark(camera)
+  const result=await runBenchmark(camera)
   const snapshot=result.profile.datasets.find(item=>item.type==='state-snapshot')
   expect(snapshot).toMatchObject({workflow:'benchmark',phase:'before-prepare',basis:'observed-cache',benchmarkId:result.profile.id,
    settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:63,ageMilliseconds:expect.any(Number)})])})
   expect(result.profile.datasets.filter(item=>item.type==='state-snapshot')).toHaveLength(1)
-  const next=await runCameraBenchmark(camera)
+  const next=await runBenchmark(camera)
   expect(next.profile.datasets.find(item=>item.type==='state-snapshot')).toMatchObject({benchmarkId:next.profile.id,
    settings:expect.arrayContaining([expect.objectContaining({property:0x5001,current:75})])})
   expect(next.profile.id).not.toBe(result.profile.id)
@@ -532,7 +532,7 @@ it('initial benchmark settings share the discovered camera identity without addi
  try{
   await camera.connect()
   const start=source.commands.length
-  const result=await runCameraBenchmark(camera)
+  const result=await runBenchmark(camera)
   const initial=retained.filter(item=>item.entry.protocol?.benchmarkId===result.profile.id&&
    (item.entry.protocol.type==='state-snapshot'||item.entry.protocol.status==='started'))
   expect(initial).toHaveLength(2)

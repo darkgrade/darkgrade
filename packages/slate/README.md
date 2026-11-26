@@ -93,7 +93,7 @@ Telemetry is part of Slate. Node hosts use `@darkgrade/slate/telemetry/settings`
 browser/custom hosts use `@darkgrade/slate/telemetry`. Schemas and protocol
 validation are available from `/telemetry/schema`, `/telemetry/batch`, and
 `/telemetry/protocol` without importing camera transports or Node settings.
-The `/contribute/*` paths remain compatible aliases. The server's ingestion, email
+The server's ingestion, email
 confirmation, investigation, cleanup and Matrix export live in
 `@darkgrade/slate/telemetry/server`; the optional `/telemetry/postgres` adapter supplies
 its database. See [telemetry deployment](telemetry/README.md) for the standalone service.

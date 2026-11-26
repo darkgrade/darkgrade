@@ -53,46 +53,6 @@
             "import": "./dist/runtime/ownership.mjs",
             "require": "./dist/runtime/ownership.cjs"
         },
-        "./contribute": {
-            "types": "./dist/contribute/index.d.ts",
-            "import": "./dist/contribute/index.mjs",
-            "require": "./dist/contribute/index.cjs"
-        },
-        "./contribute/application": {
-            "types": "./dist/contribute/application.d.ts",
-            "import": "./dist/contribute/application.mjs",
-            "require": "./dist/contribute/application.cjs"
-        },
-        "./contribute/batch": {
-            "types": "./dist/contribute/batch.d.ts",
-            "import": "./dist/contribute/batch.mjs",
-            "require": "./dist/contribute/batch.cjs"
-        },
-        "./contribute/installation-store": {
-            "types": "./dist/contribute/installation-store.d.ts",
-            "import": "./dist/contribute/installation-store.mjs",
-            "require": "./dist/contribute/installation-store.cjs"
-        },
-        "./contribute/node": {
-            "types": "./dist/contribute/node.d.ts",
-            "import": "./dist/contribute/node.mjs",
-            "require": "./dist/contribute/node.cjs"
-        },
-        "./contribute/protocol": {
-            "types": "./dist/contribute/protocol.d.ts",
-            "import": "./dist/contribute/protocol.mjs",
-            "require": "./dist/contribute/protocol.cjs"
-        },
-        "./contribute/schema": {
-            "types": "./dist/contribute/schema.d.ts",
-            "import": "./dist/contribute/schema.mjs",
-            "require": "./dist/contribute/schema.cjs"
-        },
-        "./contribute/settings": {
-            "types": "./dist/contribute/settings.d.ts",
-            "import": "./dist/contribute/settings.mjs",
-            "require": "./dist/contribute/settings.cjs"
-        },
         "./tsconfig.base.json": "./tsconfig.base.json",
         "./telemetry": {
             "types": "./dist/contribute/application.d.ts",
@@ -113,11 +73,6 @@
             "types": "./dist/contribute/installation-store.d.ts",
             "import": "./dist/contribute/installation-store.mjs",
             "require": "./dist/contribute/installation-store.cjs"
-        },
-        "./telemetry/node": {
-            "types": "./dist/contribute/node.d.ts",
-            "import": "./dist/contribute/node.mjs",
-            "require": "./dist/contribute/node.cjs"
         },
         "./telemetry/protocol": {
             "types": "./dist/contribute/protocol.d.ts",

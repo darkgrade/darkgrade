@@ -4,7 +4,7 @@ import { createPTPRegistry } from '@vendors/registry'
 import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 import { encodedDeviceInfo } from '@tests/fixtures/camera-fixtures'
 import { recordFirstContact, type FirstContactDependencies } from '@workflows/first-contact'
-import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import { runBenchmark } from '@workflows/telemetry-benchmark'
 import { describe, expect, it } from 'vitest'
 
 const codecs = createPTPRegistry(true).codecs
@@ -66,7 +66,7 @@ describe('unknown-vendor benchmark inventory', () => {
         const camera = new Camera({ transport: source.transport, vendorId: 0x04cb, logger: quiet })
         await camera.connect()
         try {
-            const result = await runCameraBenchmark(camera)
+            const result = await runBenchmark(camera)
             const read = source.commands.filter(command => command.code === 0x1014).map(command => command.parameter)
             expect(read).toEqual([0x5001, 0xdf01, 0xdf02])
             expect(result.profile.descriptorShapes).toEqual(
@@ -91,7 +91,7 @@ describe('first contact', () => {
             const { value, saved } = dependencies()
             expect(await recordFirstContact(camera, value)).toBe(true)
             expect(saved).toHaveLength(1)
-            const profile = saved[0] as Awaited<ReturnType<typeof runCameraBenchmark>>['profile']
+            const profile = saved[0] as Awaited<ReturnType<typeof runBenchmark>>['profile']
             expect(profile).toMatchObject({ purpose: 'first-contact', hardwarePass: false, status: 'complete' })
             expect(profile.datasets).toContainEqual(
                 expect.objectContaining({ type: 'benchmark', status: 'complete', purpose: 'first-contact' })

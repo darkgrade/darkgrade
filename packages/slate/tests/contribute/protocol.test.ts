@@ -1,5 +1,5 @@
-import { validateProtocol } from '@darkgrade/slate/contribute/protocol'
-import { validateContribution } from '@darkgrade/slate/contribute/schema'
+import { validateProtocol } from '@darkgrade/slate/telemetry/protocol'
+import { validateContribution } from '@darkgrade/slate/telemetry/schema'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { randomUUID } from 'node:crypto'

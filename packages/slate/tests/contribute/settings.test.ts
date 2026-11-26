@@ -1,5 +1,5 @@
-import { createApplicationDiagnostics } from '@darkgrade/slate/contribute/application'
-import { sharedSettings } from '@darkgrade/slate/contribute/settings'
+import { createApplicationDiagnostics } from '@darkgrade/slate/telemetry/application'
+import { sharedSettings } from '@darkgrade/slate/telemetry/settings'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -107,7 +107,7 @@ test('a short-lived process delivers queued metadata on normal exit and retains 
     const { execFile } = await import('node:child_process')
     const { promisify } = await import('node:util')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-exit-'))
-    const moduleUrl = import.meta.resolve('@darkgrade/slate/contribute/settings')
+    const moduleUrl = import.meta.resolve('@darkgrade/slate/telemetry/settings')
     try {
         for (const runtime of [process.execPath, 'bun'])
             for (const forced of [false, true]) {
@@ -143,7 +143,7 @@ test('a short-lived process delivers queued metadata on normal exit and retains 
 })
 
 test('Node defaults to the hosted collector, but an opt-out written by another store stops uploads and keeps local diagnostics', async () => {
-    const { nodeDiagnostics, closeNodeDiagnostics, DEFAULT_TELEMETRY_URL } = await import('@darkgrade/slate/contribute/settings')
+    const { nodeDiagnostics, closeNodeDiagnostics, DEFAULT_TELEMETRY_URL } = await import('@darkgrade/slate/telemetry/settings')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-default-sharing-'))
     const previous = {
         home: process.env.DARKGRADE_HOME,
@@ -188,7 +188,7 @@ test('Node defaults to the hosted collector, but an opt-out written by another s
 })
 
 test('camera fingerprints are stable across installation/firmware changes and absent for missing or placeholder serials', async () => {
-    const { cameraHardwareFingerprint } = await import('@darkgrade/slate/contribute/schema')
+    const { cameraHardwareFingerprint } = await import('@darkgrade/slate/telemetry/schema')
     const first = await cameraHardwareFingerprint({ manufacturer: 'Nikon', model: ' Z5_2 ', serialNumber: 'ABC123\0' })
     assert.match(first!, /^camera-v1:[a-f0-9]{64}$/)
     assert.equal(
@@ -204,7 +204,7 @@ test('camera fingerprints are stable across installation/firmware changes and ab
 })
 
 test('automatic Node clients never upload test-runner fixtures to the default collector', async () => {
-    const { nodeDiagnostics, closeNodeDiagnostics } = await import('@darkgrade/slate/contribute/settings')
+    const { nodeDiagnostics, closeNodeDiagnostics } = await import('@darkgrade/slate/telemetry/settings')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-test-runner-'))
     const oldHome = process.env.DARKGRADE_HOME,
         oldMode = process.env.NODE_ENV,
@@ -298,7 +298,7 @@ test('queued entries from before the identity read are uploaded under the identi
 })
 
 test('already-shared protocol facts are remembered across processes, re-shared on change or age, and survive a damaged file', async () => {
-    const { reportedFacts } = await import('@darkgrade/slate/contribute/settings')
+    const { reportedFacts } = await import('@darkgrade/slate/telemetry/settings')
     const { writeFile } = await import('node:fs/promises')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-facts-'))
     try {
@@ -352,7 +352,7 @@ test('already-shared protocol facts are remembered across processes, re-shared o
 })
 
 test('the record of cameras last seen at a USB identity keeps what the body reported and never a raw serial', async () => {
-    const { knownCameras } = await import('@darkgrade/slate/contribute/settings')
+    const { knownCameras } = await import('@darkgrade/slate/telemetry/settings')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-known-'))
     try {
         const store = knownCameras(directory),

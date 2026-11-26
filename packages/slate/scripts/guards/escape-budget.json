@@ -7,7 +7,6 @@
     "src/camera/video-recording.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/cli/terminal.ts": {"any":0,"asNever":0,"asUnknownAs":4},
     "src/contribute/application.ts": {"any":1,"asNever":0,"asUnknownAs":1},
-    "src/contribute/index.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/contribute/protocol.ts": {"any":0,"asNever":0,"asUnknownAs":1},
     "src/contribute/settings.ts": {"any":5,"asNever":0,"asUnknownAs":0},
     "src/core/telemetry.ts": {"any":0,"asNever":0,"asUnknownAs":1},

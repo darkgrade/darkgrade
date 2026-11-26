@@ -41,18 +41,6 @@ export interface DescriptorShape {
 export const transportEvidence = (transport: object): string | undefined =>
     (transport as { telemetryEvidence?: string }).telemetryEvidence
 
-/** The options `runCameraBenchmark` took before `photo` and `liveView`. */
-export interface LegacyBenchmarkOptions extends Omit<BenchmarkOptions, 'photo' | 'liveView'> {
-    capture?: boolean
-    live?: boolean
-}
-
-/** @deprecated Use `runBenchmark(camera, { photo, liveView })`. */
-export async function runCameraBenchmark(camera: Camera, options: LegacyBenchmarkOptions = {}) {
-    const { capture, live, ...rest } = options
-    return runBenchmark(camera, { ...rest, photo: capture, liveView: live })
-}
-
 /** Caller owns an idle, connected camera. Reads its full advertised inventory and bounded
  * safe numeric descriptors. Photo/live transfers remain explicit; no arbitrary vendor writes. */
 export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {}) {
