@@ -7,57 +7,67 @@ import type { DepthModelSize, VisionEngineStatus, VisionModelId, VisionOverlay }
  * Every camera capability exposed by @darkgrade/slate has a channel here.
  */
 
-export const IPC = {
-    DiagnosticsStatus: 'diagnostics:status',
-    DiagnosticsBenchmark: 'diagnostics:benchmark',
-    DiagnosticsChange: 'diagnostics:change',
-    DiagnosticsContact: 'diagnostics:contact',
-    Connect: 'camera:connect',
-    Disconnect: 'camera:disconnect',
-    GetState: 'camera:get-state',
-    GetSettings: 'camera:get-settings',
-    SetControl: 'camera:set-control',
-    ZoomStart: 'camera:zoom-start',
-    ZoomStop: 'camera:zoom-stop',
-    Focus: 'camera:focus',
-    FocusAt: 'camera:focus-at',
-    SetOsdOverlay: 'camera:set-osd-overlay',
-    Capture: 'camera:capture',
-    LiveViewStart: 'camera:liveview-start',
-    LiveViewStop: 'camera:liveview-stop',
-    RecordStart: 'camera:record-start',
-    RecordStop: 'camera:record-stop',
-    ListFiles: 'camera:list-files',
-    DownloadFile: 'camera:download-file',
-    DownloadAll: 'camera:download-all',
-    Thumbnail: 'camera:thumbnail',
-    PreviewFile: 'camera:preview-file',
-    CancelPreview: 'camera:cancel-preview',
-    KillCameraDaemon: 'system:kill-camera-daemon',
-    ChooseDownloadDir: 'system:choose-download-dir',
-    RevealPath: 'system:reveal-path',
-    VoiceGetStatus: 'voice:get-status',
-    VisionGetStatus: 'vision:get-status',
-    VisionOverlay: 'vision:overlay',
-    VoicePrepare: 'voice:prepare',
-    VoiceRelease: 'voice:release',
-    VoiceSaveSessionAudio: 'voice:save-session-audio',
-    PreferencesGet: 'preferences:get',
-    PreferencesSet: 'preferences:set',
-    McpServerGetStatus: 'mcp:get-status',
-    AssistantGetStatus: 'assistant:get-status',
-    AssistantProcessTranscript: 'assistant:process-transcript',
-    AssistantRelease: 'assistant:release',
-    AssistantPrepare: 'assistant:prepare',
-    AssistantWarmUp: 'assistant:warm-up',
-    ViewReportState: 'view:report-state',
-    VoiceDiagnostic: 'voice:diagnostic',
-    PerfSampleProcesses: 'perf:sample-processes',
-    PerfOpen: 'perf:open',
-    PerfReport: 'perf:report',
-    PerfIsOpen: 'perf:is-open',
-    PerfTrace: 'perf:trace',
-} as const
+/**
+ * Every request the renderer sends, by its StudioApi method: preload derives the method from this
+ * table and the main process registers its handler by the same name, so the three never drift.
+ */
+export const INVOKE_CHANNELS = {
+    getDiagnosticsStatus: 'diagnostics:status',
+    diagnosticsBenchmark: 'diagnostics:benchmark',
+    changeDiagnostics: 'diagnostics:change',
+    diagnosticsContact: 'diagnostics:contact',
+    connect: 'camera:connect',
+    disconnect: 'camera:disconnect',
+    getState: 'camera:get-state',
+    getSettings: 'camera:get-settings',
+    setControl: 'camera:set-control',
+    zoomStart: 'camera:zoom-start',
+    zoomStop: 'camera:zoom-stop',
+    focus: 'camera:focus',
+    focusAt: 'camera:focus-at',
+    setOsdOverlay: 'camera:set-osd-overlay',
+    capture: 'camera:capture',
+    liveViewStart: 'camera:liveview-start',
+    liveViewStop: 'camera:liveview-stop',
+    recordStart: 'camera:record-start',
+    recordStop: 'camera:record-stop',
+    listFiles: 'camera:list-files',
+    downloadFile: 'camera:download-file',
+    downloadAll: 'camera:download-all',
+    thumbnail: 'camera:thumbnail',
+    previewFile: 'camera:preview-file',
+    cancelPreview: 'camera:cancel-preview',
+    killCameraDaemon: 'system:kill-camera-daemon',
+    chooseDownloadDir: 'system:choose-download-dir',
+    revealPath: 'system:reveal-path',
+    voiceGetStatus: 'voice:get-status',
+    visionGetStatus: 'vision:get-status',
+    visionOverlay: 'vision:overlay',
+    voicePrepare: 'voice:prepare',
+    voiceRelease: 'voice:release',
+    voiceSaveSessionAudio: 'voice:save-session-audio',
+    getPreferences: 'preferences:get',
+    setPreferences: 'preferences:set',
+    getMcpServerStatus: 'mcp:get-status',
+    assistantGetStatus: 'assistant:get-status',
+    assistantProcessTranscript: 'assistant:process-transcript',
+    assistantRelease: 'assistant:release',
+    assistantPrepare: 'assistant:prepare',
+    assistantWarmUp: 'assistant:warm-up',
+    reportViewState: 'view:report-state',
+    voiceDiagnostic: 'voice:diagnostic',
+    perfSampleProcesses: 'perf:sample-processes',
+    perfOpen: 'perf:open',
+    perfReport: 'perf:report',
+    perfIsOpen: 'perf:is-open',
+    perfTrace: 'perf:trace',
+} as const satisfies { readonly [Name in keyof StudioApi]?: string }
+
+/** A StudioApi method that is a request to the main process. */
+export type InvokeName = keyof typeof INVOKE_CHANNELS
+
+/** What a request's handler resolves to: the data inside its IpcResult. */
+export type InvokeData<Name extends InvokeName> = Awaited<ReturnType<StudioApi[Name]>> extends IpcResult<infer Data> ? Data : never
 
 /**
  * Live frames decoded on the GPU by the Metal decoder (Developer Mode) reach a window as textures, not JPEGs. A
@@ -548,8 +558,10 @@ export interface DiagnosticsStatus {
     droppedEntries: number
     error: string | null
 }
+/** The contact address as the diagnostics client reports it: verified, or still pending confirmation. */
 export interface DiagnosticsContact {
     email: string
-    verified: true
+    verified: boolean
+    pendingEmail?: string
     credit: { name: string; publish: true } | null
 }
