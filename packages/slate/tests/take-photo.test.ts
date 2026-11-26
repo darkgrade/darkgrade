@@ -422,6 +422,18 @@ describe.each(vendors)('takePhoto on a simulated %s body', (_vendor, simulate, n
         expect(refused.message).toContain('recording')
         expect(presses()).toBe(0)
     })
+
+    it('is refused when the recorder cannot be read, and taken when the camera has none', async () => {
+        const { camera, presses } = simulate()
+        const read = vi.spyOn(camera, 'getRecordingState').mockRejectedValue(new Error('Transaction timed out'))
+        const refused = await camera.takePhoto().catch(error => error)
+        expect(refused).toBeInstanceOf(CameraRefusedError)
+        expect(refused.message).toContain('recording state could not be read')
+        expect(presses()).toBe(0)
+        read.mockRejectedValue(new CameraUnsupportedError('getRecordingState', 'getRecordingState is not supported by this camera'))
+        await expect(camera.takePhoto()).resolves.toMatchObject({ destination: 'card' })
+        expect(presses()).toBe(1)
+    })
 })
 
 describe('takePhoto outcomes around the release', () => {

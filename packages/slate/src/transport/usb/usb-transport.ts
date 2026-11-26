@@ -332,7 +332,9 @@ export class USBTransport implements TransportInterface {
                 await this.clearHalt('interrupt')
             }
         } catch (error) {
-            if (!isUsbDeviceGone(error)) failures.push(error)
+            // The device closes next either way, so an unconfirmed clear on the way out is not a failure.
+            const unconfirmedClear = error instanceof Error && error.message === 'LIBUSB_TRANSFER_ERROR'
+            if (!isUsbDeviceGone(error) && !unconfirmedClear) failures.push(error)
         }
         try {
             await this.device?.close()
@@ -508,12 +510,9 @@ export class USBTransport implements TransportInterface {
         try {
             await this.device.clearHalt(direction, endpoint)
         } catch (error) {
-            // node-usb declares LibUSBException as a type, not a runtime constructor.
-            if (
-                error instanceof Error &&
-                (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
-            )
-                return
+            // node-usb declares LibUSBException as a type, not a runtime constructor. A cancelled request is the
+            // endpoint's own teardown; any other failure leaves the halt in place, so it is reported.
+            if (error instanceof Error && error.message === 'LIBUSB_TRANSFER_CANCELLED') return
             throw error
         }
     }
