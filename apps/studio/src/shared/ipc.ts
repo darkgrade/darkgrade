@@ -16,9 +16,6 @@ export const IPC = {
     Disconnect: 'camera:disconnect',
     GetState: 'camera:get-state',
     GetSettings: 'camera:get-settings',
-    SetIso: 'camera:set-iso',
-    SetShutterSpeed: 'camera:set-shutter-speed',
-    SetAperture: 'camera:set-aperture',
     SetControl: 'camera:set-control',
     ZoomStart: 'camera:zoom-start',
     ZoomStop: 'camera:zoom-stop',
@@ -433,9 +430,6 @@ export interface StudioApi {
     disconnect(): Promise<IpcResult<CameraState>>
     getState(): Promise<IpcResult<CameraState>>
     getSettings(): Promise<IpcResult<CameraSettings>>
-    setIso(value: string): Promise<IpcResult<CameraSettings>>
-    setShutterSpeed(value: string): Promise<IpcResult<CameraSettings>>
-    setAperture(value: string): Promise<IpcResult<CameraSettings>>
     setControl(name: CameraControlName, value: string): Promise<IpcResult<CameraControls | null>>
     /** Start zooming (optical on power-zoom lenses, Clear Image or digital otherwise) until zoomStop. */
     zoomStart(direction: 'wide' | 'tele'): Promise<IpcResult<void>>

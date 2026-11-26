@@ -317,9 +317,6 @@ export function App(): React.JSX.Element {
                                     <SettingsPanel
                                         cameraState={cameraState}
                                         locked={cardBusy}
-                                        onSetIso={value => void run(() => api.setIso(value))}
-                                        onSetShutterSpeed={value => void run(() => api.setShutterSpeed(value))}
-                                        onSetAperture={value => void run(() => api.setAperture(value))}
                                         onChangeControl={(name, value) => void run(() => api.setControl(name, value))}
                                     />
                                     <FocusPanel

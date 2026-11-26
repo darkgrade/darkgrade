@@ -75,7 +75,6 @@ export const KELVIN_MAX = 9900
 
 export const KELVIN_STEP = 100
 
-/** Sony property names per setting, newest first: bodies report one or the other. */
 export const PTP_ACCESS_DENIED = 0x200f
 
 export const FILES_REFRESH_DELAY_MS = 1500

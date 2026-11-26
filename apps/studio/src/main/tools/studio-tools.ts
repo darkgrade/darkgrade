@@ -118,11 +118,9 @@ async function applySetting(requestedName: SettingName, value: string): Promise<
             `${CAMERA_CONTROL_LABELS[name]} has no value "${value}". Choices: ${control.options.join(', ')}`
         )
     }
-    if (cameraService.getState().controls?.[name]) await cameraService.setControl(name, chosen)
-    else if (name === 'iso') await cameraService.setIso(chosen)
-    else if (name === 'shutterSpeed') await cameraService.setShutterSpeed(chosen)
-    else if (name === 'aperture') await cameraService.setAperture(chosen)
-    else throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be set on this camera`)
+    if (!cameraService.getState().controls?.[name] && name !== 'iso' && name !== 'shutterSpeed' && name !== 'aperture')
+        throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be set on this camera`)
+    await cameraService.setControl(name, chosen)
     if (chosen !== control.value) recordChange({ setting: name, from: control.value, to: chosen })
     return chosen
 }
