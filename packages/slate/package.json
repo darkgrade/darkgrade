@@ -109,7 +109,7 @@
         "telemetry/README.md"
     ],
     "scripts": {
-        "build": "bun run scripts/generate-camera-operations.ts --compatibility && vite build && tsc -p telemetry/tsconfig.json",
+        "build": "vite build && tsc -p telemetry/tsconfig.json",
         "dev": "vite build --watch",
         "test": "bun run scripts/test.ts",
         "test:unit": "bun run scripts/test.ts",
@@ -126,7 +126,7 @@
         "test:runtime": "bun run build && bun test ./tests/runtime",
         "mcp": "bun run src/runtime/stdio.ts",
         "generate:operations": "bun run scripts/generate-camera-operations.ts",
-        "typecheck": "bun run scripts/generate-camera-operations.ts --compatibility && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit && tsc -p telemetry/tsconfig.json --noEmit",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit && tsc -p telemetry/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",

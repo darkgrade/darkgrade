@@ -1,7 +1,6 @@
 {
     "src/vendors/generic/generic-camera.ts": {"any":2,"asNever":0,"asUnknownAs":1},
     "src/camera/identification/camera-identification.ts": {"any":0,"asNever":0,"asUnknownAs":1},
-    "src/camera/movie-audio.ts": {"any":1,"asNever":0,"asUnknownAs":0},
     "src/camera/index.ts": {"any":0,"asNever":1,"asUnknownAs":0},
     "src/vendors/generic/storage.ts": {"any":3,"asNever":0,"asUnknownAs":0},
     "src/camera/video-recording.ts": {"any":1,"asNever":0,"asUnknownAs":0},

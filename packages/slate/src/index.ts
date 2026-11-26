@@ -73,8 +73,6 @@ export type { CameraInfo, ConnectOptions, DiscoveredCamera, RecoveryReport } fro
 export type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 export type { TransportInterface } from '@transport/interfaces/transport.interface'
 export type { OperationParams, OperationResponse, EventParams } from '@ptp/types/type-helpers'
-export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
-export type { CameraMovieAudio } from '@camera/movie-audio'
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@ptp/transaction-channel'
 export {
     PTPDecodeError,
