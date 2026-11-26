@@ -3,6 +3,7 @@ import { CameraClipNotFoundError } from '@camera/errors'
 import { readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import type { TakeMedia } from '@workflows/video-take'
+import { mediaKind } from '@vendors/generic/media-id'
 
 const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
 
@@ -101,7 +102,7 @@ export class UsbVideoRecording {
                         result.code === 0x2001 &&
                         Number.isSafeInteger(bytes) &&
                         bytes > 0 &&
-                        /\.(mp4|mov|mts|m2ts|avi|crm)$/i.test(info?.filename || '')
+                        mediaKind(info?.filename || '') === 'clip'
                     )
                         media.push({ id: String(handle), filename: String(info.filename), bytes, verified: true })
                 }

@@ -8,6 +8,7 @@ import type { OperationDefinition } from '@ptp/types/operation'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { readCameraObjectHandles, waitForNewCameraMovie } from '@vendors/generic/storage'
 import { messageOf } from '@vendors/generic/typed-failure'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
 
 /*
  * TRANSITIONAL (consolidation setup): the small helpers each brand's operations share. Standard
@@ -74,14 +75,12 @@ export const wait = (milliseconds: number) => new Promise(resolve => setTimeout(
 
 /** Sony movies can take a while to close on the card after a long 4K take. */
 export const clipFinalizationMilliseconds = 30000
-/** PTP ObjectInfo's size when the real one needs a 64-bit query. */
-export const unstatedSize = 0xffffffff
 
 function clipFrom(handle: number, name: unknown, sizeBytes: number | undefined): Clip {
     return {
         mediaId: String(handle),
         name: String(name),
-        ...(sizeBytes !== undefined && Number.isSafeInteger(sizeBytes) && sizeBytes !== unstatedSize
+        ...(sizeBytes !== undefined && Number.isSafeInteger(sizeBytes) && sizeBytes !== OBJECT_SIZE_UNREPORTED
             ? { sizeBytes }
             : {}),
     }

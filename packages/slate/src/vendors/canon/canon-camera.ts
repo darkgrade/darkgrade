@@ -48,15 +48,15 @@ import {
     requirePoint,
     restoreAll,
     supported,
-    unstatedSize,
     unsupported,
     wait,
 } from '@vendors/generic/generic-operations'
-import { encodeMediaId } from '@vendors/generic/media-id'
+import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
 import { recordingCapability, type VendorRecording } from '@vendors/generic/recording-lifecycle'
 import { afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import { readCameraStorages } from '@vendors/generic/storage'
 import { CanonRegistry, createCanonRegistry } from '@vendors/registry'
+import { OBJECT_SIZE_UNREPORTED } from '@ptp/datasets/object-info-dataset'
 
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 /** EDSDK shutter result for a half-press whose autofocus failed (EDSDKErrors.h TAKE_PICTURE_AF_NG). */
@@ -68,7 +68,6 @@ const FIXED_MOVIE = 0xd1c2
 const MODE_SETTLE_MILLISECONDS = 700
 const MANUAL_EXPOSURE_MODE = 3
 const CANON_STILL_FILE = /\.(jpe?g|heif|heic|cr2|cr3)$/i
-const CANON_MOVIE_FILE = /\.(mp4|mov|crm)$/i
 /** The manual settings a movie-select transition can reset. */
 const exposureProperties = ['CanonIso', 'CanonAperture', 'CanonShutterSpeed', 'CanonWhiteBalance'] as const
 type ExposureProperty = (typeof exposureProperties)[number]
@@ -1317,7 +1316,7 @@ export class CanonCamera extends GenericCamera {
             prepare: () => this.openMovieMode(),
             listHandles: async () => {
                 clipWatch?.stop()
-                clipWatch = this.watchAddedObjects(name => CANON_MOVIE_FILE.test(name))
+                clipWatch = this.watchAddedObjects(name => mediaKind(name) === 'clip')
                 return new Set<number>()
             },
             findClip: async () => {
@@ -1326,7 +1325,7 @@ export class CanonCamera extends GenericCamera {
                 try {
                     const [movie] = await watch.next(clipFinalizationMilliseconds, 'movie')
                     const info = movie!.info
-                    const sizeBytes = info.objectCompressedSize === unstatedSize ? undefined : info.objectCompressedSize
+                    const sizeBytes = info.objectCompressedSize === OBJECT_SIZE_UNREPORTED ? undefined : info.objectCompressedSize
                     const reference = { source: 'object', storageId: info.storageID, objectHandle: movie!.handle, name: info.filename } as const
                     return {
                         mediaId: encodeMediaId({ ...reference, ...(sizeBytes !== undefined && { sizeBytes }) }),

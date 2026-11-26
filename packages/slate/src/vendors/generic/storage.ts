@@ -1,7 +1,7 @@
 import { CameraClipNotFoundError } from '@camera/errors'
 import type { GenericCamera } from '@vendors/generic/generic-camera'
 import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
-import { cardSlotNumbers } from '@vendors/generic/media-id'
+import { cardSlotNumbers, mediaKind } from '@vendors/generic/media-id'
 
 /** What the card readings need from a driver; Sony also switches to content transfer first. */
 export type StorageDriver = Pick<GenericCamera, 'registry' | 'send' | 'storageCanRecord'> & { prepareStorageRead?(): Promise<void> }
@@ -69,7 +69,7 @@ export async function waitForNewCameraMovie(driver: HandleDriver, baseline: Set<
                 const response = await driver.send(operations.GetObjectInfo, {ObjectHandle: handle})
                 const info = response.data, bytes = Number(info?.objectCompressedSize)
                 if (response.code === 0x2001 && Number.isSafeInteger(bytes) && bytes > 0 && info?.associationType === 0
-                    && /\.(mp4|mov|mxf|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}
+                    && mediaKind(info?.filename || '') === 'clip') return {...info, handle}
             }
         } catch (error) { lastError = error }
         const remaining = deadline - Date.now()
