@@ -57,6 +57,7 @@ import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
+import { nikonStorageCanRecord } from '@vendors/nikon/card-storage'
 import { matchesNikonShutter, nikonShutterLabel } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
 
@@ -144,6 +145,11 @@ export class NikonCamera extends GenericCamera {
         }
         if (![0x100e, 0x90c0, 0x9201, 0x9207, 0x920a].some(code => supported.includes(code)))
             throw new CameraRefusedError('recover', 'Nikon advertises file transfer without camera controls; inspect camera power and mode')
+    }
+
+    /** Host read/delete access is enough when the body's own movie prohibition flags clear the card. */
+    override async storageCanRecord(_storageId: number, accessCapability: number) {
+        return nikonStorageCanRecord(this, accessCapability)
     }
 
     /** @internal Closing a recording session restores Nikon's photo/application modes before Stop. */

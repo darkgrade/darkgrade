@@ -1,12 +1,16 @@
 import {describe,it,expect,vi} from 'vitest'
 import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@vendors/generic/storage'
-import {readSonyMovieCard} from '@vendors/sony/card-storage'
-function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){return {get driver(){return ({vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}}})},get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})}}
+import {readSonyMovieCard, sonyStorageCanRecord} from '@vendors/sony/card-storage'
+import {nikonStorageCanRecord} from '@vendors/nikon/card-storage'
+// Each fake driver answers storageCanRecord as its brand's driver does: Nikon by its prohibition flags, Sony by its native card status, others by host access.
+const brandStorage=(vendor:number,camera:any)=>vendor===0x04b0?(_id:number,access:number)=>nikonStorageCanRecord(camera.driver,access):vendor===0x054c?(id:number)=>sonyStorageCanRecord(camera,id):async(_id:number,access:number)=>({writable:access===0})
+function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){const camera:any={get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})};const driver={vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}},get:camera.get,storageCanRecord:brandStorage(vendor,camera)};Object.defineProperty(camera,'driver',{get:()=>driver,configurable:true});return camera}
 describe('camera-side card write capability',()=>{
  function sonyBody(identity:()=>Promise<any>){
   const camera=fixture(1,'none',0x054c) as any
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
-  Object.defineProperty(camera,'driver',{get:()=>({vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}}}),configurable:true})
+  const driver={vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}},storageCanRecord:brandStorage(0x054c,camera)}
+  Object.defineProperty(camera,'driver',{get:()=>driver,configurable:true})
   camera.send=async(op:string)=>op==='identity'?identity():{code:0x2001,data:op==='ids'?[0x10001]:{accessCapability:1,maxCapacity:0n,freeSpaceInBytes:0n}}
   return camera
  }

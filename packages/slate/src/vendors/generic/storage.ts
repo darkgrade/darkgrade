@@ -1,8 +1,6 @@
 import { CameraClipNotFoundError } from '@camera/errors'
 import { protocolAccess } from '@camera/protocol-session'
-import {nikonCanRecordToStorage} from '@vendors/nikon/card-storage'
 import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
-import {sonyStorageRecordingCapability} from '@vendors/sony/card-storage'
 import { cardSlotNumbers } from '@vendors/generic/media-id'
 
 /** Read current card capacity and camera recording capability, independently of host upload access. */
@@ -19,10 +17,7 @@ export async function readCameraStorages(camera: any) {
         if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
         const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
-        const vendor = protocolAccess(camera).driver.vendorId
-        const sony = vendor === 0x054c ? await sonyStorageRecordingCapability(camera, Number(storageId)) : undefined
-        const writable = vendor === 0x04b0
-            ? await nikonCanRecordToStorage(camera, access) : sony ? sony.recordingReady : access === 0
+        const recording = await protocolAccess(camera).driver.storageCanRecord(Number(storageId), access)
         summaries.push({
             storageId: Number(storageId),
             slot: slots.get(Number(storageId)) ?? Number(storageId) >>> 16,
@@ -32,8 +27,7 @@ export async function readCameraStorages(camera: any) {
             freeBytes: Number(info.freeSpaceInBytes ?? info.FreeSpaceInBytes ?? 0),
             freeImages: info.freeSpaceInImages === undefined ? undefined : Number(info.freeSpaceInImages),
             hostAccessCapability: access,
-            writable,
-            ...sony,
+            ...recording,
         })
     }
     return summaries

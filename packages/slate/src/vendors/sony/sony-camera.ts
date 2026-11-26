@@ -80,6 +80,7 @@ import { minimumZoomTravel, SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } fr
 import { findSonyCardItem, sonyMediaCapability, type SonyNewestContent } from '@vendors/sony/media'
 import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
+import { sonyStorageCanRecord } from '@vendors/sony/card-storage'
 
 /** Card-index event type for a new file (bench, α7 V, 2026-11-24); other types are not mapped. */
 const SONY_CONTENT_ADDED_EVENT_TYPE = 1
@@ -1083,6 +1084,18 @@ export class SonyCamera extends GenericCamera {
             // it toward the body's interval before the next press or release.
             this.movieButtonAttemptedAt = performance.now()
         }
+    }
+
+    /** The host sees Sony's card as read-only; the body's native card status says whether it records. */
+    override async storageCanRecord(storageId: number) {
+        return sonyStorageCanRecord({
+            driver: this,
+            send: (operation, params, data, maxDataLength) => this.send(operation, params, data, maxDataLength),
+            getSonyPropertyStates: async () => {
+                await this.refreshPropertyStates()
+                return this.listPropertyStates()
+            },
+        }, storageId)
     }
 
     /**

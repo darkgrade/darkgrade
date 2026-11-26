@@ -141,6 +141,11 @@ export function standardPropertyState(descriptor: DevicePropDesc): StandardPrope
     }
 }
 
+/** What a driver says about recording to one card; brands may add their own evidence fields. */
+export interface StorageRecording {
+    writable: boolean
+}
+
 export class GenericCamera {
     protected emitter = new EventEmitter()
     public vendorId: number | null = null
@@ -1460,6 +1465,14 @@ export class GenericCamera {
 
     async downloadMedia(id: string, options: MediaDownloadOptions): Promise<Uint8Array> {
         return (await this.mediaGroup()).downloadMedia(id, options)
+    }
+
+    /**
+     * Whether the camera can record to one of its cards. PTP AccessCapability describes host access
+     * only: 0 is read/write. A brand whose card status says more overrides this, and may add evidence.
+     */
+    async storageCanRecord(_storageId: number, accessCapability: number): Promise<StorageRecording> {
+        return { writable: accessCapability === 0 }
     }
 
     /** Sony's property snapshot, Canon's EOS level after the standard BatteryLevel, the standard BatteryLevel elsewhere. */
