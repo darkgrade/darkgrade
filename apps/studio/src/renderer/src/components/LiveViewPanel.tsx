@@ -11,7 +11,7 @@ import {
 } from '@kevinschaich/components'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { PreviewQuality, type PreviewQualityProps } from '@renderer/components/PreviewQuality'
-import { useRecordingClock } from '@renderer/components/RecordingPanel'
+import { useRecordingClock } from '@renderer/lib/recording-clock'
 import { VisionOverlayLayer } from '@renderer/components/VisionOverlays'
 import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import { LivePicture } from '@renderer/gpu/LivePicture'

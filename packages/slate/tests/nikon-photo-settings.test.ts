@@ -44,19 +44,3 @@ it('refuses a photo-quality change while Nikon is recording', async () => {
     expect(camera.set).not.toHaveBeenCalled()
     expect(state().quality).toBe(7)
 })
-
-it('the generic Nikon ISO getter preserves Auto when an ISO test restores its original value', async () => {
-    const camera = nikonCamera()
-    let auto = 'ON', sensitivity = 'ISO 400'
-    camera.get = vi.fn(async property => property.name === 'ISOAutoControl' ? auto : sensitivity) as any
-    camera.set = vi.fn(async (property, value) => {
-        if (property.name === 'ISOAutoControl') auto = String(value)
-        else sensitivity = String(value)
-    }) as any
-    const original = await camera.getIso()
-    expect(original).toBe('ISO AUTO')
-    await camera.setIso('ISO 100')
-    expect(await camera.getIso()).toBe('ISO 100')
-    await camera.setIso(original)
-    expect(await camera.getIso()).toBe('ISO AUTO')
-})

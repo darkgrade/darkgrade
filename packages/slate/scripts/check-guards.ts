@@ -188,10 +188,7 @@ const nativeDirectories = ['src/transport/usb', 'src/transport/ip', 'src/ptp', '
 const sdkModule = (path: string) =>
     /^src\/vendors\/sony\/sdk-[^/]*$/.test(path) || path.startsWith('src/transport/sony-remote/')
 /** Native modules allowed one SDK import, as `file -> module`, each with why. */
-const sdkImportAllowlist: Record<string, string> = {
-    'src/vendors/generic/generic-camera.ts -> src/transport/sony-remote/sony-remote-sdk-transport':
-        'instanceof only, to label an SDK connection Wi-Fi; it calls nothing in the SDK',
-}
+const sdkImportAllowlist: Record<string, string> = {}
 
 function importedModules(file: ts.SourceFile): string[] {
     const specifiers: string[] = []

@@ -271,20 +271,22 @@ describe('Canon live-view lifecycle and controls', () => {
         expect(writes).toEqual([])
     })
 
-    it('only writes an advertised temperature and verifies readback', async () => {
+    // Admission (an advertised Kelvin only) is setControl's, as for every control.
+    it('writes a temperature and reads it back', async () => {
         const { camera, cache } = connectedCamera()
         cache.set(camera.registry.properties.CanonColorTemperature, { current: 5200, allowed: [5200, 5300] })
-        await expect(camera.setColorTemperature(5100)).rejects.toThrow('not advertised')
-        await camera.setColorTemperature(5300)
-        expect(await camera.getColorTemperature()).toBe(5300)
+        const property = camera.registry.properties.CanonColorTemperature
+        await camera.set(property, 5300)
+        expect(await camera.get(property)).toBe(5300)
     })
 
     it('surfaces rejected property writes instead of claiming success from stale cache', async () => {
         const { camera, cache } = connectedCamera()
         cache.set(camera.registry.properties.CanonColorTemperature, { current: 5200, allowed: [5200, 5300] })
         camera.send = (async () => ({ code: 0x2005 })) as typeof camera.send
-        await expect(camera.setColorTemperature(5300)).rejects.toThrow('write returned 0x2005')
-        expect(await camera.getColorTemperature()).toBe(5200)
+        const property = camera.registry.properties.CanonColorTemperature
+        await expect(camera.set(property, 5300)).rejects.toThrow('write returned 0x2005')
+        expect(await camera.get(property)).toBe(5200)
     })
 
     it('waits past an empty event poll for a delayed aperture update', async () => {
@@ -309,9 +311,9 @@ describe('Canon live-view lifecycle and controls', () => {
                           ],
             }
         }) as typeof camera.send
-        await camera.setAperture('f/4')
+        await camera.set(property, 'f/4')
         expect(eventPolls).toBe(2)
-        expect(await camera.getAperture()).toBe('f/4')
+        expect(await camera.get(property)).toBe('f/4')
     })
 
     it('uses the advertised aperture encoding when half/third stops share a display name', async () => {
@@ -336,9 +338,9 @@ describe('Canon live-view lifecycle and controls', () => {
                 }
             return { code: 0x2001 }
         }) as typeof camera.send
-        await camera.setAperture('f/4.5')
+        await camera.set(property, 'f/4.5')
         expect(written).toBe(0x2b)
-        expect(await camera.getAperture()).toBe('f/4.5')
+        expect(await camera.get(property)).toBe('f/4.5')
     })
 
     it('does not require the movie stop command to echo zero when the body reports standby', async () => {

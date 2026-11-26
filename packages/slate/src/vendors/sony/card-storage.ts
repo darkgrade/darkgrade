@@ -1,21 +1,23 @@
-import { protocolAccess } from '@camera/protocol-session'
+import type { Camera } from '@camera/index'
+import { protocolAccess, type ProtocolSession } from '@camera/protocol-session'
 import { sonyPtpMovieCard } from '@vendors/sony/ptp-recording-card'
 import { isVerifiedFeature } from '@camera/validated-models'
 
 /** Sony's remote-control storage is read-only to the host and reports zero byte capacity.
  * Native card status supplies camera-side recording evidence; preserve the host fields. */
-export async function sonyStorageRecordingCapability(camera: any, storageId: number) {
+export async function sonyStorageCanRecord(camera: SonyCardSession, storageId: number) {
     const card = await readSonyMovieCard(camera)
     const slot = storageId >>> 16
-    return {
-        recordingReady: card.status === 'ready' && card.slots.some(cardSlot => cardSlot === slot) && card.remainingMovieSeconds !== 0,
-        recordingEvidence: card,
-    }
+    const recordingReady = card.status === 'ready' && card.slots.some(cardSlot => cardSlot === slot) && card.remainingMovieSeconds !== 0
+    return { writable: recordingReady, recordingReady, recordingEvidence: card }
 }
+
+/** What reading Sony's card needs: the driver's operations, one send and fresh property states. */
+export type SonyCardSession = Camera | Pick<ProtocolSession, 'driver' | 'send' | 'getSonyPropertyStates'>
 
 /** Reuse the native destination; when a body omits it, try the single-slot read (bench-verified on the a6700 only)
  * and keep the native result if that read is refused or still cannot identify a card. */
-export async function readSonyMovieCard(camera: any) {
+export async function readSonyMovieCard(camera: SonyCardSession) {
     const card = await sonyPtpMovieCard(protocolAccess(camera))
     if (card.status !== 'unknown' || card.slots.length) return card
     try {

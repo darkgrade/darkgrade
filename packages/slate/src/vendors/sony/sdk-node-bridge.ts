@@ -1,5 +1,5 @@
 import type { SonySdkBridge } from '@vendors/sony/sdk-camera'
-import { sdkTelemetry } from '@core/telemetry'
+import { sdkTelemetry } from '@vendors/sony/sdk-telemetry'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 

@@ -1,6 +1,6 @@
 import { cameraOperations } from '@runtime/camera-operations'
 import type { Camera } from '@camera/index'
-import { announceCallSurface } from '@core/call-context'
+import { callFromSurface } from '@core/call-context'
 
 /**
  * The public Camera operations as the MCP tools and the CLI run them. The list is generated from
@@ -218,14 +218,6 @@ export async function runOperation(
     const method: unknown = operation && !operation.static ? Reflect.get(camera, name) : undefined
     if (!operation || typeof method !== 'function') throw new Error(`${name} is not an operation these surfaces run`)
     const values = argumentsFor(operation, input)
-    // Telemetry names the surface: the call reads it synchronously as it starts.
-    announceCallSurface(surface)
-    let pending: unknown
-    try {
-        pending = Reflect.apply(method, camera, values)
-    } finally {
-        announceCallSurface(undefined)
-    }
-    const result: unknown = await pending
+    const result: unknown = await callFromSurface(method, camera, values, surface)
     return separateFiles(name, result, input)
 }

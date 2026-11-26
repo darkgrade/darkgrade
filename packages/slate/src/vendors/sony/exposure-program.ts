@@ -71,6 +71,12 @@ export function sonyCounterpartExposureProgram(value: unknown): string | undefin
     return pair[0] === value ? pair[1] : pair[0]
 }
 
+/** The other half's program when the body advertises it now; undefined otherwise. */
+export function sonyAdvertisedCounterpart(program: { value: unknown; allowedValues?: readonly unknown[] }): string | undefined {
+    const counterpart = sonyCounterpartExposureProgram(program.value)
+    return counterpart !== undefined && program.allowedValues?.includes(counterpart) ? counterpart : undefined
+}
+
 /** Preserve the descriptor's width and every vendor bit, including unknown modes. */
 export class SonyExposureProgramCodec extends CustomCodec<string> {
     constructor(registry: PTPRegistry, private datatype: number) {

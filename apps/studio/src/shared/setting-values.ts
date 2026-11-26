@@ -35,7 +35,7 @@ const VALUE_SYNONYMS: [RegExp, RegExp][] = [
     [/^(photo|still|stills|picture)( mode)?$/i, /^photo$/],
 ]
 
-/** Finds the camera's own spelling of a requested value: "f/8" → "F8.0", "800" → "ISO 800", "manual" → "MF". */
+/** Finds the camera's own spelling of a requested value: "f/8" → "F8.0", "800" → "ISO 800", "manual" → "MF"; null when it offers no such value. */
 export function matchOption(name: SettingName, requested: string, options: string[]): string | null {
     const synonym = VALUE_SYNONYMS.find(([word]) => word.test(requested.trim()))
     const viaSynonym = synonym && options.find(option => synonym[1].test(option))
@@ -49,17 +49,7 @@ export function matchOption(name: SettingName, requested: string, options: strin
     const toNumber = NUMERIC_READERS[name]
     const target = toNumber?.(requested)
     if (!toNumber || !target) return null
-    let best: string | null = null
-    let bestDistance = Infinity
-    for (const option of options) {
-        const candidate = toNumber(option)
-        if (!candidate) continue
-        const distance = Math.abs(Math.log(candidate / target))
-        if (distance < bestDistance) {
-            best = option
-            bestDistance = distance
-        }
-    }
-    // Within a third of a stop counts as the same value spelled differently.
-    return bestDistance <= Math.log(2) / 3 + 1e-6 ? best : null
+    // The same number spelled differently ("1/250s", "ISO1600"); a value the camera does not offer is never rounded to one it does.
+    const equal = options.filter(option => toNumber(option) === target)
+    return equal.length === 1 ? equal[0] : null
 }

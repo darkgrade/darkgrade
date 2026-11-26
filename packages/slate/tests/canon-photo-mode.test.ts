@@ -116,7 +116,7 @@ it.each([false, true])('restores movie mode after a photo (capture fails: %s)', 
         if (failure) throw new Error('Transfer failed')
         return 'fresh photo'
     })
-    const result = settled(body.driver.withPhotoMode(capture))
+    const result = settled(body.driver.withStillMode(capture))
     if (failure) await expect(result).rejects.toThrow('Transfer failed')
     else await expect(result).resolves.toBe('fresh photo')
     expect(body.movie()).toBe(1)
@@ -125,7 +125,7 @@ it.each([false, true])('restores movie mode after a photo (capture fails: %s)', 
 it('reports the physical selector requirement without releasing or retrying movie mode', async () => {
     const body = canon({ movie: true, selector: 'ignored' })
     const capture = vi.fn()
-    const outcome = settled(body.driver.withPhotoMode(capture))
+    const outcome = settled(body.driver.withStillMode(capture))
     await expect(outcome).rejects.toBeInstanceOf(CameraUnsupportedError)
     await expect(outcome).rejects.toThrow('physical still/movie selector')
     expect(capture).not.toHaveBeenCalled()

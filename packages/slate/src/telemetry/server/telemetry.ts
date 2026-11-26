@@ -2,12 +2,12 @@ import { allowBurst } from '#telemetry-server/abuse-limits'
 import type { Database, Transaction } from '#telemetry-server/database'
 import { changeMatrixGeneration } from '#telemetry-server/matrix-generation'
 import { BATCH_SCHEMA, DIAGNOSTICS_NOTICE, NOTICE_VERSION, validateBatch } from '@darkgrade/slate/telemetry/batch'
-import { MAXIMUM_BODY_BYTES } from '@darkgrade/slate/telemetry/schema'
+import { CONTACT_CONFIRMATION_MILLISECONDS, INSTALLATION_KEY, installationKey, MAXIMUM_BODY_BYTES } from '@darkgrade/slate/telemetry/schema'
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 export const RETENTION_DAYS = 90
 export const DAILY_BATCH_LIMIT = 4096
-export const CONTACT_CONFIRMATION_MILLISECONDS = 2 * 60 * 60_000
+export { CONTACT_CONFIRMATION_MILLISECONDS }
 const DAY = 86_400_000
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 const dateKey = (date: Date) => date.toISOString().slice(0, 10)
@@ -27,10 +27,9 @@ const exact = (body: any, keys: string[]) => {
     if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !keys.includes(key)))
         fail(400, 'Invalid request')
 }
-const tokenPattern = /^dgi_([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.([A-Za-z0-9_-]{43})$/
 const credentialHash = (secret: string) => digest(secret)
 async function authenticate(database: Database, authorization: string) {
-    const match = tokenPattern.exec(authorization.replace(/^Bearer /, ''))
+    const match = INSTALLATION_KEY.exec(authorization.replace(/^Bearer /, ''))
     if (!authorization.startsWith('Bearer ') || !match) fail(401, 'Install key required')
     const installId = match![1]
     const install = await database.get(`installations/${installId}`)
@@ -144,7 +143,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
             const body = await readJson(request)
             exact(body, ['noticeVersion', 'installKey'])
             if (body.noticeVersion !== NOTICE_VERSION) fail(422, 'Unsupported telemetry protocol version')
-            const supplied = body.installKey === undefined ? undefined : tokenPattern.exec(String(body.installKey))
+            const supplied = body.installKey === undefined ? undefined : INSTALLATION_KEY.exec(String(body.installKey))
             if (body.installKey !== undefined && !supplied) fail(400, 'Invalid installation credential')
             const installId = supplied?.[1] ?? randomUUID(),
                 secret = supplied?.[2] ?? randomBytes(32).toString('base64url'),
@@ -170,7 +169,7 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
                 })
             })
             return Response.json(
-                { installId, installKey: `dgi_${installId}.${secret}`, noticeVersion: NOTICE_VERSION },
+                { installId, installKey: installationKey(installId, secret), noticeVersion: NOTICE_VERSION },
                 { status: 201 }
             )
         }
@@ -205,10 +204,8 @@ export function createTelemetry(database: Database, options: TelemetryOptions) {
         if (path === '/v2/installation' && method === 'DELETE') {
             // A persisted enrollment can outlive a lost registration response. Tombstone it first,
             // so a delayed registration/upload cannot recreate data after deletion.
-            const match =
-                /^Bearer dgi_([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.([A-Za-z0-9_-]{43})$/.exec(
-                    request.headers.get('authorization') ?? ''
-                )
+            const authorization = request.headers.get('authorization') ?? ''
+            const match = authorization.startsWith('Bearer ') ? INSTALLATION_KEY.exec(authorization.slice('Bearer '.length)) : null
             if (match)
                 await database.transaction(async transaction => {
                     const record = `installations/${match[1]}`

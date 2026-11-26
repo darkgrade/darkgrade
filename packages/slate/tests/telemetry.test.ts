@@ -1,4 +1,5 @@
-import { configureSlateTelemetry, slateTelemetry, sdkTelemetry } from '@core/telemetry'
+import { configureSlateTelemetry, slateTelemetry } from '@core/telemetry'
+import { sdkTelemetry } from '@vendors/sony/sdk-telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
 import { redactMessage, validateContribution } from '@contribute/schema'
 import { runOperation } from '@runtime/operations'

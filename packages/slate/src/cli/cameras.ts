@@ -1,4 +1,5 @@
-import { camerasInOtherModes, connectionHelp, usbId, type DiscoveredCamera } from '@cli/benchmark'
+import type { DiscoveredCamera } from '@camera/driver'
+import { camerasInOtherModes, connectionHelp, usbId } from '@cli/camera-selection'
 import type { Terminal } from '@cli/terminal'
 import { getVendorName } from '@ptp/definitions/vendor-ids'
 

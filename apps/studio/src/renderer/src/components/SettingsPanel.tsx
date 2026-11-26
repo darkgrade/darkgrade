@@ -119,18 +119,12 @@ interface SettingsPanelProps {
     cameraState: CameraState
     /** True while the card is read; changing settings then would interrupt the transfer. */
     locked: boolean
-    onSetIso: (value: string) => void
-    onSetShutterSpeed: (value: string) => void
-    onSetAperture: (value: string) => void
     onChangeControl: (name: CameraControlName, value: string) => void
 }
 
 export function SettingsPanel({
     cameraState,
     locked,
-    onSetIso,
-    onSetShutterSpeed,
-    onSetAperture,
     onChangeControl,
 }: SettingsPanelProps): React.JSX.Element {
     const disabled = !cameraState.connected || locked
@@ -148,7 +142,7 @@ export function SettingsPanel({
                             toNumber={shutterDialToNumber}
                             format={formatShutter}
                             disabled={disabled || !cameraState.controls?.shutterSpeed?.enabled || !cameraState.controls.shutterSpeed.options.length}
-                            onApply={onSetShutterSpeed}
+                            onApply={value => onChangeControl('shutterSpeed', value)}
                         />
                         <ExposureDial
                             label="Aperture"
@@ -157,7 +151,7 @@ export function SettingsPanel({
                             toNumber={apertureToNumber}
                             format={formatAperture}
                             disabled={disabled || !cameraState.controls?.aperture?.enabled || !cameraState.controls.aperture.options.length}
-                            onApply={onSetAperture}
+                            onApply={value => onChangeControl('aperture', value)}
                         />
                         <ExposureDial
                             label="ISO"
@@ -166,7 +160,7 @@ export function SettingsPanel({
                             toNumber={isoToNumber}
                             format={formatIso}
                             disabled={disabled || !cameraState.controls?.iso?.enabled || !cameraState.controls.iso.options.length}
-                            onApply={onSetIso}
+                            onApply={value => onChangeControl('iso', value)}
                         />
                     </div>
                     {cameraState.controls && (

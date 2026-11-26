@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
@@ -15,24 +15,6 @@ import ts from 'typescript'
 
 const packageDirectory = join(import.meta.dirname, '..')
 export const cameraOperationsPath = join(packageDirectory, 'src/runtime/camera-operations.ts')
-/**
- * Where the list was generated before 0495d1c. Test Bench (#59) still checks for it before it loads
- * Slate, so it is written as a re-export of the committed list (build/ stays out of git).
- */
-export const compatibilityOperationsPath = join(packageDirectory, 'build/generated/camera-operations.ts')
-export const compatibilityOperationsSource =
-    "// Written by scripts/generate-camera-operations.ts for hosts that load the list from its old place.\n" +
-    "export * from '../../src/runtime/camera-operations'\n"
-
-/** Writes the re-export at the old place when it is missing or different; returns its path. */
-export function writeCompatibilityOperations(): string {
-    if (!existsSync(compatibilityOperationsPath) || readFileSync(compatibilityOperationsPath, 'utf8') !== compatibilityOperationsSource) {
-        mkdirSync(dirname(compatibilityOperationsPath), { recursive: true })
-        writeFileSync(compatibilityOperationsPath, compatibilityOperationsSource)
-    }
-    return compatibilityOperationsPath
-}
-
 interface GeneratedParameter {
     name: string
     type: 'text' | 'number' | 'switch' | 'choice' | 'time'
@@ -197,14 +179,11 @@ export function cameraOperationsSource(): string {
     )
 }
 
-/** Writes the list when it changed, and its re-export at the old place; returns the list's path. */
+/** Writes the list when it changed; returns its path. */
 export function writeCameraOperations(): string {
     const content = cameraOperationsSource()
     if (!existsSync(cameraOperationsPath) || readFileSync(cameraOperationsPath, 'utf8') !== content) writeFileSync(cameraOperationsPath, content)
-    writeCompatibilityOperations()
     return cameraOperationsPath
 }
 
-// `--compatibility` writes only the re-export (typecheck runs it; it needs no TypeScript program).
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-    console.log(process.argv.includes('--compatibility') ? writeCompatibilityOperations() : writeCameraOperations())
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) console.log(writeCameraOperations())

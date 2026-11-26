@@ -34,8 +34,3 @@ function isValidVendorID(vendorId: number): vendorId is VendorID {
 export function getVendorName(vendorId: number): string {
     return isValidVendorID(vendorId) ? VendorNames[vendorId] : 'Unknown Vendor'
 }
-
-export function isSupportedVendor(vendorId: number): boolean {
-    const values: number[] = Object.values(VendorIDs)
-    return values.includes(vendorId)
-}

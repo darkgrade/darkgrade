@@ -492,7 +492,7 @@ describe('exposure settings on the Sony SDK session', () => {
 
     it('reads canonical names and writes the SDK value behind each', async () => {
         const { camera, writes } = sdkCamera()
-        await camera.connectUsb('unit-test')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         const { controls } = await camera.getCapabilities()
         expect(controls.aperture).toMatchObject({ value: 'f/2.8', allowedValues: ['f/2.8', 'f/4'] })
         expect(controls.iso).toMatchObject({ value: 'ISO 100', allowedValues: ['Auto', 'ISO 100', 'ISO 800'] })

@@ -16,9 +16,8 @@ import {
 import { CopyableValue, SETTING_BUTTON_CLASS, SettingRow, SettingsGroup } from '@renderer/components/SettingsRows'
 import type { DiagnosticsStatus } from '@shared/ipc'
 import { useEffect, useRef, useState } from 'react'
+import { shortenHomePath } from '@shared/format'
 
-/** Paths read better relative to the home folder, as Finder shows them. */
-const shortPath = (path: string): string => path.replace(/^\/Users\/[^/]+/, '~')
 
 export function DiagnosticsSettings() {
     const [status, setStatus] = useState<DiagnosticsStatus | null>(null)
@@ -80,7 +79,7 @@ export function DiagnosticsSettings() {
             setMessage('')
             toast.add({
                 title: passed ? 'Camera profile exported' : 'Partial camera profile exported',
-                description: `${checks.filter(check => check.passed).length} of ${checks.length} reads passed · ${shortPath(path)}`,
+                description: `${checks.filter(check => check.passed).length} of ${checks.length} reads passed · ${shortenHomePath(path)}`,
                 actionProps: { children: 'Show in Finder', onClick: () => void window.studio.revealPath(path) },
             })
         } catch {

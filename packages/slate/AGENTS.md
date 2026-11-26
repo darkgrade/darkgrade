@@ -14,7 +14,8 @@ driver. Deployment assets are in `telemetry/`, and server tests in `tests/teleme
 with `test:telemetry` or the full suite. Do not create another telemetry app or package.
 
 Diagnostics live in `packages/slate/src/contribute` and are exported as
-`@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
+`@darkgrade/slate/telemetry` and `/telemetry/{application,batch,protocol,schema,settings,installation-store}`
+(the `/contribute/*` aliases and the v1 `createContributions` client were removed on 2026-11-26).
 Use `@contribute/*` for imports inside Slate. Node settings stay separate from browser clients.
 The Node diagnostics tests live in `packages/slate/tests/contribute` and run in Slate's full
 test suite or with `bun run --cwd packages/slate test:contribute`.
@@ -74,8 +75,9 @@ Matrix and the bench CI build `src` alone; refresh it with `generate:operations`
 
 No vendor SDK in Slate or for USB (root `AGENTS.md`, Vendor SDKs): `transport/usb`, `transport/ip`,
 `ptp` and the native drivers in `vendors` never import `vendors/sony/sdk-*` or `transport/sony-remote`,
-and no SDK file is tracked; `check:guards` enforces both. The one allowlisted import is
-`generic-camera.ts`'s `instanceof SonyRemoteSdkTransport`, which only labels the connection Wi-Fi.
+and no SDK file is tracked; `check:guards` enforces both, with no allowlisted import. A transport
+names its own connection (`connectionKind()`; the SDK transport says `wifi`), so native code never asks
+which transport it has. `SonyWifiCamera` has no USB connect: USB is native PTP only.
 The Camera façade must open USB through the driver's existing `connectTransport` lifecycle.
 Opening the raw transport bypasses event subscription, channel reset and per-connection
 diagnostic/identity cleanup. Test disconnect/connect and recover/connect on the same Camera,

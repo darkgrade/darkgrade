@@ -1,5 +1,6 @@
 import {nikonCamera} from '@tests/fixtures/nikon'
 import {describe, expect, it, vi} from 'vitest'
+import {nikonShutterLabel} from '@vendors/nikon/shutter-values'
 
 function fixture(mode = 'PHOTO') {
     const camera = nikonCamera()
@@ -22,23 +23,24 @@ function fixture(mode = 'PHOTO') {
             getSet: state.readOnly ? 'GET' : 'GET_SET', formFlag: 2, currentValueRaw: current,
             currentValueDecoded: current, supportedValuesRaw: [0x0001007d, 0x00011f40, 0x00010fa0, 0x000d000a, 0xffffffff, 0xfffffffd]}} as any
     })
-    return {camera, writes, state}
+    // The body's current value, as Nikon names it: what a readback of the descriptor shows.
+    return {camera, writes, state, current: () => nikonShutterLabel(current)}
 }
 
 describe('Nikon semantic shutter API', () => {
     it.each(['PHOTO', 'VIDEO'])('writes exact advertised fractions in %s mode and verifies readback', async mode => {
-        const {camera, writes} = fixture(mode)
+        const {camera, writes, current} = fixture(mode)
         for (const value of ['1/8000', '1/4000', '1.3s', '1/125']) await camera.setShutterSpeed(value)
         expect(writes).toEqual([0x00011f40, 0x00010fa0, 0x000d000a, 0x0001007d]
             .map(value => ({code: mode === 'PHOTO' ? 0xd100 : 0xd1a8, value})))
-        expect(await camera.getShutterSpeed()).toBe('1/125')
+        expect(current()).toBe('1/125')
     })
     it('retains Bulb and Time instead of interpreting their sentinels as fractions', async () => {
-        const {camera} = fixture()
+        const {camera, current} = fixture()
         await camera.setShutterSpeed('bulb')
-        expect(await camera.getShutterSpeed()).toBe('BULB')
+        expect(current()).toBe('BULB')
         await camera.setShutterSpeed('Time')
-        expect(await camera.getShutterSpeed()).toBe('TIME')
+        expect(current()).toBe('TIME')
     })
     it.each(['1/0', '-1', 'NaN', '1/16000', '1junk', '1/8000junk'])('rejects %s without writing', async value => {
         const {camera, writes} = fixture()

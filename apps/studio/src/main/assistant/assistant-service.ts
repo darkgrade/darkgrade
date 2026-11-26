@@ -18,6 +18,8 @@ import { app } from 'electron'
 import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
+import { errorMessage } from '@shared/format'
+import { MODEL_PROGRESS_INTERVAL_MS, progressThrottle } from '@main/progress-throttle'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
@@ -32,7 +34,6 @@ const PARALLEL_REQUESTS = 2
 const INTENT_SLOT = 0
 const AGENT_SLOT = 1
 const MAXIMUM_AGENT_STEPS = 5
-const PROGRESS_INTERVAL_MS = 150
 /** A request from speech gets this long in all; past it, it's reported as failed and the next one runs. */
 const REQUEST_TIMEOUT_MS = 30_000
 /** One tool (a camera command) gets this long before it counts as failed. */
@@ -121,13 +122,8 @@ function describeResult(tool: string, data: Record<string, unknown>): string {
     switch (tool) {
         case 'camera_set_control':
             return `${CAMERA_CONTROL_LABELS[data.id as keyof typeof CAMERA_CONTROL_LABELS] ?? data.id}: ${data.value}`
-        case 'adjust_exposure': {
-            const switched = data.switchedFromAuto as { setting: string; nowManual: string } | undefined
-            const change = `${data.changed} ${data.from} → ${data.to}`
-            return switched
-                ? `${switched.setting} was on auto, so I set it to ${switched.nowManual} first. ${change}`
-                : change
-        }
+        case 'adjust_exposure':
+            return `${data.changed} ${data.from} → ${data.to}`
         case 'adjust_color_temperature': {
             const changes = (data.changes as { colorTemperature?: { from: unknown; to: unknown } }[]) ?? []
             const temperature = changes.find(change => change.colorTemperature)?.colorTemperature
@@ -618,7 +614,7 @@ class AssistantService {
             )
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'done', reply } satisfies VoiceIntent)
         } catch (error) {
-            const reply = error instanceof Error ? error.message : String(error)
+            const reply = errorMessage(error)
             this.trace(`intent ${intent.id} direct ${tool.name} failed (${Date.now() - startedMs} ms): ${reply}`)
             this.log(`“${intent.quote}” failed: ${reply}`, 'error')
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'failed', reply } satisfies VoiceIntent)
@@ -679,7 +675,7 @@ class AssistantService {
                 reply,
             } satisfies VoiceIntent)
         } catch (error) {
-            const reply = error instanceof Error ? error.message : String(error)
+            const reply = errorMessage(error)
             this.log(`“${intent.quote}” failed: ${reply}`, 'error')
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'failed', reply } satisfies VoiceIntent)
         }
@@ -694,7 +690,7 @@ class AssistantService {
         } catch (error) {
             return {
                 ok: false,
-                text: `Invalid arguments for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+                text: `Invalid arguments for ${tool.name}: ${errorMessage(error)}`,
             }
         }
         progress.onToolCall?.(tool.name, input)
@@ -709,7 +705,7 @@ class AssistantService {
                 image: result.image,
             }
         } catch (error) {
-            const text = error instanceof Error ? error.message : String(error)
+            const text = errorMessage(error)
             progress.onToolResult?.(tool.name, false, text, Date.now() - toolStartedMs)
             return { ok: false, text }
         }
@@ -766,11 +762,9 @@ class AssistantService {
     private async startEngine(): Promise<number> {
         try {
             if (!this.cache.isCached(NEMOTRON_ASSISTANT)) this.log('Downloading the assistant model (one time)')
-            let lastReportMs = 0
+            const report = progressThrottle(MODEL_PROGRESS_INTERVAL_MS)
             const [modelPath, projectorPath] = await this.cache.ensure(NEMOTRON_ASSISTANT, progress => {
-                const now = Date.now()
-                if (progress.receivedBytes !== progress.totalBytes && now - lastReportMs < PROGRESS_INTERVAL_MS) return
-                lastReportMs = now
+                if (!report(progress.receivedBytes === progress.totalBytes)) return
                 this.setStatus({ phase: 'downloading', ...progress })
             })
             this.setStatus({ phase: 'starting', message: null })
@@ -805,7 +799,7 @@ class AssistantService {
             this.log('Assistant ready')
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message })
             throw error

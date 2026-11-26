@@ -31,6 +31,8 @@ import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
+import { loadNativeAddon } from '@main/native-addon'
 
 type CameraOptions = NonNullable<ConstructorParameters<typeof Camera>[0]>
 type Transport = NonNullable<CameraOptions['transport']>
@@ -68,21 +70,7 @@ interface SwiftUsbAddon {
 
 const require = createRequire(import.meta.url)
 
-let swiftAddon: SwiftUsbAddon | null | undefined
-function loadSwiftAddon(): SwiftUsbAddon | null {
-    if (swiftAddon !== undefined) return swiftAddon
-    swiftAddon = null
-    if (process.platform !== 'darwin') return null
-    const file = app.isPackaged
-        ? join(process.resourcesPath, 'native', 'swift-usb.node')
-        : join(app.getAppPath(), 'native', 'build', 'swift-usb.node')
-    try {
-        swiftAddon = require(file) as SwiftUsbAddon
-    } catch {
-        // Not built on this machine.
-    }
-    return swiftAddon
-}
+const loadSwiftAddon = () => loadNativeAddon<SwiftUsbAddon>('swift-usb')
 
 /** Slate's transport interface on the Swift add-on: containers in and out, the class reset and the camera's events. */
 class SwiftUsbTransport implements Transport {
@@ -181,7 +169,7 @@ export function experimentalCameraOptions(
             return { usb: new WebUSB({ allowAllDevices: true }) }
         } catch (error) {
             log(
-                `node-usb-rs could not be loaded (${error instanceof Error ? error.message : String(error)}); using node-usb`
+                `node-usb-rs could not be loaded (${errorMessage(error)}); using node-usb`
             )
             return {}
         }
@@ -270,7 +258,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
                 void host
                     .enqueue(() => host.camera.getLiveViewFrame())
                     .catch(error =>
-                        host.log(`Live view could not return to shooting: ${error instanceof Error ? error.message : String(error)}`, true)
+                        host.log(`Live view could not return to shooting: ${errorMessage(error)}`, true)
                     )
                     .finally(() => (returningToShooting = false))
             }

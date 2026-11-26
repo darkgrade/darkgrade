@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import type { CameraCapabilities, CameraControlId, CameraRecordingState, OperationAvailability } from '@camera/controls'
 import type {
     CameraEventHandler,
@@ -20,7 +21,7 @@ import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
+import { AccessDenied, DeviceBusy, DevicePropNotSupported, OK, OperationNotSupported } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -50,14 +51,17 @@ import { encodeMediaId, mediaKind } from '@vendors/generic/media-id'
 import { recordingCapability } from '@vendors/generic/recording-lifecycle'
 import { afterPossibleRelease, afterShutterRelease, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
 import type { NikonLiveViewDataset } from '@vendors/nikon/datasets/nikon-live-view-dataset'
-import { ISOAutoControl } from '@vendors/nikon/definitions/nikon-operation-definitions'
 import { NIKON_AF_AREA_VALUES } from '@vendors/nikon/definitions/nikon-property-definitions'
 import { HardwareError, InvalidStatus, MfDriveStepEnd, NotLiveView, OutOfFocus, SilentReleaseBusy } from '@vendors/nikon/definitions/nikon-response-definitions'
 import type { NikonQueuedEvent } from '@vendors/nikon/event-data'
 import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
-import { matchesNikonShutter, nikonShutterLabel } from '@vendors/nikon/shutter-values'
+import { nikonStorageCanRecord } from '@vendors/nikon/card-storage'
+import { observeNikonControls, writeNikonControl } from '@vendors/nikon/controls'
+import type { ControlWrite } from '@vendors/generic/control-observation'
+import { decodeNikonVendorCodes, NIKON_VENDOR_CODES_MAXIMUM } from '@vendors/nikon/vendor-codes'
+import { matchesNikonShutter } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
 
 /** How often Nikon's event queue is read while someone is listening. */
@@ -144,6 +148,13 @@ export class NikonCamera extends GenericCamera {
         }
         if (![0x100e, 0x90c0, 0x9201, 0x9207, 0x920a].some(code => supported.includes(code)))
             throw new CameraRefusedError('recover', 'Nikon advertises file transfer without camera controls; inspect camera power and mode')
+    }
+
+    override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: true }
+
+    /** Host read/delete access is enough when the body's own movie prohibition flags clear the card. */
+    override async storageCanRecord(_storageId: number, accessCapability: number) {
+        return nikonStorageCanRecord(this, accessCapability)
     }
 
     /** @internal Closing a recording session restores Nikon's photo/application modes before Stop. */
@@ -233,14 +244,9 @@ export class NikonCamera extends GenericCamera {
         }
     }
 
-    async getShutterSpeed(): Promise<string> {
-        const native = await this.shutterDescriptor()
-        return native ? nikonShutterLabel(native.descriptor.currentValueRaw as number) : super.getShutterSpeed()
-    }
-
     async setShutterSpeed(value: string): Promise<void> {
         const native = await this.shutterDescriptor()
-        if (!native) return super.setShutterSpeed(value)
+        if (!native) return this.setStandardProperty('ExposureTime', value)
         const { property, descriptor, mode } = native
         if (mode === 'VIDEO') {
             try {
@@ -330,7 +336,7 @@ export class NikonCamera extends GenericCamera {
     /** Drain one event batch explicitly; opening a camera does not start a background poll. */
     async pollEvents(): Promise<NikonQueuedEvent[]> {
         const extended = await this.send(this.registry.operations.GetEventEx, {})
-        const legacy = extended.code === 0x2005 ? await this.send(this.registry.operations.GetEvent, {}) : undefined
+        const legacy = extended.code === OperationNotSupported.code ? await this.send(this.registry.operations.GetEvent, {}) : undefined
         const response = legacy ?? extended
         const operation = legacy ? 'GetEvent' : 'GetEventEx'
         if (response.code !== OK.code) throw new PTPResponseError(response.code, undefined, { operation })
@@ -346,17 +352,6 @@ export class NikonCamera extends GenericCamera {
             this.handleEvent({ ...event, transactionId: 0 })
         }
         return events
-    }
-
-    async getIso(): Promise<string> {
-        if ((await this.get(ISOAutoControl)) === 'ON') return 'ISO AUTO'
-        return super.getIso()
-    }
-
-    async setIso(value: string): Promise<void> {
-        if (value.toLowerCase().includes('auto')) return this.set(ISOAutoControl, 'ON')
-        await this.set(ISOAutoControl, 'OFF')
-        await this.set(this.registry.properties.ExposureIndex, value)
     }
 
     /**
@@ -604,17 +599,13 @@ export class NikonCamera extends GenericCamera {
     async getVendorPropertyCodes(): Promise<number[]> {
         const operation = this.registry.operations.GetVendorCodes
         await this.requireFocusOperations([operation])
-        const maximumCount = 4096
-        const response = await this.send(operation, { Kind: 13 }, undefined, 4 + maximumCount * 4 + 12)
+        const response = await this.send(operation, { Kind: 13 }, undefined, 4 + NIKON_VENDOR_CODES_MAXIMUM * 4 + 12)
         const data = response.data
         if (response.code !== OK.code || !(data instanceof Uint8Array) || data.length < 4)
             throw new Error('Nikon vendor property enumeration failed')
-        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-        const littleEndian = this.transport.isLittleEndian()
-        const count = view.getUint32(0, littleEndian)
-        if (count > maximumCount || data.length !== 4 + count * 4)
-            throw new Error('Nikon vendor property enumeration returned an invalid array length')
-        return Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, littleEndian))
+        const codes = decodeNikonVendorCodes(data, this.transport.isLittleEndian())
+        if (!codes) throw new Error('Nikon vendor property enumeration returned an invalid array length')
+        return codes
     }
 
     /** The advertised operations each focus action needs, live view included. */
@@ -873,7 +864,7 @@ export class NikonCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: mode })
             if (response.code === OK.code) return
             const failure = `Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`
-            if (response.code !== 0x200f) throw new Error(failure)
+            if (response.code !== AccessDenied.code) throw new Error(failure)
             // A denial may mean the body already has that state: accept only a fresh observation, else retry briefly.
             const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             const observed = condition.includes('notInApplicationMode') ? 'OFF' : 'ON'
@@ -1018,6 +1009,18 @@ export class NikonCamera extends GenericCamera {
      * PC-camera mode are restored afterwards, whether or not the camera took the selector. The
      * caller confirms the readback; the selector is sent once.
      */
+    override async observeControlStates(requested?: CameraControlId, deviceInfo?: DeviceInfo) {
+        return observeNikonControls(this, requested, deviceInfo)
+    }
+
+    override async writeControlValue(write: ControlWrite): Promise<void> {
+        return writeNikonControl(this, write)
+    }
+
+    override async sendPhotoVideoMode(requested: PhotoVideoMode): Promise<void> {
+        return this.selectPhotoVideoMode(requested === 'video' ? 'VIDEO' : 'PHOTO')
+    }
+
     async selectPhotoVideoMode(mode: 'PHOTO' | 'VIDEO'): Promise<void> {
         await this.getLiveViewStatus()
         // A failed restoration leaves the body's mode unknown, whatever the selector did.
@@ -1380,10 +1383,10 @@ const nikonResponseError = (code: number, operation: string) =>
 
 /** Only OperationNotSupported permits the standard fallback; a refused property is not a missing operation. */
 const standardFallback = (code: number, property: PropertyDefinition) =>
-    code === 0x2005 && property.code >= 0 && property.code <= 0xffff
+    code === OperationNotSupported.code && property.code >= 0 && property.code <= 0xffff
 
 const isUnsupportedProperty = (error: unknown) =>
-    error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)
+    error instanceof PTPResponseError && (error.code === OperationNotSupported.code || error.code === DevicePropNotSupported.code)
 
 /**
  * Reports a failure of a Nikon operation that is not one of the three public errors: a refused

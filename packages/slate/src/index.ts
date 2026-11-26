@@ -1,4 +1,4 @@
-export { runBenchmark, runCameraBenchmark } from '@workflows/telemetry-benchmark'
+export { runBenchmark } from '@workflows/telemetry-benchmark'
 export type { BenchmarkCheck, BenchmarkOptions } from '@workflows/telemetry-benchmark'
 export { recordFirstContact } from '@workflows/first-contact'
 export { isValidatedModel, isVerifiedFeature, validatedCameraModels, verifiedFeatureModels } from '@camera/validated-models'
@@ -73,8 +73,6 @@ export type { CameraInfo, ConnectOptions, DiscoveredCamera, RecoveryReport } fro
 export type { DeviceDescriptor } from '@transport/interfaces/device.interface'
 export type { TransportInterface } from '@transport/interfaces/transport.interface'
 export type { OperationParams, OperationResponse, EventParams } from '@ptp/types/type-helpers'
-export { inspectMovieTrackHandlers, readCameraMovieAudio } from '@camera/movie-audio'
-export type { CameraMovieAudio } from '@camera/movie-audio'
 export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@ptp/transaction-channel'
 export {
     PTPDecodeError,
@@ -90,21 +88,6 @@ export {
 // Logger configuration
 export { defaultLoggerConfig } from '@core/logger-config'
 export type { LoggerConfig } from '@core/logger-config'
-
-// Core type definitions
-export * from '@ptp/types/codec'
-export * from '@ptp/types/datatype'
-export * from '@ptp/types/event'
-export * from '@ptp/types/operation'
-export * from '@ptp/types/parameter'
-export * from '@ptp/types/property'
-export * from '@ptp/types/response'
-
-
-// Data sets (PTP datasets with codecs)
-export * from '@ptp/datasets/device-info-dataset'
-export * from '@ptp/datasets/object-info-dataset'
-export * from '@ptp/datasets/storage-info-dataset'
 
 // Vendor-named drivers, registries, transports and diagnostics are in @darkgrade/slate/protocol (src/protocol.ts).
 export {VideoTake} from '@workflows/video-take'

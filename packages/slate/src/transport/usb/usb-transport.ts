@@ -5,7 +5,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import type { USBTransportOptions } from '@transport/transport-factory'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { ContainerType, parseContainer } from '@ptp/container'
 import { InEndpoint, Interface, usb } from 'usb'
 
 export interface EndpointConfiguration {
@@ -424,6 +424,10 @@ export class USBTransport implements TransportInterface {
         this.logger.addLog({ type: 'console', level: 'info', consoleLevel: 'info', args: [message] })
     }
 
+    private logError(message: string, error: unknown): void {
+        this.logger.addLog({ type: 'console', level: 'error', consoleLevel: 'error', args: [message, error instanceof Error ? error.message : String(error)] })
+    }
+
     private logBulkTransfer(
         direction: 'send' | 'receive',
         data: Uint8Array,
@@ -432,7 +436,7 @@ export class USBTransport implements TransportInterface {
         transactionId: number,
         status: USBTransferStatus
     ): void {
-        const { type } = USBContainerBuilder.parseContainer(data)
+        const { type } = parseContainer(data)
         this.logger.addLog({
             type: 'usb_transfer',
             level: 'info',
@@ -442,7 +446,7 @@ export class USBTransport implements TransportInterface {
             endpointAddress: `0x${endpoint.toString(16)}`,
             sessionId,
             transactionId,
-            phase: type === USBContainerType.COMMAND ? 'request' : type === USBContainerType.DATA ? 'data' : 'response',
+            phase: type === ContainerType.COMMAND ? 'request' : type === ContainerType.DATA ? 'data' : 'response',
             status,
         })
     }
@@ -553,7 +557,7 @@ export class USBTransport implements TransportInterface {
         })
         pollableEndpoint.on('error', error => {
             if (!this.connected || this.handleDeviceLoss(error)) return
-            console.error('Error listening for interrupt: ', error)
+            this.logError('Error listening for interrupt:', error)
             // node-usb stops polling after an error. Wait until its pending
             // transfer has ended before clearing the halt and rearming events.
             if (++recoveries > 3) return
@@ -564,7 +568,7 @@ export class USBTransport implements TransportInterface {
                         if (this.connected && this.pollingEndpoint === pollableEndpoint)
                             pollableEndpoint.startPoll(1, 64)
                     })
-                    .catch(recoveryError => console.error('USB event listener recovery failed:', recoveryError))
+                    .catch(recoveryError => this.logError('USB event listener recovery failed:', recoveryError))
             })
         })
         pollableEndpoint.startPoll(1, 64)
@@ -640,7 +644,7 @@ export class USBTransport implements TransportInterface {
                 // while the camera has nothing to report: there is no event yet, so read again.
                 if (error instanceof Error && error.message === 'Cancelled') continue
 
-                console.error('Error listening for interrupt: ', error)
+                this.logError('Error listening for interrupt:', error)
                 // A failing endpoint is retried a few times, spaced out; it never spins.
                 if (++failures > 3) return
                 await new Promise(resolve => setTimeout(resolve, 100 * failures))
@@ -651,7 +655,7 @@ export class USBTransport implements TransportInterface {
     private handleInterruptData(data: Uint8Array, status: USBTransferStatus): void {
         if (!this.endpoints) return
 
-        const container = USBContainerBuilder.parseEvent(data)
+        const container = parseContainer(data, ContainerType.EVENT)
         const view = new DataView(container.payload.buffer, container.payload.byteOffset, container.payload.byteLength)
         const event: PTPEvent = { code: container.code, transactionId: container.transactionId, parameters: [] }
 

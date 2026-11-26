@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import { CameraConfirmationError } from '@camera/confirmation'
 import type {
     CameraCapabilities,
@@ -40,7 +41,6 @@ import { recognizedDescriptorValues } from '@ptp/datasets/device-prop-desc-datas
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
-import { randomSessionId } from '@ptp/definitions/session'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -53,6 +53,7 @@ import { controlValueNames } from '@vendors/control-properties'
 import type { MediaCapability, VideoCapability } from '@vendors/generic/capability-groups'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera } from '@vendors/generic/generic-camera'
+import { normalizeCameraPower } from '@vendors/power-reading'
 import {
     cardSteps,
     classified,
@@ -74,13 +75,17 @@ import type { SonyDevicePropDesc } from '@vendors/sony/datasets/sdi-ext-device-p
 import { parseLiveViewDataset } from '@vendors/sony/datasets/sony-live-view-dataset'
 import { completePreview } from '@vendors/generic/jpeg-end'
 import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datasets/sony-osd-image-dataset'
-import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
+import { SonyExposureProgramCodec, sonyAdvertisedCounterpart, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { sonyFocalLengthMillimetres, sonyLens } from '@vendors/sony/lens'
+import { sonyControlProperties } from '@vendors/sony/control-properties'
+import { sonyPhotoVideoModeState } from '@vendors/photo-video-mode'
+import { propertyWithCode, writeObservedProperty, type ControlObservation, type ControlWrite } from '@vendors/generic/control-observation'
 import { minimumZoomTravel, SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } from '@vendors/sony/zoom-motion'
 import { findSonyCardItem, sonyMediaCapability, type SonyNewestContent } from '@vendors/sony/media'
 import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
 import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
+import { sonyStorageCanRecord } from '@vendors/sony/card-storage'
 
 /** Card-index event type for a new file (bench, α7 V, 2026-11-24); other types are not mapped. */
 const SONY_CONTENT_ADDED_EVENT_TYPE = 1
@@ -358,7 +363,7 @@ export class SonyCamera extends GenericCamera {
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
-        const sessionId = (this.sessionId = randomSessionId())
+        const sessionId = (this.sessionId = this.createSessionId())
         const open = () =>
             this.send(this.registry.operations.SDIO_OpenSession, { SessionId: sessionId, FunctionMode: functionMode })
         let openResult = await open()
@@ -521,6 +526,12 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
+    /** Sony reports its battery among its own properties, read fresh. */
+    override async readPower() {
+        await this.refreshPropertyStates()
+        return normalizeCameraPower('sony', this.listPropertyStates())
+    }
+
     listPropertyStates(): SonyPropertyState[] {
         return [...this.propertyCache.values()]
             .map(descriptor => ({ descriptor, ...recognizedDescriptorValues(descriptor) }))
@@ -548,13 +559,6 @@ export class SonyCamera extends GenericCamera {
                     }),
             }))
             .sort((left, right) => left.code - right.code)
-    }
-
-    async getIso(): Promise<string> {
-        await this.refreshPropertyStates()
-        const mode = this.propertyCache.get(this.registry.properties.GainControlSetting.code)
-        if (mode?.vendorExtensions.enabled && mode.currentValueRaw === 1) return 'ISO AUTO'
-        return this.get(this.registry.properties.Iso)
     }
 
     async setIso(value: string): Promise<void> {
@@ -1084,6 +1088,59 @@ export class SonyCamera extends GenericCamera {
             // it toward the body's interval before the next press or release.
             this.movieButtonAttemptedAt = performance.now()
         }
+    }
+
+    override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: false }
+
+    /** Sony publishes one authoritative live inventory; ISO is composed with its gain mode. */
+    override async observeControlStates(): Promise<ControlObservation> {
+        const observed = await this.refreshPropertyStates()
+        const iso = this.isoControlState(observed)
+        return {
+            states: observed.map(state => (state.name === 'Iso' && iso ? iso : state)),
+            mappings: sonyControlProperties,
+            inventory: 'sony',
+            composed: { photoVideoMode: sonyPhotoVideoModeState(observed) },
+            lens: sonyLens(observed),
+        }
+    }
+
+    /** ISO goes through the gain-mode composite; every other control is the observed property. */
+    override async writeControlValue(write: ControlWrite): Promise<void> {
+        if (write.id !== 'iso') return writeObservedProperty(this, write)
+        if (!propertyWithCode(this, write.state.source.code))
+            throw new CameraUnsupportedError(write.id, 'Camera control property disappeared')
+        await this.setIso(write.vendorLabel)
+    }
+
+    /** Selects the same program in the other half (Manual ↔ Movie Manual), only when the body advertises it. */
+    override async sendPhotoVideoMode(requested: PhotoVideoMode, state: CameraControlState): Promise<void> {
+        // The admission read just refreshed this inventory.
+        const program = this.listPropertyStates().find(candidate => candidate.code === state.source.code)
+        const target = program && sonyAdvertisedCounterpart(program)
+        if (!program || target === undefined || sonyExposureProgramKind(target) !== requested)
+            throw new CameraRefusedError(
+                'photoVideoMode',
+                `The camera advertises no ${requested} counterpart of its current exposure program (${String(program?.value)})`
+            )
+        await this.set(this.registry.properties.ExposureProgramMode, target)
+    }
+
+    /** Holds an advertised still mode across one capture and its transfer, then restores the movie mode. */
+    override async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+        return withSonyPhotoMode(sonyPhotoModeDriver(this), capture)
+    }
+
+    /** The host sees Sony's card as read-only; the body's native card status says whether it records. */
+    override async storageCanRecord(storageId: number) {
+        return sonyStorageCanRecord({
+            driver: this,
+            send: (operation, params, data, maxDataLength) => this.send(operation, params, data, maxDataLength),
+            getSonyPropertyStates: async () => {
+                await this.refreshPropertyStates()
+                return this.listPropertyStates()
+            },
+        }, storageId)
     }
 
     /**
@@ -1723,7 +1780,7 @@ export class SonyCamera extends GenericCamera {
             const watch = (await this.announcesCardIndex()) ? this.watchCardIndex('takePhoto') : undefined
             let capture: SonyImage
             try {
-                capture = await withSonyPhotoMode(sonyPhotoModeDriver(this), async () => {
+                capture = await this.withStillMode(async () => {
                     const captured = await this.captureImage({
                         autofocus,
                         includeInfo: true,

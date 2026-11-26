@@ -24,6 +24,11 @@ export interface TransportInterface {
      */
     resetPort?(): Promise<void>
     getType(): TransportType
+    /**
+     * The connection as `Camera.getInfo()` reports it, for a transport that is not what getType() implies
+     * (Sony's authenticated SDK channel runs over Wi-Fi IP but is not PTP/IP). Without it: USB or PTP/IP.
+     */
+    connectionKind?(): 'usb' | 'wifi' | 'ip'
 
     /**
      * Get endianness for this transport

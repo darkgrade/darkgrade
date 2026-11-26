@@ -9,19 +9,12 @@ import { CanonCamera } from '@vendors/canon/canon-camera'
 import { GenericCamera } from '@vendors/generic/generic-camera'
 import { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
-import {
-    createFujifilmRegistry,
-    createLeicaRegistry,
-    createOlympusRegistry,
-    createPanasonicRegistry,
-    createSigmaRegistry,
-    type VendorOperationRegistry,
-} from '@vendors/registry'
 import { SonyCamera } from '@vendors/sony/sony-camera'
+import { vendorEntry } from '@vendors/vendors'
 
 /** Enumerate USB PTP devices of any vendor without opening a camera session: the bodies connect() can choose from. */
 export async function discoverCameras(): Promise<DiscoveredCamera[]> {
-    const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
+    const transport = new USBTransport(new Logger())
     const devices = await transport.listAttached()
     return devices.map(({ vendorId, productId, serialNumber, manufacturer, model }) => ({ vendorId, productId, serialNumber, manufacturer, model }))
 }
@@ -31,16 +24,6 @@ export function descriptorVendor(device?: DeviceDescriptor): number | undefined 
     return vendors.size === 1 ? [...vendors][0] : undefined
 }
 
-/** Vendors whose support is limited to cited vendor operation definitions, served by VendorExtensionCamera. */
-const vendorOperationRegistries: Record<number, (littleEndian: boolean) => VendorOperationRegistry> = {
-    [VendorIDs.FUJIFILM]: createFujifilmRegistry,
-    [VendorIDs.PANASONIC]: createPanasonicRegistry,
-    [VendorIDs.OLYMPUS]: createOlympusRegistry,
-    [VendorIDs.OM_DIGITAL]: createOlympusRegistry,
-    [VendorIDs.LEICA]: createLeicaRegistry,
-    [VendorIDs.SIGMA]: createSigmaRegistry,
-}
-
 /**
  * True when createCameraDriver would build the same kind of driver for this vendor. GenericCamera
  * reports no vendor, so without this a generic body's driver, with its policy and counters, would
@@ -48,9 +31,7 @@ const vendorOperationRegistries: Record<number, (littleEndian: boolean) => Vendo
  */
 export function driverServesVendor(driver: CameraDriverInstance, vendorId: number): boolean {
     if (driver.vendorId === vendorId) return true
-    const dedicated =
-        new Set<number>([VendorIDs.SONY, VendorIDs.NIKON, VendorIDs.CANON]).has(vendorId) || vendorId in vendorOperationRegistries
-    return Object.getPrototypeOf(driver) === GenericCamera.prototype && !dedicated
+    return Object.getPrototypeOf(driver) === GenericCamera.prototype && !vendorEntry(vendorId)
 }
 
 export function createCameraDriver(
@@ -59,7 +40,7 @@ export function createCameraDriver(
     owner: Camera
 ): CameraDriverInstance {
     const { transport, logger, options } = context
-    const vendorRegistry = vendorId === undefined ? undefined : vendorOperationRegistries[vendorId]
+    const vendor = vendorEntry(vendorId)
     const driver: CameraDriverInstance =
         vendorId === VendorIDs.SONY
             ? new SonyCamera(transport, logger)
@@ -67,8 +48,8 @@ export function createCameraDriver(
               ? new NikonCamera(transport, logger)
               : vendorId === VendorIDs.CANON
                 ? new CanonCamera(transport, logger)
-                : vendorRegistry
-                  ? new VendorExtensionCamera(transport, logger, vendorRegistry(transport.isLittleEndian()), vendorId!)
+                : vendor?.driver === 'extension'
+                  ? new VendorExtensionCamera(transport, logger, vendor.registry(transport.isLittleEndian()), vendor.vendorId)
                   : new GenericCamera(transport, logger)
     if (options.transactionPolicy) driver.configureTransactions(options.transactionPolicy)
     if (driver instanceof CanonCamera) driver.setKeepAliveEnabled(options.keepAlive ?? true)

@@ -21,6 +21,7 @@ import { IPC_EVENTS } from '@shared/ipc'
 import { existsSync, mkdirSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { progressThrottle } from '@main/progress-throttle'
 
 /** The card the pill describes: the first slot with a readable card, else the first slot reported. */
 function shownCard(cards: CardStatus[]): CardStatus | undefined {
@@ -136,7 +137,7 @@ export const mediaOperations: MediaOperations & ThisType<CameraService> = {
         const cached = this.previewCache.get(entry.id)
         if (cached) return cached
         const data = await this.withLiveViewPaused(async () => {
-            let lastReportMs = 0
+            const due = progressThrottle(DOWNLOAD_PROGRESS_INTERVAL_MS)
             this.previewAbort?.abort()
             const abort = new AbortController()
             this.previewAbort = abort
@@ -144,9 +145,7 @@ export const mediaOperations: MediaOperations & ThisType<CameraService> = {
             return this.enqueue(() =>
                 camera.downloadMedia(entry.id, {
                     onProgress: receivedBytes => {
-                        const now = Date.now()
-                        if (now - lastReportMs < DOWNLOAD_PROGRESS_INTERVAL_MS) return
-                        lastReportMs = now
+                        if (!due()) return
                         this.broadcast(IPC_EVENTS.PreviewProgress, {
                             receivedBytes,
                             fileBytes: entry.sizeBytes,
@@ -175,13 +174,11 @@ export const mediaOperations: MediaOperations & ThisType<CameraService> = {
                 fileBytes: entry.sizeBytes,
             } satisfies DownloadProgress)
         report(0)
-        let lastReportMs = 0
+        const due = progressThrottle(DOWNLOAD_PROGRESS_INTERVAL_MS)
         const data = await this.enqueue(() =>
             camera.downloadMedia(entry.id, {
                 onProgress: receivedBytes => {
-                    const now = Date.now()
-                    if (now - lastReportMs < DOWNLOAD_PROGRESS_INTERVAL_MS) return
-                    lastReportMs = now
+                    if (!due()) return
                     report(receivedBytes)
                 },
             })

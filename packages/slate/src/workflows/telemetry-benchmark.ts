@@ -5,6 +5,7 @@ import { SonyCamera } from '@vendors/sony/sony-camera'
 import { slateBuildMetadata } from '@core/telemetry'
 import { type ProtocolEvidence } from '@contribute/protocol'
 import { createNikonRegistry } from '@vendors/registry'
+import { decodeNikonVendorCodes } from '@vendors/nikon/vendor-codes'
 import { capturePropertyCodes } from '@vendors/capture-properties'
 
 export interface BenchmarkCheck {
@@ -40,18 +41,6 @@ export interface DescriptorShape {
 /** Whether a transport reports real hardware (`hardware`) or a simulation, as its telemetry records it. */
 export const transportEvidence = (transport: object): string | undefined =>
     (transport as { telemetryEvidence?: string }).telemetryEvidence
-
-/** The options `runCameraBenchmark` took before `photo` and `liveView`. */
-export interface LegacyBenchmarkOptions extends Omit<BenchmarkOptions, 'photo' | 'liveView'> {
-    capture?: boolean
-    live?: boolean
-}
-
-/** @deprecated Use `runBenchmark(camera, { photo, liveView })`. */
-export async function runCameraBenchmark(camera: Camera, options: LegacyBenchmarkOptions = {}) {
-    const { capture, live, ...rest } = options
-    return runBenchmark(camera, { ...rest, photo: capture, liveView: live })
-}
 
 /** Caller owns an idle, connected camera. Reads its full advertised inventory and bounded
  * safe numeric descriptors. Photo/live transfers remain explicit; no arbitrary vendor writes. */
@@ -145,9 +134,9 @@ export async function runBenchmark(camera: Camera, options: BenchmarkOptions = {
                     const bytes = result.data
                     if (result.code !== 0x2001 || !(bytes instanceof Uint8Array) || bytes.length < 4)
                         throw new Error('No vendor inventory')
-                    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), count = view.getUint32(0, true)
-                    if (count > 4096 || bytes.length !== 4 + count * 4) throw new Error('Invalid vendor inventory')
-                    const codes = [...new Set(Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true)))]
+                    const decoded = decodeNikonVendorCodes(bytes)
+                    if (!decoded) throw new Error('Invalid vendor inventory')
+                    const codes = [...new Set(decoded)]
                     instance.recordProtocol({ type: 'inventory', vendorId, category: 'property', codes }, 0x9439)
                     for (const code of codes.filter(code => !known.has(code)))
                         instance.recordProtocol({ type: 'unknown', vendorId, category: 'property', code, advertised: true }, 0x9439)

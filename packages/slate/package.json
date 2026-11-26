@@ -53,46 +53,6 @@
             "import": "./dist/runtime/ownership.mjs",
             "require": "./dist/runtime/ownership.cjs"
         },
-        "./contribute": {
-            "types": "./dist/contribute/index.d.ts",
-            "import": "./dist/contribute/index.mjs",
-            "require": "./dist/contribute/index.cjs"
-        },
-        "./contribute/application": {
-            "types": "./dist/contribute/application.d.ts",
-            "import": "./dist/contribute/application.mjs",
-            "require": "./dist/contribute/application.cjs"
-        },
-        "./contribute/batch": {
-            "types": "./dist/contribute/batch.d.ts",
-            "import": "./dist/contribute/batch.mjs",
-            "require": "./dist/contribute/batch.cjs"
-        },
-        "./contribute/installation-store": {
-            "types": "./dist/contribute/installation-store.d.ts",
-            "import": "./dist/contribute/installation-store.mjs",
-            "require": "./dist/contribute/installation-store.cjs"
-        },
-        "./contribute/node": {
-            "types": "./dist/contribute/node.d.ts",
-            "import": "./dist/contribute/node.mjs",
-            "require": "./dist/contribute/node.cjs"
-        },
-        "./contribute/protocol": {
-            "types": "./dist/contribute/protocol.d.ts",
-            "import": "./dist/contribute/protocol.mjs",
-            "require": "./dist/contribute/protocol.cjs"
-        },
-        "./contribute/schema": {
-            "types": "./dist/contribute/schema.d.ts",
-            "import": "./dist/contribute/schema.mjs",
-            "require": "./dist/contribute/schema.cjs"
-        },
-        "./contribute/settings": {
-            "types": "./dist/contribute/settings.d.ts",
-            "import": "./dist/contribute/settings.mjs",
-            "require": "./dist/contribute/settings.cjs"
-        },
         "./tsconfig.base.json": "./tsconfig.base.json",
         "./telemetry": {
             "types": "./dist/contribute/application.d.ts",
@@ -113,11 +73,6 @@
             "types": "./dist/contribute/installation-store.d.ts",
             "import": "./dist/contribute/installation-store.mjs",
             "require": "./dist/contribute/installation-store.cjs"
-        },
-        "./telemetry/node": {
-            "types": "./dist/contribute/node.d.ts",
-            "import": "./dist/contribute/node.mjs",
-            "require": "./dist/contribute/node.cjs"
         },
         "./telemetry/protocol": {
             "types": "./dist/contribute/protocol.d.ts",
@@ -154,7 +109,7 @@
         "telemetry/README.md"
     ],
     "scripts": {
-        "build": "bun run scripts/generate-camera-operations.ts --compatibility && vite build && tsc -p telemetry/tsconfig.json",
+        "build": "vite build && tsc -p telemetry/tsconfig.json",
         "dev": "vite build --watch",
         "test": "bun run scripts/test.ts",
         "test:unit": "bun run scripts/test.ts",
@@ -171,7 +126,7 @@
         "test:runtime": "bun run build && bun test ./tests/runtime",
         "mcp": "bun run src/runtime/stdio.ts",
         "generate:operations": "bun run scripts/generate-camera-operations.ts",
-        "typecheck": "bun run scripts/generate-camera-operations.ts --compatibility && tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit && tsc -p telemetry/tsconfig.json --noEmit",
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/runtime/tsconfig.json --noEmit && tsc -p telemetry/tsconfig.json --noEmit",
         "bench:recover": "bun run scripts/recover-camera.ts",
         "test:contribute": "bun run build && node --test tests/contribute/*.test.ts",
         "test:cli": "bun run build && node --test tests/cli/*.test.ts",

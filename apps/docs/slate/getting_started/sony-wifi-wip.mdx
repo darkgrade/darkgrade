@@ -13,7 +13,7 @@ A Bluetooth shutter command also saved a card image (700 to 699), verified throu
 
 ## Library interfaces
 
-`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/slate`. The SDK backend supports numeric advertised properties and allowed choices, body buttons, autofocus, AF-area requests, zoom, OSD/live-view requests, still release, and bounded movie controls. SDK identifiers differ from USB PTP identifiers. Readback is required before treating a setting as applied. `connectUsb(serial)` supports official-SDK preparation and observation under the same camera lease.
+`SonyWifiCamera`, `createSonySdkBridge`, and `SONY_SDK_PROPERTY_CODES` are exported from `@darkgrade/slate`. The SDK backend supports numeric advertised properties and allowed choices, body buttons, autofocus, AF-area requests, zoom, OSD/live-view requests, still release, and bounded movie controls. SDK identifiers differ from USB PTP identifiers. Readback is required before treating a setting as applied. USB is native PTP only (`Camera`); the SDK backend is never used over USB.
 
 `SonyBluetoothRemote` provides autofocus, shutter release, C1, focus near/far, zoom wide/tele, and guarded bounded recording through an injected Bluetooth channel. The platform owns bonding and GATT cleanup. It uses the published [RMT-P1BT command protocol](https://github.com/coral/freemote); it does not implement Sony's credential-sharing protocol. The command and notification characteristics use the standard Bluetooth UUID base under Sony's vendor service.
 
@@ -68,6 +68,6 @@ On the α6700: point coordinates round-tripped center → (160,160) → (480,320
 
 `SonyBluetoothRemote.captureBulb(milliseconds)` implements Sony's [two-press BULB behavior](https://support.sony.jp/electronics/support/compact-cameras-dsc-t-series/dsc-t9/articles/S1406120064092): release alone does not close the exposure. The stop press is attempted even if the exposure delay fails. The platform checks idle Manual focus, respects camera timer mode, bounds timed capture, and waits for processing before reporting success.
 
-The testbench confirms a new nonempty card-file entry in RemoteTransfer mode. Remaining-shot estimates can stay unchanged after a successful JPEG capture. `connectUsb(serial, {mode:'remote-transfer'})` enables the same card observation through the USB SDK oracle; existing callers default to Remote mode. USB observation and actual Bluetooth BULB capture passed on the α6700.
+The testbench confirms a new nonempty card-file entry in RemoteTransfer mode. Remaining-shot estimates can stay unchanged after a successful JPEG capture. Actual Bluetooth BULB capture passed on the α6700.
 
 Camera Console now browses recent card originals, downloads a selected JPEG/RAW/HEIF, and offers Bluetooth shutter plus SDK Wi-Fi photo transfer. MCP0.10.0 adds `camera_sony_list_photos` and `camera_sony_download_photo`; Bluetooth `capture-download` identifies its shutter and transfer transports separately. Console/MCP capture and download passed with ordinary shutter timing, bounded BULB and a two-second camera timer. Bluetooth focus/zoom readbacks round-tripped with the baseline restored. The installed card remains the limitation for movie recording.

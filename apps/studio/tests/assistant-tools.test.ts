@@ -22,6 +22,9 @@ describe('matching spoken values to the camera’s own', () => {
         ['focusMode', 'manual', ['AF-S', 'AF-C', 'DMF', 'MF'], 'MF'],
         ['focusMode', 'continuous', ['AF-S', 'AF-C', 'MF'], 'AF-C'],
         ['aperture', 'f/22', ['F2.8', 'F4.0', 'F5.6'], null],
+        ['iso', '1250', ['ISO 1000', 'ISO 1600'], null],
+        ['shutterSpeed', '1/250', ['1/200', '1/320'], null],
+        ['aperture', 'f/4.5', ['F4.0', 'F5.6'], null],
     ])('%s %j among %j matches %j, never the nearest unoffered value', (setting, spoken, options, expected) => {
         expect(matchOption(setting, spoken, options)).toBe(expected)
     })

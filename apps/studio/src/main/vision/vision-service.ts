@@ -20,10 +20,11 @@ import {
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
+import { MODEL_PROGRESS_INTERVAL_MS, progressThrottle } from '@main/progress-throttle'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
-const PROGRESS_INTERVAL_MS = 150
 const REQUEST_TIMEOUT_MS = 60_000
 
 /** What a vision engine answers; `imagePng` is the depth map or the instances drawn over the picture. */
@@ -119,7 +120,7 @@ class VisionEngine {
             this.host.log(`${name} ready`)
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.host.log(`${name}: ${message}`, 'error')
             this.failedKey = key
             this.setStatus({ phase: 'error', message })
@@ -133,15 +134,13 @@ class VisionEngine {
         if (models.some(model => !cache.isCached(model)))
             this.host.log(`Downloading ${visionModel(this.id).name} (one time)`)
         const received = new Map<string, number>()
-        let lastReportMs = 0
+        const report = progressThrottle(MODEL_PROGRESS_INTERVAL_MS)
         await Promise.all(
             models.map(model =>
                 cache.ensure(model, progress => {
                     received.set(model.id, progress.receivedBytes)
                     const receivedBytes = [...received.values()].reduce((sum, bytes) => sum + bytes, 0)
-                    const now = Date.now()
-                    if (receivedBytes !== totalBytes && now - lastReportMs < PROGRESS_INTERVAL_MS) return
-                    lastReportMs = now
+                    if (!report(receivedBytes === totalBytes)) return
                     this.setStatus({ phase: 'downloading', receivedBytes, totalBytes })
                 })
             )

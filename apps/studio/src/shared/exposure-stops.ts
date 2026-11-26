@@ -91,23 +91,3 @@ export function stepValue(
 export function isAutoValue(value: string | null, toNumber: (value: string) => number | null): boolean {
     return !!value && /auto/i.test(value) && toNumber(value) === null
 }
-
-/** The option nearest `target` on a log scale, ignoring specials like auto and bulb; null when none is numeric. */
-export function nearestNumericOption(
-    options: string[],
-    toNumber: (value: string) => number | null,
-    target: number
-): string | null {
-    let best: string | null = null
-    let bestDistance = Infinity
-    for (const option of options) {
-        const candidate = toNumber(option)
-        if (!candidate) continue
-        const distance = Math.abs(Math.log(candidate / target))
-        if (distance < bestDistance) {
-            best = option
-            bestDistance = distance
-        }
-    }
-    return best
-}

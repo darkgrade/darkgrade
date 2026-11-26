@@ -4,21 +4,9 @@ import { InspectorSection } from '@renderer/components/InspectorSection'
 import { downloadProgress } from '@renderer/lib/activity-store'
 import type { CameraState, DownloadProgress, FileEntry } from '@shared/ipc'
 import { Download, FolderOpen } from 'lucide-react'
+import { formatBytes, shortenHomePath } from '@shared/format'
+import { formatCaptureDate } from '@shared/format'
 
-function formatBytes(bytes: number): string {
-    if (bytes < 1000) return `${bytes} B`
-    if (bytes < 1000 * 1000) return `${(bytes / 1000).toFixed(1)} KB`
-    return `${(bytes / (1000 * 1000)).toFixed(1)} MB`
-}
-
-/** PTP dates arrive as "YYYYMMDDThhmmss"; show them the way Finder would. */
-export function formatCaptureDate(raw: string): string {
-    const match = /^(\d{4})-?(\d{2})-?(\d{2})T(\d{2}):?(\d{2})/.exec(raw)
-    if (!match) return raw
-    const [, year, month, day, hour, minute] = match
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
-    return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-}
 
 /** Overall progress: finished files plus the share of the current one received. */
 function downloadPercent(progress: DownloadProgress): number {
@@ -26,9 +14,6 @@ function downloadPercent(progress: DownloadProgress): number {
     return ((progress.completed + currentShare) / Math.max(1, progress.total)) * 100
 }
 
-function shortenHomePath(path: string): string {
-    return path.replace(/^\/Users\/[^/]+/, '~')
-}
 
 function isVideo(entry: FileEntry): boolean {
     return entry.kind === 'clip'

@@ -1,11 +1,5 @@
 import { surfaceOperation } from '@runtime/operations'
-import { cameraOperations } from '@runtime/camera-operations'
-import {
-    cameraOperationsPath,
-    cameraOperationsSource,
-    compatibilityOperationsPath,
-    writeCompatibilityOperations,
-} from '@scripts/generate-camera-operations'
+import { cameraOperationsPath, cameraOperationsSource } from '@scripts/generate-camera-operations'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -48,12 +42,5 @@ describe('the source tree', () => {
 
     it('carries the operation list the generator writes from Camera today', { timeout: 60_000 }, () => {
         expect(readFileSync(cameraOperationsPath, 'utf8')).toBe(cameraOperationsSource())
-    })
-
-    // Test Bench (#59) loads Slate only when the list exists at its old place in build/generated.
-    it('writes a re-export of the list at its old place, which serves the same operations', async () => {
-        expect(writeCompatibilityOperations()).toBe(compatibilityOperationsPath)
-        const old: { cameraOperations: unknown } = await import(compatibilityOperationsPath)
-        expect(old.cameraOperations).toBe(cameraOperations)
     })
 })

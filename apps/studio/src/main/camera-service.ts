@@ -47,8 +47,6 @@ export class CameraService {
     zoomReleases = 0
     clock: CameraClock | null = null
     clockTimer: ReturnType<typeof setInterval> | null = null
-    /** Which Sony property each setting was read from on this body. */
-    controlProperties = new Map<CameraControlName, string>()
     batteryTimer: ReturnType<typeof setInterval> | null = null
     recoveryInProgress = false
     disconnecting = false

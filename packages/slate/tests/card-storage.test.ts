@@ -1,12 +1,16 @@
 import {describe,it,expect,vi} from 'vitest'
 import {readCameraStorages, readCameraObjectHandles, waitForNewCameraMovie} from '@vendors/generic/storage'
-import {readSonyMovieCard} from '@vendors/sony/card-storage'
-function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){return {get driver(){return ({vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}}})},get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})}}
+import {readSonyMovieCard, sonyStorageCanRecord} from '@vendors/sony/card-storage'
+import {nikonStorageCanRecord} from '@vendors/nikon/card-storage'
+// Each fake body is a protocol session; its driver answers storageCanRecord as its brand's driver does: Nikon by its prohibition flags, Sony by its native card status, others by host access.
+const brandStorage=(vendor:number,camera:any)=>vendor===0x04b0?(_id:number,access:number)=>nikonStorageCanRecord(camera.driver,access):vendor===0x054c?(id:number)=>sonyStorageCanRecord(camera,id):async(_id:number,access:number)=>({writable:access===0})
+function fixture(access:number,flags='notInApplicationMode (Not in application mode)',vendor=0x04b0){const camera:any={get:async()=>flags,send:async(op:string)=>({code:0x2001,data:op==='ids'?[0x10000,0x20001]:{accessCapability:access,maxCapacity:256n,freeSpaceInBytes:128n,volumeLabel:'Slot 2'}})};const driver={vendorId:vendor,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info'},properties:{MovieRecProhibitionCondition:'flags'}},get:camera.get,send:(...args:any[])=>camera.send(...args),storageCanRecord:brandStorage(vendor,camera)};Object.defineProperty(camera,'driver',{get:()=>driver,configurable:true});return camera}
 describe('camera-side card write capability',()=>{
  function sonyBody(identity:()=>Promise<any>){
   const camera=fixture(1,'none',0x054c) as any
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
-  Object.defineProperty(camera,'driver',{get:()=>({vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}}}),configurable:true})
+  const driver={vendorId:0x054c,registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'info',GetDeviceInfo:'identity'}},send:(...args:any[])=>camera.send(...args),storageCanRecord:brandStorage(0x054c,camera)}
+  Object.defineProperty(camera,'driver',{get:()=>driver,configurable:true})
   camera.send=async(op:string)=>op==='identity'?identity():{code:0x2001,data:op==='ids'?[0x10001]:{accessCapability:1,maxCapacity:0n,freeSpaceInBytes:0n}}
   return camera
  }
@@ -15,13 +19,13 @@ describe('camera-side card write capability',()=>{
   expect(validated).toMatchObject({status:'ready',slots:[1],singleSlotFallback:true,verified:true})
   const other=sonyBody(async()=>({code:0x2001,data:{model:'ILCE-7M4'}}))
   expect(await readSonyMovieCard(other)).toMatchObject({status:'ready',slots:[1],singleSlotFallback:true,verified:false})
-  expect((await readCameraStorages(other))[0]).toMatchObject({writable:true,recordingReady:true,recordingEvidence:{verified:false}})
+  expect((await readCameraStorages(other.driver))[0]).toMatchObject({writable:true,recordingReady:true,recordingEvidence:{verified:false}})
  })
  it('keeps the native unknown result when the fallback is refused or cannot read the card',async()=>{
   for(const identity of [async()=>({code:0x2019}),async()=>{throw new Error('GetDeviceInfo timed out')}]){
    const camera=sonyBody(identity)
    expect(await readSonyMovieCard(camera)).toMatchObject({status:'unknown',slots:[]})
-   expect((await readCameraStorages(camera))[0].writable).toBe(false)
+   expect((await readCameraStorages(camera.driver))[0].writable).toBe(false)
   }
   const unreadable=sonyBody(async()=>({code:0x2001,data:{model:'ILCE-7M4'}}))
   unreadable.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:0}]
@@ -32,36 +36,35 @@ describe('camera-side card write capability',()=>{
  it('does not invent a single-slot Sony destination for an unidentified body',async()=>{
   const camera=fixture(1,'none',0x054c) as any
   camera.getSonyPropertyStates=async()=>[{code:0xd248,rawValue:1,sonyEnabledFlag:2}]
-  expect((await readCameraStorages(camera))[0].writable).toBe(false)
+  expect((await readCameraStorages(camera.driver))[0].writable).toBe(false)
  })
- it('accepts Nikon host read/delete access when camera protection is clear',async()=>{const cards=await readCameraStorages(fixture(2));expect(cards).toHaveLength(1);expect(cards[0]).toMatchObject({writable:true,hostAccessCapability:2,capacityBytes:256})})
+ it('accepts Nikon host read/delete access when camera protection is clear',async()=>{const cards=await readCameraStorages(fixture(2).driver);expect(cards).toHaveLength(1);expect(cards[0]).toMatchObject({writable:true,hostAccessCapability:2,capacityBytes:256})})
  it.each([
   ...['noCardInserted','cardAccessError','cardNotFormatted','noFreeSpace','cardProtected'].map(flag=>['Nikon '+flag,2,flag,0x04b0] as const),
   ['Nikon host permissions on another brand',2,'none',0x04a9],
   ['missing Nikon protection telemetry',2,'',0x04b0],
   ['a non-deletable read-only card',1,undefined,0x04b0],
- ] as const)('rejects %s',async(_label,access,flag,vendor)=>{expect((await readCameraStorages(fixture(access,flag,vendor)))[0].writable).toBe(false)})
+ ] as const)('rejects %s',async(_label,access,flag,vendor)=>{expect((await readCameraStorages(fixture(access,flag,vendor).driver))[0].writable).toBe(false)})
 })
 
 describe('populated card object enumeration',()=>{
  it('preserves the rejected storage operation and camera response code for MCP diagnosis',async()=>{
-  const camera={get driver(){return ({registry:{operations:{GetStorageIDs:'ids'}}})},send:async()=>({code:0xa107})}
+  const camera:any={registry:{operations:{GetStorageIDs:'ids'}},send:async()=>({code:0xa107})}
   await expect(readCameraStorages(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
   await expect(readCameraObjectHandles(camera)).rejects.toThrow('GetStorageIDs: 0xa107')
  })
  it('prepares vendor storage before issuing standard card commands',async()=>{
   const calls:string[]=[]
-  const instance={prepareStorageRead:async()=>{calls.push('prepare')},registry:{operations:{GetStorageIDs:'ids'}}}
-  const camera={get driver(){return instance},send:async()=>{calls.push('ids');return {code:0x2001,data:[]}}}
+  const camera:any={prepareStorageRead:async()=>{calls.push('prepare')},registry:{operations:{GetStorageIDs:'ids'}},send:async()=>{calls.push('ids');return {code:0x2001,data:[]}}}
   await readCameraStorages(camera);await readCameraObjectHandles(camera)
   expect(calls).toEqual(['prepare','ids','prepare','ids'])
-  instance.prepareStorageRead=async()=>{throw new Error('Transfer mode refused')}
+  camera.prepareStorageRead=async()=>{throw new Error('Transfer mode refused')}
   await expect(readCameraObjectHandles(camera)).rejects.toThrow('Transfer mode refused')
   expect(calls).toHaveLength(4)
  })
  it('never queries empty slots and combines populated slots without duplicate handles',async()=>{
   const calls:number[]=[]
-  const camera={get driver(){return ({registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles'}}})},send:async(op:string,params:any)=>{
+  const camera:any={registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles'}},send:async(op:string,params:any)=>{
    if(op==='ids')return {code:0x2001,data:[0x10000,0x20001,0x30001]}
    calls.push(params.StorageID);return {code:0x2001,data:[7,params.StorageID===0x20001?8:9]}
   }}
@@ -69,13 +72,13 @@ describe('populated card object enumeration',()=>{
   expect(calls).toEqual([0x20001,0x30001])
  })
  it('does not interpret a rejected object listing as an empty card',async()=>{
-  const camera={get driver(){return ({registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles'}}})},send:async(op:string)=>({code:op==='ids'?0x2001:0x2013,data:op==='ids'?[0x20001]:undefined})}
+  const camera:any={registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles'}},send:async(op:string)=>({code:op==='ids'?0x2001:0x2013,data:op==='ids'?[0x20001]:undefined})}
   await expect(readCameraObjectHandles(camera)).rejects.toThrow('0x2013')
  })
 })
 
 describe('card movie finalization',()=>{
- function movieCamera(){let reads=0;return {get driver(){return ({registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles',GetObjectInfo:'info'}}})},send:async(op:string)=>{
+ function movieCamera():any{let reads=0;return {registry:{operations:{GetStorageIDs:'ids',GetObjectHandles:'handles',GetObjectInfo:'info'}},send:async(op:string):Promise<any>=>{
   if(op==='ids')return {code:0x2001,data:[0x20001]}
   if(op==='handles')return ++reads===1?{code:0xa107}:{code:0x2001,data:[1,2]}
   return {code:0x2001,data:{filename:'NEW.MP4',objectCompressedSize:12,associationType:0}}

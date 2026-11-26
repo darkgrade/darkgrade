@@ -1,7 +1,8 @@
 import type { Clip } from '@camera/driver'
 import type { Camera } from '@camera/index'
-import { cameraCommandDependencies, chooseCameraDevice, describeDevice, type DiscoveredCamera } from '@cli/benchmark'
-export { parseCameraId } from '@cli/benchmark'
+import type { DiscoveredCamera } from '@camera/driver'
+import { cameraCommandDependencies, chooseCameraDevice, describeDevice } from '@cli/camera-selection'
+export { parseCameraId } from '@cli/camera-selection'
 
 export interface StartRecordingOptions {
     camera?: { vendorId: number; productId: number }

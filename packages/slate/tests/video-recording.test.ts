@@ -3,7 +3,7 @@ import {UsbVideoRecording} from '@camera/video-recording'
 import {NikonCamera} from '@vendors/nikon/nikon-camera'
 function fixture(){
  const calls:{operation:string;args:any}[]=[],operations=Object.fromEntries(['GetStorageIDs','GetStorageInfo','GetObjectHandles','GetObjectInfo','GetPartialObjectEx'].map(name=>[name,name]));let recorded=false
- const camera:any={get driver(){const driver={vendorId:0x04b0,registry:{operations,properties:{MovieRecProhibitionCondition:'flags'}},send:(operation:any,args:any)=>camera.send(operation,args)};return {...driver,fullObjectSize:(handle:number,reported:number)=>NikonCamera.prototype.fullObjectSize.call(driver as any,handle,reported)}},get:async()=> 'notInApplicationMode',send:async(operation:string,args:any)=>{
+ const camera:any={get driver(){const driver={vendorId:0x04b0,registry:{operations,properties:{MovieRecProhibitionCondition:'flags'}},send:(operation:any,args:any)=>camera.send(operation,args),get:(property:any)=>camera.get(property)};return {...driver,fullObjectSize:(handle:number,reported:number)=>NikonCamera.prototype.fullObjectSize.call(driver as any,handle,reported),storageCanRecord:(storageId:number,access:number)=>NikonCamera.prototype.storageCanRecord.call(driver as any,storageId,access)}},get:async()=> 'notInApplicationMode',send:async(operation:string,args:any)=>{
   calls.push({operation,args})
   if(operation==='GetStorageIDs')return {code:0x2001,data:[0x10000,0x20001]}
   if(operation==='GetStorageInfo')return {code:0x2001,data:{accessCapability:2,maxCapacity:1000n,freeSpaceInBytes:500n}}

@@ -21,9 +21,6 @@ export interface SettingsOperations {
     readControls(camera: Camera, capabilities: CameraCapabilities): Promise<CameraControls>
     observedControl(name: CameraControlName, state: CameraControlState): CameraControl
     setControl(name: CameraControlName, value: string): Promise<CameraControls | null>
-    setIso(value: string): Promise<CameraSettings>
-    setShutterSpeed(value: string): Promise<CameraSettings>
-    setAperture(value: string): Promise<CameraSettings>
 }
 
 export const settingsOperations: SettingsOperations & ThisType<CameraService> = {
@@ -34,7 +31,6 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
         const camera = this.requireCamera()
         try {
             const capabilities = await camera.getCapabilities()
-            this.controlProperties.clear()
             this.controls = await this.readControls(camera, capabilities)
             this.focusPointAvailable = capabilities.operations?.setFocusPoint?.supported === true
             this.updateLensFromCapabilities(capabilities)
@@ -72,7 +68,6 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
         const pick = (name: CameraControlName): CameraControl | null => {
             const state = capabilities.controls[name]
             if (!state) return null
-            this.controlProperties.set(name, state.source.name)
             return this.observedControl(name, state)
         }
         const controls = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, pick(name)])) as CameraControls
@@ -108,7 +103,6 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             }
             this.controls ??= Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => [name, null])) as CameraControls
             this.controls = { ...this.controls, [name]: this.observedControl(name, observed) }
-            this.controlProperties.set(name, observed.source.name)
             if (name === 'iso' || name === 'shutterSpeed' || name === 'aperture')
                 this.settings = { ...this.settings, [name]: observed.value }
             this.broadcastState()
@@ -129,20 +123,5 @@ export const settingsOperations: SettingsOperations & ThisType<CameraService> = 
             }
             return this.controls
         })
-    },
-
-    async setIso(value: string): Promise<CameraSettings> {
-        await this.setControl('iso', value)
-        return this.settings
-    },
-
-    async setShutterSpeed(value: string): Promise<CameraSettings> {
-        await this.setControl('shutterSpeed', value)
-        return this.settings
-    },
-
-    async setAperture(value: string): Promise<CameraSettings> {
-        await this.setControl('aperture', value)
-        return this.settings
     },
 }

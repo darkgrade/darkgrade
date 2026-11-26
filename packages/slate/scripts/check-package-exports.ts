@@ -23,18 +23,17 @@ try {
     const [pack] = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', isolated], { encoding: 'utf8' }))
     execFileSync('tar', ['-xzf', join(isolated, pack.filename), '-C', packaged, '--strip-components=1'])
     const entries = {
-        '': 'createContributions',
+        '': 'createApplicationDiagnostics',
         '/application': 'createApplicationDiagnostics',
         '/batch': 'validateBatch',
         '/installation-store': 'installationFileStore',
-        '/node': 'fileConsentStore',
         '/protocol': 'validateProtocol',
         '/schema': 'validateContribution',
         '/settings': 'nodeDiagnostics',
     }
     for (const format of ['esm', 'commonjs']) {
         const checks = Object.entries(entries).map(([path, name]) => {
-            const module = JSON.stringify('@darkgrade/slate/contribute' + path)
+            const module = JSON.stringify('@darkgrade/slate/telemetry' + path)
             return `if(typeof (${format === 'esm' ? 'await import' : 'require'}(${module}))[${JSON.stringify(name)}]!=='function')throw new Error(${JSON.stringify(path + ':' + name)})`
         }).join(';')
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e', checks],
@@ -44,28 +43,13 @@ try {
             `if(typeof (${cli}).runDarkgradeCli !== 'function')throw new Error('CLI runner is missing')`],
             { cwd: isolated, stdio: 'inherit' })
         const load = (name: string) => format === 'esm' ? `await import('${name}')` : `require('${name}')`
-        const telemetryChecks = Object.entries(entries).filter(([path]) => path).map(([path, name]) =>
-            `if((${load('@darkgrade/slate/telemetry' + path)})[${JSON.stringify(name)}] !==
-                (${load('@darkgrade/slate/contribute' + path)})[${JSON.stringify(name)}])
-                throw new Error('Telemetry must reuse the existing client: ' + ${JSON.stringify(path)})`
-        ).join(';')
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
             `process.env.DATABASE_URL='invalid';process.env.TELEMETRY_PUBLIC_URL='invalid';
-            ${telemetryChecks};
-            if((${load('@darkgrade/slate/telemetry')}).createApplicationDiagnostics !==
-                (${load('@darkgrade/slate/contribute/application')}).createApplicationDiagnostics)
-                throw new Error('Telemetry must use the application client');
             const server=${load('@darkgrade/slate/telemetry/server')};
             for(const name of ['createTelemetry','cleanupWithdrawals','resendContactSender',
                 'operatorApi','exportMatrixPage'])
                 if(typeof server[name]!=='function')throw new Error('Missing telemetry server API: '+name)`,
         ], { cwd: isolated, stdio: 'inherit' })
-    }
-    for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
-        const entry = join(isolated, 'browser.ts')
-        writeFileSync(entry, `export * from ${JSON.stringify('@darkgrade/slate/contribute' + path)}`)
-        const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
-        if (!result.success) throw new AggregateError(result.logs, 'Browser diagnostics import failed: ' + path)
     }
     for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
         const entry = join(isolated, 'telemetry-browser.ts')
@@ -84,10 +68,10 @@ try {
     if (!controlsBuild.success) throw new AggregateError(controlsBuild.logs, 'Browser control vocabulary failed')
     writeFileSync(join(isolated, 'package.json'), JSON.stringify({ type: 'module' }))
     writeFileSync(join(isolated, 'types.ts'), `
-        import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/slate/contribute/application'
-        import { type CameraContext } from '@darkgrade/slate/contribute/schema'
-        import { type DiagnosticBatch } from '@darkgrade/slate/contribute/batch'
-        import { nodeDiagnostics } from '@darkgrade/slate/contribute/settings'
+        import { createApplicationDiagnostics, type InstallationState } from '@darkgrade/slate/telemetry/application'
+        import { type CameraContext } from '@darkgrade/slate/telemetry/schema'
+        import { type DiagnosticBatch } from '@darkgrade/slate/telemetry/batch'
+        import { nodeDiagnostics } from '@darkgrade/slate/telemetry/settings'
         import { runDarkgradeCli } from '@darkgrade/slate/cli'
         import { createApplicationDiagnostics as telemetryClient } from '@darkgrade/slate/telemetry'
         import { createTelemetry, type Database } from '@darkgrade/slate/telemetry/server'
@@ -119,7 +103,7 @@ try {
     symlinkSync(realpathSync(require.resolve('usb/package.json')).replace(/\/package\.json$/, ''),
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
-        import { Camera, configureSlateTelemetry, type DeviceInfo,
+        import { Camera, configureSlateTelemetry,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
             type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
@@ -132,7 +116,7 @@ try {
             type DigitalZoom, type LiveViewQuality, type LiveViewFrame, type FocusFrame, type CameraLens,
             runBenchmark } from '@darkgrade/slate'
         import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession, genericOperationRegistry, genericPropertyRegistry,
-            genericEventRegistry, TransportFactory, TransportType } from '@darkgrade/slate/protocol'
+            genericEventRegistry, TransportFactory, TransportType, type DeviceInfo } from '@darkgrade/slate/protocol'
         // @ts-expect-error Transports and registries are protocol-level; they are in @darkgrade/slate/protocol.
         import { TransportFactory as RootTransportFactory } from '@darkgrade/slate'
         // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.

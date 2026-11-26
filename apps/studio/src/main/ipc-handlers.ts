@@ -6,7 +6,8 @@ import { studioMcpServer } from '@main/mcp/mcp-server'
 import { sendDecodedSurface, sendLiveFrame } from '@main/metal-frames'
 import { openPerfWindow, perfMonitorOpen, receivePerfReport, sampleProcesses, tracePerf } from '@main/perf-monitor'
 import { preferences } from '@main/preferences'
-import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
+import { isTrustedRendererFrame } from '@main/renderer-security'
+import { studioRendererUrl } from '@main/studio-window'
 import { studioView } from '@main/studio-view'
 import { SWIFT_LIVE_VIEW_SURFACE, swiftLiveViewJpeg, type DecodedSurface } from '@main/usb-experiments'
 import { visionService } from '@main/vision/vision-service'
@@ -21,27 +22,22 @@ import type {
     StudioViewState,
     TranscriptSegment,
 } from '@shared/ipc'
-import { IPC, IPC_EVENTS } from '@shared/ipc'
+import { INVOKE_CHANNELS, IPC_EVENTS, type InvokeData, type InvokeName, type StudioApi } from '@shared/ipc'
 import type { VisionModelId } from '@shared/vision-models'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { errorMessage } from '@shared/format'
 
-const rendererUrl = rendererDocumentUrl(
-    pathToFileURL(join(fileURLToPath(new URL('.', import.meta.url)), '../renderer/index.html')).href,
-    app.isPackaged,
-    process.env.ELECTRON_RENDERER_URL
-)
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-}
 
-function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> | T): void {
-    ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<T>> => {
+function handle<Name extends InvokeName>(
+    name: Name,
+    operation: (...args: Parameters<StudioApi[Name]>) => Promise<InvokeData<Name>> | InvokeData<Name>
+): void {
+    ipcMain.handle(INVOKE_CHANNELS[name], async (event, ...args): Promise<IpcResult<InvokeData<Name>>> => {
         try {
-            if (!isTrustedRendererFrame(event.senderFrame, rendererUrl)) throw new Error('Untrusted renderer frame')
-            const data = await operation(...(args as never[]))
+            if (!isTrustedRendererFrame(event.senderFrame, studioRendererUrl)) throw new Error('Untrusted renderer frame')
+            const data = await operation(...(args as Parameters<StudioApi[Name]>))
             return { ok: true, data }
         } catch (error) {
             return { ok: false, error: errorMessage(error) }
@@ -73,74 +69,71 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
         void studioMcpServer.apply(current.mcpServerEnabled, current.mcpServerPort)
     })
     studioMcpServer.onStatus(status => broadcastToAll(IPC_EVENTS.McpServerStatus, status))
-    handle(IPC.DiagnosticsStatus, diagnosticsStatus)
-    handle(IPC.DiagnosticsBenchmark, () => cameraService.benchmarkDiagnostics())
-    handle(IPC.DiagnosticsChange, changeDiagnostics)
-    handle(IPC.DiagnosticsContact, diagnosticsContact)
-    handle(IPC.PreferencesGet, () => preferences.get())
-    handle(IPC.PreferencesSet, (change: Partial<Preferences>) => preferences.set(change))
-    handle(IPC.McpServerGetStatus, () => studioMcpServer.getStatus())
-    handle(IPC.PerfSampleProcesses, sampleProcesses)
-    handle(IPC.PerfOpen, openPerfWindow)
-    handle(IPC.PerfIsOpen, perfMonitorOpen)
-    handle(IPC.PerfTrace, (seconds: number) => tracePerf(Math.min(10, Math.max(1, seconds))))
-    handle(IPC.PerfReport, (report: PerfReport) => receivePerfReport(report))
+    handle('getDiagnosticsStatus', diagnosticsStatus)
+    handle('diagnosticsBenchmark', () => cameraService.benchmarkDiagnostics())
+    handle('changeDiagnostics', changeDiagnostics)
+    handle('diagnosticsContact', diagnosticsContact)
+    handle('getPreferences', () => preferences.get())
+    handle('setPreferences', (change: Partial<Preferences>) => preferences.set(change))
+    handle('getMcpServerStatus', () => studioMcpServer.getStatus())
+    handle('perfSampleProcesses', sampleProcesses)
+    handle('perfOpen', openPerfWindow)
+    handle('perfIsOpen', perfMonitorOpen)
+    handle('perfTrace', (seconds: number) => tracePerf(Math.min(10, Math.max(1, seconds))))
+    handle('perfReport', (report: PerfReport) => receivePerfReport(report))
     assistantService.setBroadcast(broadcast)
     studioView.setBroadcast(broadcast)
-    handle(IPC.ViewReportState, (state: StudioViewState) => studioView.report(state))
-    handle(IPC.AssistantGetStatus, () => assistantService.getStatus())
-    handle(IPC.AssistantProcessTranscript, (segment: TranscriptSegment) => assistantService.processTranscript(segment))
-    handle(IPC.AssistantRelease, () => assistantService.release())
-    handle(IPC.AssistantPrepare, () => assistantService.prepare())
-    handle(IPC.AssistantWarmUp, (preview: { text: string; context: string }) => assistantService.warmUp(preview))
+    handle('reportViewState', (state: StudioViewState) => studioView.report(state))
+    handle('assistantGetStatus', () => assistantService.getStatus())
+    handle('assistantProcessTranscript', (segment: TranscriptSegment) => assistantService.processTranscript(segment))
+    handle('assistantRelease', () => assistantService.release())
+    handle('assistantPrepare', () => assistantService.prepare())
+    handle('assistantWarmUp', (preview: { text: string; context: string }) => assistantService.warmUp(preview))
     const startup = preferences.get()
     void studioMcpServer.apply(startup.mcpServerEnabled, startup.mcpServerPort)
     cameraService.setBroadcast(broadcast)
     voiceService.setBroadcast(broadcast)
     visionService.setBroadcast(broadcast)
-    handle(IPC.VisionGetStatus, () => visionService.getStatus())
-    handle(IPC.VisionOverlay, (model: VisionModelId, jpeg: Uint8Array | null, prompt: string) => {
+    handle('visionGetStatus', () => visionService.getStatus())
+    handle('visionOverlay', (model: VisionModelId, jpeg: Uint8Array | null, prompt: string) => {
         const picture = jpeg ?? cameraService.latestLiveViewFrame
         if (!picture) throw new Error('No live picture yet')
         return visionService.overlay(model, picture, prompt)
     })
-    handle(IPC.VoiceGetStatus, () => voiceService.getStatus())
-    handle(IPC.VoicePrepare, () => voiceService.prepare())
-    handle(IPC.VoiceRelease, () => voiceService.release())
-    handle(IPC.VoiceSaveSessionAudio, (pcm: Uint8Array) => voiceService.saveSessionAudio(pcm))
-    handle(IPC.VoiceDiagnostic, (message: string) => voiceService.writeEngineLog(`[studio] ${message}`))
+    handle('voiceGetStatus', () => voiceService.getStatus())
+    handle('voicePrepare', () => voiceService.prepare())
+    handle('voiceRelease', () => voiceService.release())
+    handle('voiceSaveSessionAudio', (pcm: Uint8Array) => voiceService.saveSessionAudio(pcm))
+    handle('voiceDiagnostic', (message: string) => voiceService.writeEngineLog(`[studio] ${message}`))
 
-    handle(IPC.Connect, () => cameraService.connect())
-    handle(IPC.Disconnect, () => cameraService.disconnect())
-    handle(IPC.GetState, () => cameraService.getState())
-    handle(IPC.GetSettings, () => cameraService.refreshSettings())
-    handle(IPC.SetIso, (value: string) => cameraService.setIso(value))
-    handle(IPC.SetShutterSpeed, (value: string) => cameraService.setShutterSpeed(value))
-    handle(IPC.SetAperture, (value: string) => cameraService.setAperture(value))
-    handle(IPC.ZoomStart, (direction: 'wide' | 'tele') => cameraService.zoomStart(direction))
-    handle(IPC.ZoomStop, () => cameraService.zoomStop())
-    handle(IPC.SetControl, (name: CameraControlName, value: string) => cameraService.setControl(name, value))
-    handle(IPC.Focus, () => cameraService.focus())
-    handle(IPC.FocusAt, (x: number, y: number) => cameraService.focusAt(x, y))
-    handle(IPC.Capture, (options?: CaptureOptions) => cameraService.capture(options))
-    handle(IPC.LiveViewStart, () => cameraService.startLiveView())
-    handle(IPC.LiveViewStop, () => cameraService.stopLiveView())
-    handle(IPC.RecordStart, () => cameraService.startRecording())
-    handle(IPC.RecordStop, () => cameraService.stopRecording())
-    handle(IPC.ListFiles, () => cameraService.listFiles())
-    handle(IPC.DownloadFile, (entry: DownloadRequest) => cameraService.downloadFile(entry))
-    handle(IPC.DownloadAll, () => cameraService.downloadAll())
-    handle(IPC.SetOsdOverlay, (enabled: boolean) => cameraService.setOsdOverlay(enabled))
-    handle(IPC.Thumbnail, (entry: DownloadRequest) => cameraService.thumbnail(entry))
-    handle(IPC.PreviewFile, (entry: DownloadRequest) => cameraService.previewFile(entry))
-    handle(IPC.CancelPreview, () => cameraService.cancelPreview())
+    handle('connect', () => cameraService.connect())
+    handle('disconnect', () => cameraService.disconnect())
+    handle('getState', () => cameraService.getState())
+    handle('getSettings', () => cameraService.refreshSettings())
+    handle('zoomStart', (direction: 'wide' | 'tele') => cameraService.zoomStart(direction))
+    handle('zoomStop', () => cameraService.zoomStop())
+    handle('setControl', (name: CameraControlName, value: string) => cameraService.setControl(name, value))
+    handle('focus', () => cameraService.focus())
+    handle('focusAt', (x: number, y: number) => cameraService.focusAt(x, y))
+    handle('capture', (options?: CaptureOptions) => cameraService.capture(options))
+    handle('liveViewStart', () => cameraService.startLiveView())
+    handle('liveViewStop', () => cameraService.stopLiveView())
+    handle('recordStart', () => cameraService.startRecording())
+    handle('recordStop', () => cameraService.stopRecording())
+    handle('listFiles', () => cameraService.listFiles())
+    handle('downloadFile', (entry: DownloadRequest) => cameraService.downloadFile(entry))
+    handle('downloadAll', () => cameraService.downloadAll())
+    handle('setOsdOverlay', (enabled: boolean) => cameraService.setOsdOverlay(enabled))
+    handle('thumbnail', (entry: DownloadRequest) => cameraService.thumbnail(entry))
+    handle('previewFile', (entry: DownloadRequest) => cameraService.previewFile(entry))
+    handle('cancelPreview', () => cameraService.cancelPreview())
 
-    handle(IPC.KillCameraDaemon, async () => {
+    handle('killCameraDaemon', async () => {
         const killed = await killMacCameraDaemons()
         return killed.length > 0 ? `Killed: ${killed.join(', ')}` : 'No camera daemons were running'
     })
 
-    handle(IPC.ChooseDownloadDir, async () => {
+    handle('chooseDownloadDir', async () => {
         const window = getWindow()
         if (!window) return null
         const result = await dialog.showOpenDialog(window, {
@@ -152,7 +145,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
         return result.filePaths[0]
     })
 
-    handle(IPC.RevealPath, (path: string) => {
+    handle('revealPath', (path: string) => {
         shell.showItemInFolder(path)
     })
 }

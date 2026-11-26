@@ -131,6 +131,14 @@ export const responseRegistry = {
     },
 } as const satisfies Record<string, ResponseDefinition>
 
-export const { OK, SessionAlreadyOpen, DeviceBusy, IncompleteTransfer } = responseRegistry
+export const {
+    OK,
+    SessionAlreadyOpen,
+    DeviceBusy,
+    IncompleteTransfer,
+    OperationNotSupported,
+    DevicePropNotSupported,
+    AccessDenied,
+} = responseRegistry
 
 export type ResponseRegistry = typeof responseRegistry

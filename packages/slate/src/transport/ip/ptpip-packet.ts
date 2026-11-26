@@ -1,4 +1,5 @@
 import { concatenateBytes } from '@ptp/datasets/codecs/byte-sequence'
+import { isParameterBlock } from '@ptp/container'
 
 export enum PTPIPPacketType {
     InitCommandRequest = 1,
@@ -131,7 +132,7 @@ export function buildOperationRequest(
     parameters: Bytes,
     sendsData: boolean
 ): Uint8Array {
-    if (parameters.length % 4 !== 0 || parameters.length > 20) {
+    if (!isParameterBlock(parameters)) {
         throw new Error(
             `PTP/IP operation parameters must contain zero to five uint32 values, received ${parameters.length} bytes`
         )

@@ -2,8 +2,7 @@ import { preferences } from '@main/preferences'
 import type { DecodedSurface } from '@main/usb-experiments'
 import { DECODED_FRAMES } from '@shared/ipc'
 import { app, ipcMain, sharedTexture, type WebContents } from 'electron'
-import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { loadNativeAddon } from '@main/native-addon'
 
 /**
  * Developer Mode's Metal live-view decoder (macOS): each live JPEG Slate delivers is decoded on the GPU by the native
@@ -17,21 +16,8 @@ interface MetalJpeg {
     decode(jpeg: Uint8Array): Promise<{ surface: Buffer; width: number; height: number } | null>
 }
 
-let addon: MetalJpeg | null | undefined
-function loadAddon(): MetalJpeg | null {
-    if (addon !== undefined) return addon
-    addon = null
-    if (process.platform !== 'darwin') return null
-    const file = app.isPackaged
-        ? join(process.resourcesPath, 'native', 'metal-jpeg.node')
-        : join(app.getAppPath(), 'native', 'build', 'metal-jpeg.node')
-    try {
-        addon = createRequire(import.meta.url)(file) as MetalJpeg
-    } catch {
-        // Not built on this machine: frames go as JPEGs.
-    }
-    return addon
-}
+/** Not built on this machine: frames go as JPEGs. */
+const loadAddon = () => loadNativeAddon<MetalJpeg>('metal-jpeg')
 
 /** Windows whose page has registered to receive decoded frames. */
 const ready = new WeakSet<WebContents>()

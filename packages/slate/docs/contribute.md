@@ -98,9 +98,8 @@ camera/session history, including earlier sessions. Unverified addresses are mar
 An existing verified address stays current until its replacement is verified; then the same
 installation's retained history is reassociated. [Test enrollment](telemetry-email-enrollment.md).
 
-The `@darkgrade/slate/contribute` entry retains the previous single-camera observer API. New
-integrations should use the shared application/settings entry points. The old signed-grant
-collector is not part of the current deployment.
+Integrations use the shared application/settings entry points (`@darkgrade/slate/telemetry`
+and `/telemetry/settings`).
 
 Recording state snapshots contain at most 32 reviewed numeric settings from Slate's existing
 readback cache. Each value includes its observation age and workflow phase. Requested writes
@@ -112,4 +111,3 @@ PTP property `0xd1c2` (libgphoto2 `ptp.h` / `config.c`, `eosmovieswitch`); Canon
 The server implementation belongs to Slate too: `@darkgrade/slate/telemetry/server`
 exposes ingestion, confirmation, support and export functions; `/telemetry/postgres`
 is the optional database adapter. See [deployment](../telemetry/README.md).
-The earlier `/contribute/*` imports are compatibility aliases of these same clients.

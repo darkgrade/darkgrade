@@ -3,16 +3,13 @@ import { activityLog } from '@renderer/lib/activity-store'
 import type { LogEntry } from '@shared/ipc'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { shortenHomePaths } from '@shared/format'
 
 interface EventLogProps {
     expanded: boolean
     onToggle: () => void
 }
 
-/** Paths read better relative to the home folder, as Finder shows them. */
-function shortenPaths(message: string): string {
-    return message.replace(/\/Users\/[^/\s]+/g, '~')
-}
 
 function formatTime(timestampMs: number): string {
     return new Date(timestampMs).toLocaleTimeString(undefined, { hour12: false })
@@ -61,7 +58,7 @@ export function EventLog({ expanded, onToggle }: EventLogProps): React.JSX.Eleme
                     <span
                         className={`min-w-0 flex-1 truncate ${latest.level === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}
                     >
-                        {shortenPaths(latest.message)}
+                        {shortenHomePaths(latest.message)}
                     </span>
                 )}
             </div>
@@ -83,7 +80,7 @@ export function EventLog({ expanded, onToggle }: EventLogProps): React.JSX.Eleme
                             </span>
                             <span className={`w-12 shrink-0 ${SOURCE_COLORS[entry.source]}`}>{entry.source}</span>
                             <span className={entry.level === 'error' ? 'text-destructive' : ''}>
-                                {shortenPaths(entry.message)}
+                                {shortenHomePaths(entry.message)}
                             </span>
                         </div>
                     ))}

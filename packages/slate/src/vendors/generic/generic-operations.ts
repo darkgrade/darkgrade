@@ -11,10 +11,9 @@ import { messageOf } from '@vendors/generic/typed-failure'
 
 /*
  * TRANSITIONAL (consolidation setup): the small helpers each brand's operations share. Standard
- * PTP behaviour itself is in GenericCamera; the capture and battery helpers are re-exported from
- * their own modules until the brands import them from there.
+ * PTP behaviour itself is in GenericCamera; the capture helpers are re-exported from their own
+ * module until the brands import them from there.
  */
-export { batteryFromPower } from '@vendors/camera-power'
 export { cardObjectFile, classified, describedFile, type DriverCapture } from '@vendors/generic/shutter-outcome'
 
 
@@ -78,15 +77,6 @@ export const clipFinalizationMilliseconds = 30000
 /** PTP ObjectInfo's size when the real one needs a 64-bit query. */
 export const unstatedSize = 0xffffffff
 
-/** The protocol surface the shared storage helpers read, taken from the driver itself. */
-export function storageHost(driver: GenericCamera) {
-    return {
-        driver,
-        send: driver.send.bind(driver),
-        get: driver.get.bind(driver),
-    }
-}
-
 function clipFrom(handle: number, name: unknown, sizeBytes: number | undefined): Clip {
     return {
         mediaId: String(handle),
@@ -99,11 +89,10 @@ function clipFrom(handle: number, name: unknown, sizeBytes: number | undefined):
 
 /** What every PTP driver shares: the card's handles and the new finished movie. */
 export function cardSteps(driver: GenericCamera, owner: Camera) {
-    const host = storageHost(driver)
     return {
-        listHandles: () => readCameraObjectHandles(host),
+        listHandles: () => readCameraObjectHandles(driver),
         async findClip(baseline: Set<number>): Promise<Clip> {
-            const movie = await waitForNewCameraMovie(host, baseline, clipFinalizationMilliseconds)
+            const movie = await waitForNewCameraMovie(driver, baseline, clipFinalizationMilliseconds)
             return clipFrom(movie.handle, movie.filename, Number(movie.objectCompressedSize))
         },
         handleSession: () => driver.sessionId,

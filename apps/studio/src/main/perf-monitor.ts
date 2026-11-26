@@ -1,12 +1,11 @@
 import { preferences } from '@main/preferences'
-import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
+import { protectRenderer } from '@main/renderer-security'
+import { createStudioWindow, studioRendererUrl, studioRouteUrl } from '@main/studio-window'
 import type { PerfReport, PerfTrace, ProcessSample } from '@shared/ipc'
 import { IPC_EVENTS } from '@shared/ipc'
 import { app, BrowserWindow, contentTracing, screen, shell, webContents } from 'electron'
 import { execFile } from 'node:child_process'
 import { readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /**
  * Developer Mode's performance monitor, main-process side: every process Studio runs (its own Electron processes and
@@ -293,7 +292,6 @@ export async function tracePerf(seconds: number): Promise<PerfTrace> {
 
 // ---------- the monitor's own window
 
-const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let perfWindow: BrowserWindow | null = null
 
 function studioWindows(): BrowserWindow[] {
@@ -329,7 +327,7 @@ export function openPerfWindow(): void {
     const area = screen.getDisplayMatching(studio?.getBounds() ?? screen.getPrimaryDisplay().bounds).workArea
     const width = Math.min(960, area.width)
     const height = Math.min(760, area.height)
-    perfWindow = new BrowserWindow({
+    perfWindow = createStudioWindow({
         width,
         height,
         x: Math.round(area.x + area.width - width - 24),
@@ -338,35 +336,16 @@ export function openPerfWindow(): void {
         minHeight: 360,
         fullscreenable: false,
         title: 'Performance',
-        ...(process.platform === 'darwin'
-            ? {
-                  vibrancy: preferences.get().windowMaterial,
-                  visualEffectState: preferences.get().dimWhenInactive
-                      ? ('followWindow' as const)
-                      : ('active' as const),
-                  backgroundColor: '#00000000',
-              }
-            : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         show: false,
-        webPreferences: {
-            preload: join(currentDir, '../preload/index.cjs'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
     })
     perfWindow.once('ready-to-show', () => perfWindow?.show())
     perfWindow.on('closed', () => {
         perfWindow = null
         announce(false)
     })
-    const rendererUrl = rendererDocumentUrl(pathToFileURL(join(currentDir, '../renderer/index.html')).href,
-        app.isPackaged, process.env.ELECTRON_RENDERER_URL)
-    protectRenderer(perfWindow.webContents, rendererUrl, url => shell.openExternal(url))
-    const performanceUrl = new URL(rendererUrl)
-    performanceUrl.hash = 'perf'
-    void perfWindow.loadURL(performanceUrl.href)
+    protectRenderer(perfWindow.webContents, studioRendererUrl, url => shell.openExternal(url))
+    void perfWindow.loadURL(studioRouteUrl('perf'))
     announce(true)
     if (lastReport) perfWindow.webContents.once('did-finish-load', () => lastReport && receivePerfReport(lastReport))
 }

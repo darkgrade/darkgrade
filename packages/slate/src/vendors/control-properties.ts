@@ -26,7 +26,6 @@ import {
     sonySdkControlValues,
 } from '@vendors/sony/control-properties'
 
-export { canonControlProperties, nikonMovieControlProperties, nikonPhotoControlProperties, sonyControlProperties, standardControlProperties }
 
 /** A canonical control's properties in preference order: the first one the camera advertises wins. */
 export type ControlPropertyList = readonly PropertyDefinition[]

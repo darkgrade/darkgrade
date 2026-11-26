@@ -7,7 +7,7 @@ export type { IPTransportOptions } from '@transport/ip/ip-transport'
 export class TransportFactory {
     async createUSBTransport(options?: USBTransportOptions): Promise<TransportInterface> {
         const { USBTransport } = await import('./usb/usb-transport')
-        const logger = new Logger({ captureConsole: false, renderInTerminal: false })
+        const logger = new Logger()
         return new USBTransport(logger, options)
     }
 

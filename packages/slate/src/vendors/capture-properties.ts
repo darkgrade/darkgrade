@@ -1,14 +1,12 @@
-import { createCanonRegistry, createNikonRegistry, createPTPRegistry, createSonyRegistry } from '@vendors/registry'
 import type { PropertyDefinition } from '@ptp/types/property'
+import { createPTPRegistry, type Registry } from '@vendors/registry'
+import { vendorEntry } from '@vendors/vendors'
 
-export const captureRegistry = (vendorId: number) =>
-    vendorId === 0x04a9
-        ? createCanonRegistry(true)
-        : vendorId === 0x054c
-          ? createSonyRegistry(true)
-          : vendorId === 0x04b0
-            ? createNikonRegistry(true)
-            : createPTPRegistry(true)
+/** A dedicated vendor's definitions; the standard set for any other (an extension vendor's properties are not captured). */
+export const captureRegistry = (vendorId: number): Registry => {
+    const vendor = vendorEntry(vendorId)
+    return vendor?.driver === 'dedicated' ? vendor.registry(true) : createPTPRegistry(true)
+}
 
 const privateProperty =
     /serial|owner|artist|copyright|network|wireless|wifi|ssid|password|authentication|fingerprint|address|host|gps|location|DateTime|TimeZone|Clock|name/i

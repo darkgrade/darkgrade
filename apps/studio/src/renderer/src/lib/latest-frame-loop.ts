@@ -1,3 +1,5 @@
+import { errorMessage } from '@shared/format'
+
 /**
  * Runs a model on the newest frame, over and over, with at most one frame in flight: frames that arrive while the
  * model is busy are never queued, only the newest is taken when it is free. So the overlay refreshes as fast as the
@@ -32,7 +34,7 @@ export function startLatestFrameLoop<Frame, Result>(options: LatestFrameLoopOpti
             try {
                 result = await options.infer(frame)
             } catch (error) {
-                if (running) options.fail(error instanceof Error ? error.message : String(error))
+                if (running) options.fail(errorMessage(error))
                 return
             }
             if (!running) return

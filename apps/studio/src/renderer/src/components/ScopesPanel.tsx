@@ -7,6 +7,7 @@ import { Histogram } from '@renderer/scopes/Histogram'
 import { Vectorscope } from '@renderer/scopes/Vectorscope'
 import { Waveform } from '@renderer/scopes/Waveform'
 import { SCOPE_IDS, type ScopeId } from '@shared/ipc'
+import { persisted } from '@renderer/lib/persisted'
 
 const SCOPES: { id: ScopeId; label: string }[] = [
     { id: 'histogram', label: 'Histogram' },
@@ -20,25 +21,14 @@ function isScopeId(value: unknown): value is ScopeId {
     return SCOPE_IDS.includes(value as ScopeId)
 }
 
-function readSavedScope(): ScopeId {
-    try {
-        const saved = localStorage.getItem(STORAGE_KEY)
-        return isScopeId(saved) ? saved : 'histogram'
-    } catch {
-        return 'histogram'
-    }
-}
+const savedScope = persisted<ScopeId>(STORAGE_KEY, saved => (isScopeId(saved) ? saved : undefined), 'histogram')
 
 /** The scope on show; a tool can switch it too (see App), and the choice is remembered. */
-export const scopeChoice = createStore<ScopeId>(readSavedScope())
+export const scopeChoice = createStore<ScopeId>(savedScope.load())
 
 export function chooseScope(next: ScopeId): void {
     scopeChoice.set(next)
-    try {
-        localStorage.setItem(STORAGE_KEY, next)
-    } catch {
-        // The choice still applies for this session.
-    }
+    savedScope.save(next)
 }
 
 interface ScopesPanelProps {

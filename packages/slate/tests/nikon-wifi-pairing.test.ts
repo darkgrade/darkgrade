@@ -1,12 +1,12 @@
 import {decodeNikonPairingCode,pairNikonWifiProfile} from '@vendors/nikon/wifi-pairing'
 import {TransportType} from '@transport/interfaces/transport-types'
 import type {PTPEvent,TransportInterface} from '@transport/interfaces/transport.interface'
-import {USBContainerBuilder,USBContainerType} from '@transport/usb/usb-container'
+import { buildContainer, ContainerType, parseContainer } from '@ptp/container'
 import {describe,expect,it,vi} from 'vitest'
 
 function response(code:number,transactionId:number) {
-    const bytes=USBContainerBuilder.buildCommand(code,transactionId,[])
-    new DataView(bytes.buffer).setUint16(4,USBContainerType.RESPONSE,true)
+    const bytes=buildContainer(ContainerType.COMMAND, code,transactionId)
+    new DataView(bytes.buffer).setUint16(4,ContainerType.RESPONSE,true)
     return bytes
 }
 function fixture({approve=true,notify=true,operationFailure=false,data=Uint8Array.of(4,0,0,0,0,1,6,2)}={}) {
@@ -19,9 +19,9 @@ function fixture({approve=true,notify=true,operationFailure=false,data=Uint8Arra
         on:(handler:(event:PTPEvent)=>void)=>{eventHandler=handler},
         off:vi.fn(()=>{eventHandler=undefined}),
         send:vi.fn(async(bytes:Uint8Array)=>{
-            const command=USBContainerBuilder.parseContainer(bytes)
+            const command=parseContainer(bytes)
             commands.push(command.code)
-            if(command.code===0x952b)pending.push(USBContainerBuilder.buildData(command.code,command.transactionId,data))
+            if(command.code===0x952b)pending.push(buildContainer(ContainerType.DATA, command.code,command.transactionId,data))
             pending.push(response(operationFailure&&command.code===0x935a?0x2005:0x2001,command.transactionId))
             if(command.code===0x935a&&notify)eventHandler?.({code:0x4008,transactionId:0,parameters:[]})
         }),
@@ -41,7 +41,7 @@ describe('Nikon PTP/IP profile pairing',()=>{
         await expect(pairNikonWifiProfile(transport,options)).resolves.toEqual({cameraConfirmed:true})
         expect(commands).toEqual([0x1002,0x952b,0x935a])
         expect(options.confirmCode).toHaveBeenCalledWith('0162')
-        const confirmation=USBContainerBuilder.parseContainer(transport.send.mock.calls[2]![0])
+        const confirmation=parseContainer(transport.send.mock.calls[2]![0])
         expect(new DataView(confirmation.payload.buffer).getUint32(0,true)).toBe(0x2001)
         expect(transport.disconnect).toHaveBeenCalledOnce()
         expect(transport.off).toHaveBeenCalledOnce()

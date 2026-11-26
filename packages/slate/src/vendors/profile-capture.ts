@@ -13,6 +13,7 @@ import type { TransportInterface } from '@transport/interfaces/transport.interfa
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import { capturePropertyCodes, captureRegistry } from '@vendors/capture-properties'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
+import { decodeNikonVendorCodes } from '@vendors/nikon/vendor-codes'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { captureProfilePhoto } from '@vendors/profile-media'
 
@@ -266,14 +267,13 @@ export async function captureCameraProfile(source: TransportInterface, options: 
             transactions.push({ operation, transactionId, parameters, response: { code: response.code, parameters: response.parameters }, redactions })
         }
     })
-    const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
+    const logger = new Logger({ expanded: false })
     const registry = captureRegistry(options.vendorId)
     const descriptorPolicy = { timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false }
     const facade = options.initialize
         ? new Camera({
               transport: trace.transport,
               vendorId: options.vendorId,
-              logger: { renderInTerminal: false, captureConsole: false },
               // The profile is the inventory; a first-contact inventory would add its own reads.
               firstContact: false,
               // Applied to whichever driver connect selects for the opened body.
@@ -340,14 +340,8 @@ export async function captureCameraProfile(source: TransportInterface, options: 
                 const data = await check('nikon-vendor-property-codes', () =>
                     send(createNikonRegistry(true).operations.GetVendorCodes, { Kind: 13 })
                 )
-                if (data instanceof Uint8Array && data.length >= 4) {
-                    const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-                    const count = view.getUint32(0, true)
-                    if (count <= 4096 && data.length === 4 + count * 4) {
-                        const codes = Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, true))
-                        properties = [...new Set([...properties, ...codes.filter(code => safe.has(code))])]
-                    }
-                }
+                const codes = data instanceof Uint8Array ? decodeNikonVendorCodes(data) : undefined
+                if (codes) properties = [...new Set([...properties, ...codes.filter(code => safe.has(code))])]
             }
             for (const property of properties.slice(0, limit)) {
                 if (Date.now() >= deadline) break

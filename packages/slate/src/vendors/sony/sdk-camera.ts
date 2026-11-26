@@ -16,8 +16,7 @@ import { kelvinInput } from '@camera/settings/values'
 import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 import type { Battery } from '@camera/driver'
 import type { CardStatus } from '@camera/driver'
-import { batteryFromPower } from '@vendors/generic/generic-operations'
-import { normalizeCameraPower } from '@vendors/camera-power'
+import { batteryFromPower, normalizeCameraPower } from '@vendors/power-reading'
 import { sonySdkCardStatus } from '@vendors/sony/media'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
@@ -160,7 +159,6 @@ function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetooth
 export class SonyWifiCamera {
     private readonly controlsQueue = new CameraOperationQueue()
     private connected = false
-    private connectionTransport: 'usb' | 'wifi' | undefined
     private osdEnabled = false
     private monitoringAttempted = false
     private reconnectOperation?:()=>Promise<void>
@@ -260,7 +258,6 @@ export class SonyWifiCamera {
             }
         }
         this.connected = true
-        this.connectionTransport = 'wifi'
         const saved={...authentication},mode={...options}
         this.reconnectOperation=async()=>{await this.connect(saved,mode)}
         return wirelessConnection(authentication.model)
@@ -285,21 +282,9 @@ export class SonyWifiCamera {
             ...(options.mode ? { mode: options.mode } : {}),
         })
         this.connected = true
-        this.connectionTransport = 'wifi'
         const saved={...authentication},mode={...options}
         this.reconnectOperation=async()=>{await this.connectBluetoothDirect(saved,mode)}
         return wirelessConnection(authentication.model)
-    }
-
-    /** Open the same official SDK over USB for guarded preparation and readback. */
-    async connectUsb(serial: string, options: { mode?: 'remote' | 'remote-transfer' } = {}): Promise<void> {
-        if (this.connected) throw new Error('Sony SDK camera is already connected')
-        if (!/^[A-Za-z0-9_-]{1,64}$/.test(serial)) throw new Error('Invalid Sony USB serial')
-        await this.bridge.request({ cmd: 'connect', serial, ...(options.mode ? { mode: options.mode } : {}) })
-        this.connected = true
-        this.connectionTransport = 'usb'
-        const mode={...options}
-        this.reconnectOperation=()=>this.connectUsb(serial,mode)
     }
 
     /** Renew SDK state without USB, network, or power changes. Recording must be idle. */
@@ -319,7 +304,6 @@ export class SonyWifiCamera {
 
     async disconnect(): Promise<void> {
         this.connected = false
-        this.connectionTransport = undefined
         this.osdEnabled = false
         this.monitoringAttempted = false
         this.reconnectOperation=undefined
@@ -796,7 +780,7 @@ export class SonyWifiCamera {
         try {
             return await this.bridge.request(command)
         } catch (error) {
-            if (!options.monitoringFallback || this.monitoringAttempted || this.connectionTransport !== 'wifi')
+            if (!options.monitoringFallback || this.monitoringAttempted)
                 throw error
             this.monitoringAttempted = true
             const capabilities = await this.getSonyPreviewCapabilities()

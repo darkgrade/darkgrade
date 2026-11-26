@@ -1,12 +1,10 @@
 import { preferences } from '@main/preferences'
-import { protectRenderer, rendererDocumentUrl } from '@main/renderer-security'
+import { protectRenderer } from '@main/renderer-security'
+import { createStudioWindow, studioRendererUrl, studioRouteUrl } from '@main/studio-window'
 import { USB_TRANSPORT_CHOICES, type Preferences } from '@shared/ipc'
 import { DEPTH_MODEL_SIZES, VISION_MODELS, type VisionModelId } from '@shared/vision-models'
 import { app, BrowserWindow, Menu, screen, shell, type MenuItemConstructorOptions } from 'electron'
-import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const currentDir = fileURLToPath(new URL('.', import.meta.url))
 let preferencesWindow: BrowserWindow | null = null
 /** Settings opens at this size, or the display's working area if that's smaller; it can be resized. */
 const SETTINGS_WIDTH = 760
@@ -24,7 +22,7 @@ export function openPreferences(): void {
     const area = screen.getDisplayMatching(studio?.getBounds() ?? screen.getPrimaryDisplay().bounds).workArea
     const width = Math.min(SETTINGS_WIDTH, area.width)
     const height = Math.min(SETTINGS_HEIGHT, area.height)
-    preferencesWindow = new BrowserWindow({
+    preferencesWindow = createStudioWindow({
         width,
         height,
         x: Math.round(area.x + (area.width - width) / 2),
@@ -35,44 +33,15 @@ export function openPreferences(): void {
         fullscreenable: false,
         title: 'Settings',
         // The same material and dimming as Studio's main window, so the page's tint reads the same over it.
-        ...(process.platform === 'darwin'
-            ? {
-                  vibrancy: preferences.get().windowMaterial,
-                  visualEffectState: preferences.get().dimWhenInactive
-                      ? ('followWindow' as const)
-                      : ('active' as const),
-                  backgroundColor: '#00000000',
-              }
-            : { backgroundColor: '#07090b' }),
         titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
         show: false,
-        webPreferences: {
-            preload: join(currentDir, '../preload/index.cjs'),
-            contextIsolation: true,
-            nodeIntegration: false,
-            sandbox: true,
-        },
     })
     preferencesWindow.once('ready-to-show', () => preferencesWindow?.show())
-    let material = preferences.get().windowMaterial
-    const stopFollowingMaterial = preferences.onChange(current => {
-        if (process.platform !== 'darwin' || current.windowMaterial === material) return
-        material = current.windowMaterial
-        preferencesWindow?.setVibrancy(material, { animationDuration: 200 })
-    })
     preferencesWindow.on('closed', () => {
-        stopFollowingMaterial()
         preferencesWindow = null
     })
-    const rendererUrl = rendererDocumentUrl(
-        pathToFileURL(join(currentDir, '../renderer/index.html')).href,
-        app.isPackaged,
-        process.env.ELECTRON_RENDERER_URL
-    )
-    protectRenderer(preferencesWindow.webContents, rendererUrl, url => shell.openExternal(url))
-    const preferencesUrl = new URL(rendererUrl)
-    preferencesUrl.hash = 'preferences'
-    void preferencesWindow.loadURL(preferencesUrl.href)
+    protectRenderer(preferencesWindow.webContents, studioRendererUrl, url => shell.openExternal(url))
+    void preferencesWindow.loadURL(studioRouteUrl('preferences'))
 }
 
 /** The standard macOS menus, with Settings… (⌘,) and Developer Mode in the app menu, and zoom (⌘ = / ⌘ − / ⌘ 0). */

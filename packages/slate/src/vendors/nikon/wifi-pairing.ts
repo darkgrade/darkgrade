@@ -1,6 +1,6 @@
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { buildContainer, ContainerType, parseContainer } from '@ptp/container'
 
 export interface NikonWifiPairingOptions {
     /** Explicit opt-in: protocol evidence is Nikon ZR; Z6 III remains unvalidated. */
@@ -27,16 +27,16 @@ function parameter(value: number): Uint8Array {
 }
 
 async function command(transport: TransportInterface, code: number, transactionId: number, parameters: number[] = []) {
-    await transport.send(USBContainerBuilder.buildCommand(code, transactionId, parameters.map(parameter)), 1, transactionId)
+    await transport.send(buildContainer(ContainerType.COMMAND, code, transactionId, ...parameters.map(parameter)), 1, transactionId)
     let payload: Uint8Array | undefined
     for (let count = 0; count < 2; count += 1) {
-        const reply = USBContainerBuilder.parseContainer(await transport.receive(1024, 1, transactionId))
+        const reply = parseContainer(await transport.receive(1024, 1, transactionId))
         if (reply.transactionId !== transactionId) throw new Error('Nikon pairing response transaction does not match')
-        if (reply.type === USBContainerType.DATA && payload === undefined && reply.code === code) {
+        if (reply.type === ContainerType.DATA && payload === undefined && reply.code === code) {
             payload = reply.payload
             continue
         }
-        if (reply.type !== USBContainerType.RESPONSE) throw new Error('Unexpected Nikon pairing response container')
+        if (reply.type !== ContainerType.RESPONSE) throw new Error('Unexpected Nikon pairing response container')
         if (reply.code !== 0x2001) throw new Error(`Nikon pairing operation 0x${code.toString(16)} failed: 0x${reply.code.toString(16)}`)
         return payload
     }

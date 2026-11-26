@@ -75,7 +75,6 @@ export const KELVIN_MAX = 9900
 
 export const KELVIN_STEP = 100
 
-/** Sony property names per setting, newest first: bodies report one or the other. */
 export const PTP_ACCESS_DENIED = 0x200f
 
 export const FILES_REFRESH_DELAY_MS = 1500
@@ -96,9 +95,7 @@ export function vendorIdForMake(make: string | undefined): number | null {
 
 export const KNOWN_CAMERA_VENDOR_IDS = new Set<number>([VendorIDs.SONY, VendorIDs.NIKON, VendorIDs.CANON])
 
-export function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-}
+export { errorMessage, formatBytes } from '@shared/format'
 
 export function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
@@ -188,11 +185,6 @@ export async function discoverCamera(): Promise<DiscoveredCamera | null> {
     }
 }
 
-export function formatBytes(bytes: number): string {
-    if (bytes < 1000) return `${bytes} B`
-    if (bytes < 1000 * 1000) return `${(bytes / 1000).toFixed(1)} KB`
-    return `${(bytes / (1000 * 1000)).toFixed(1)} MB`
-}
 
 export const VIDEO_MIME_TYPES: Record<string, string> = { mp4: 'video/mp4', mov: 'video/quicktime', m4v: 'video/mp4' }
 

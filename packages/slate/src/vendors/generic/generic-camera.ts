@@ -1,3 +1,4 @@
+import type { PhotoVideoMode } from '@camera/settings/values'
 import type {
     CameraCapabilities,
     CameraControlId,
@@ -41,8 +42,8 @@ import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/d
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
-import { randomSessionId } from '@ptp/definitions/session'
-import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
+import { buildContainer, ContainerType, MAXIMUM_PARAMETERS } from '@ptp/container'
+import { TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
 import { EventDefinition, EventEmitter } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -51,8 +52,13 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import { VendorIDs } from '@ptp/definitions/vendor-ids'
-import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
+import { batteryFromPower, readStandardPower } from '@vendors/power-reading'
+import { observeStandardControls, type ControlObservation, type ControlWrite } from '@vendors/generic/control-observation'
+import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
+import { ptpMediaCapability } from '@vendors/generic/ptp-media'
+import { operationsAdvertised } from '@vendors/generic/generic-operations'
+import type { CameraPower } from '@workflows/camera-power'
+import { vendorEntry } from '@vendors/vendors'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
 import { afterShutterRelease, cardObjectFile, classified, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
@@ -139,6 +145,18 @@ export function standardPropertyState(descriptor: DevicePropDesc): StandardPrope
         ...(descriptor.stepSize !== undefined ? { stepSize: descriptor.stepSize } : {}),
         ...(unrecognized && { unrecognized }),
     }
+}
+
+/** The release options a driver's captureImage takes; see `GenericCamera.captureOptions`. */
+export interface CaptureOptions {
+    memory: boolean
+    withoutAutofocus: boolean
+    rawCompression: boolean
+}
+
+/** What a driver says about recording to one card; brands may add their own evidence fields. */
+export interface StorageRecording {
+    writable: boolean
 }
 
 export class GenericCamera {
@@ -328,8 +346,9 @@ export class GenericCamera {
         }
     }
 
+    /** A new session's id: never 0, which ISO 15740 reserves (OpenSession refuses it with InvalidParameter). */
     protected createSessionId(): number {
-        return randomSessionId()
+        return 1 + Math.floor(Math.random() * 0xfffffffe)
     }
 
     /** @internal Vendor admission may preserve an observed active session after transport loss. */
@@ -604,15 +623,10 @@ export class GenericCamera {
         const encodedParams = this.encodeParameters(operation, paramsRecord)
         await this.resynchronizeIfNeeded()
 
-        const retriesDeviceBusy = operation.code >= STANDARD_OPERATIONS.from && operation.code <= STANDARD_OPERATIONS.to
-        const startedAt = Date.now()
-        for (let attempt = 0; ; attempt++) {
-            const response = await this.runTransaction(operation, paramsRecord, encodedParams, data, maxDataLength)
-            if (response.code !== DeviceBusy.code || !retriesDeviceBusy) return response
-            const delayMilliseconds = this.channel.deviceBusyDelay(attempt, Date.now() - startedAt)
-            if (delayMilliseconds === undefined) return response
-            await this.waitMs(delayMilliseconds)
-        }
+        const transaction = () => this.runTransaction(operation, paramsRecord, encodedParams, data, maxDataLength)
+        const standard = operation.code >= STANDARD_OPERATIONS.from && operation.code <= STANDARD_OPERATIONS.to
+        if (!standard) return transaction()
+        return this.channel.retryWhileBusy(transaction, response => response.code === DeviceBusy.code, milliseconds => this.waitMs(milliseconds))
     }
 
     private encodeParameters(operation: OperationDefinition, paramsRecord: Record<string, number | bigint | string>): Uint8Array[] {
@@ -629,7 +643,7 @@ export class GenericCamera {
             if (encoded.length > 4) throw new Error(`Parameter ${paramDef.name} exceeds a UINT32 slot`)
             encodedParams.push(encoded)
         }
-        if (encodedParams.length > 5) throw new Error('PTP commands accept at most five parameters')
+        if (encodedParams.length > MAXIMUM_PARAMETERS) throw new Error('PTP commands accept at most five parameters')
         return encodedParams
     }
 
@@ -882,7 +896,7 @@ export class GenericCamera {
         }
         const slots = new Uint8Array(encodedParams.length * 4)
         encodedParams.forEach((parameter, index) => slots.set(parameter, index * 4))
-        await this.channel.send(this.container(CONTAINER_TYPE.command, operation.code, transactionId, slots), sessionId, context)
+        await this.channel.send(buildContainer(ContainerType.COMMAND, operation.code, transactionId, slots), sessionId, context)
 
         let receivedData: Uint8Array | undefined
         let decodedData: unknown
@@ -890,7 +904,7 @@ export class GenericCamera {
         if (operation.dataDirection === 'in' && data) {
             decodedData = this.describeOutgoingData(operation, paramsRecord, data)
             logDataPhase('in', data, decodedData)
-            await this.channel.send(this.container(CONTAINER_TYPE.data, operation.code, transactionId, data), sessionId, context)
+            await this.channel.send(buildContainer(ContainerType.DATA, operation.code, transactionId, data), sessionId, context)
         } else if (operation.dataDirection === 'out') {
             const dataContainer = await this.channel.receive(sessionId, {
                 ...context,
@@ -900,7 +914,7 @@ export class GenericCamera {
                 maxLength: maxDataLength || 256 * 1024,
             })
             receivedData = dataContainer.payload
-            if (dataContainer.type === CONTAINER_TYPE.response) {
+            if (dataContainer.type === ContainerType.RESPONSE) {
                 logResponse(dataContainer.code)
                 return {
                     code: dataContainer.code,
@@ -951,7 +965,7 @@ export class GenericCamera {
             returnData = decodedData
         return {
             code: responseContainer.code,
-            parameters: responseContainer.type === CONTAINER_TYPE.response ? parameters : undefined,
+            parameters: responseContainer.type === ContainerType.RESPONSE ? parameters : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
@@ -1125,28 +1139,33 @@ export class GenericCamera {
         else this.emitter.removeAllListeners(event.name)
     }
 
-    async getAperture(): Promise<string> {
-        return this.get(this.registry.properties.FNumber)
+    /**
+     * The release options this driver's captureImage takes beyond a plain card release: a transfer
+     * to host memory, a release without autofocus, a per-capture RAW compression.
+     */
+    readonly captureOptions: CaptureOptions = { memory: false, withoutAutofocus: false, rawCompression: false }
+
+    /**
+     * controls(), observe: the property states behind each canonical control. Standard PTP reads
+     * each mapped descriptor; brands read their own inventory. A full read is given its DeviceInfo.
+     */
+    async observeControlStates(requested?: CameraControlId, deviceInfo?: DeviceInfo): Promise<ControlObservation> {
+        return observeStandardControls(this, requested, deviceInfo)
     }
 
-    async setAperture(value: string): Promise<void> {
-        return this.setStandardProperty('FNumber', value)
+    /** controls(), write: send one admitted control write once; the caller confirms it by readback. */
+    async writeControlValue(write: ControlWrite): Promise<void> {
+        await this.setStandardProperty(write.state.source.code, write.vendorLabel)
     }
 
-    async getShutterSpeed(): Promise<string> {
-        return this.get(this.registry.properties.ExposureTime)
+    /** Sends the vendor's photo/video switch once; the caller confirms it by polled readback. */
+    async sendPhotoVideoMode(_requested: PhotoVideoMode, _state: CameraControlState): Promise<void> {
+        throw new CameraUnsupportedError('photoVideoMode', 'Photo / video is not supported by this camera')
     }
 
-    async setShutterSpeed(value: string): Promise<void> {
-        return this.setStandardProperty('ExposureTime', value)
-    }
-
-    async getIso(): Promise<string> {
-        return this.get(this.registry.properties.ExposureIndex)
-    }
-
-    async setIso(value: string): Promise<void> {
-        return this.setStandardProperty('ExposureIndex', value)
+    /** Holds still mode across one capture and its transfer; a body without a movie mode just captures. */
+    async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+        return capture()
     }
 
     /** One InitiateCapture. With info or data, resolves with the new object's handle once ObjectAdded names it. */
@@ -1351,16 +1370,6 @@ export class GenericCamera {
     }
 
     /** A PTP container: length, type, code and transaction ID, then the payload. */
-    private container(type: number, code: number, transactionId: number, payload: Uint8Array): Uint8Array {
-        const buffer = new Uint8Array(12 + payload.length)
-        buffer.set(this.registry.codecs.uint32.encode(buffer.length), 0)
-        buffer.set(this.registry.codecs.uint16.encode(type), 4)
-        buffer.set(this.registry.codecs.uint16.encode(code), 6)
-        buffer.set(this.registry.codecs.uint32.encode(transactionId), 8)
-        buffer.set(payload, 12)
-        return buffer
-    }
-
     /** Response (and response-as-data) containers carry up to five UINT32 parameters; vendor commands report status there. */
     private decodeResponseParameters(payload: Uint8Array): number[] | undefined {
         if (payload.length === 0 || payload.length % 4 !== 0) return undefined
@@ -1376,16 +1385,15 @@ export class GenericCamera {
         return this.owner
     }
 
-    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits. Modules
-    // that import a brand driver are loaded on first use, so this module never imports one.
+    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits. Brands
+    // differ through the hooks they override; this module imports no brand driver.
     #mediaGroup?: MediaCapability
     #info?: { sessionId: number | null; info: CameraInfo }
     #clockCheck?: { sessionId: number | null; reason: string | undefined }
 
     /** The card-media group; Sony overrides it with its own card index. */
     protected async mediaGroup(): Promise<MediaCapability> {
-        const { ptpMediaCapability } = await import('@vendors/generic/ptp-media')
-        return (this.#mediaGroup ??= ptpMediaCapability(this, this.requireOwner()))
+        return (this.#mediaGroup ??= ptpMediaCapability(this))
     }
 
     /** Sony's remote session overrides this to say whether it may write its two host preferences. */
@@ -1405,9 +1413,10 @@ export class GenericCamera {
                 )
             if (!response.data) throw new PTPDecodeError('GetDeviceInfo returned no device dataset')
             const { manufacturer, model, deviceVersion, serialNumber } = response.data
-            const lensMount = lensMountForModel(this.vendorId, model)
+            const vendor = vendorEntry(this.vendorId)
+            const lensMount = vendor?.lensMount?.(model.trim())
             const info: CameraInfo = {
-                manufacturer: (this.vendorId !== null && MAKES[this.vendorId]) || manufacturer.trim(),
+                manufacturer: vendor?.make || manufacturer.trim(),
                 model: model.trim(),
                 firmware: deviceVersion.trim(),
                 ...(serialNumber && { serialNumber }),
@@ -1419,14 +1428,12 @@ export class GenericCamera {
         })
     }
 
-    /** Sony's authenticated SDK channel is carried over Wi-Fi IP, but it is not PTP/IP. */
+    /** What the transport says it is, else USB or PTP/IP by its type. */
     private connectionKind(): CameraInfo['connection'] {
-        if (this.transport instanceof SonyRemoteSdkTransport) return 'wifi'
-        return this.transport.getType() === TransportType.USB ? 'usb' : 'ip'
+        return this.transport.connectionKind?.() ?? (this.transport.getType() === TransportType.USB ? 'usb' : 'ip')
     }
 
     async getCapabilities(requested?: CameraControlId): Promise<CameraCapabilities> {
-        const { readCameraCapabilities } = await import('@vendors/camera-controls')
         return readCameraCapabilities(this, requested)
     }
 
@@ -1435,8 +1442,7 @@ export class GenericCamera {
         value: CameraControlInputs[Id],
         context?: ExposureContext
     ): Promise<CameraControlState> {
-        const { writeCameraControl } = await import('@vendors/camera-controls')
-        return writeCameraControl(this.requireOwner(), this, id, value, context)
+        return writeCameraControl(this, id, value, context)
     }
 
     /** A card object's full size when ObjectInfo reports 0xffffffff; a vendor with a 64-bit query overrides this. */
@@ -1476,11 +1482,21 @@ export class GenericCamera {
         return (await this.mediaGroup()).downloadMedia(id, options)
     }
 
-    /** Sony's property snapshot, Canon's EOS level after the standard BatteryLevel, the standard BatteryLevel elsewhere. */
+    /**
+     * Whether the camera can record to one of its cards. PTP AccessCapability describes host access
+     * only: 0 is read/write. A brand whose card status says more overrides this, and may add evidence.
+     */
+    async storageCanRecord(_storageId: number, accessCapability: number): Promise<StorageRecording> {
+        return { writable: accessCapability === 0 }
+    }
+
+    /** The battery as the body reports it: the standard BatteryLevel, unless a brand reads more. */
+    async readPower(): Promise<CameraPower | undefined> {
+        return readStandardPower(this)
+    }
+
     async getBattery(): Promise<Battery> {
-        const { batteryFromPower, readCameraPower } = await import('@vendors/camera-power')
-        const vendor = this.vendorId === VendorIDs.SONY ? 'sony' : this.vendorId === VendorIDs.CANON ? 'canon' : 'standard'
-        return reportingRefusals('getBattery', async () => batteryFromPower(await readCameraPower(this.requireOwner(), vendor)))
+        return reportingRefusals('getBattery', async () => batteryFromPower(await this.readPower()))
     }
 
     /** The standard DateTime property; Sony overrides this with its Date/Time Setting. */
@@ -1503,7 +1519,6 @@ export class GenericCamera {
         if (operation === 'getCardStatus' || operation === 'listMedia' || operation === 'getMediaPreview' || operation === 'downloadMedia')
             return (await (await this.mediaGroup()).availability?.(capabilities))?.[operation]
         if (operation === 'takePhoto' && this.takePhoto === GenericCamera.prototype.takePhoto) {
-            const { operationsAdvertised } = await import('@vendors/generic/generic-operations')
             return operationsAdvertised(capabilities, [this.registry.operations.InitiateCapture])
         }
         if (operation !== 'setClock') return undefined
@@ -1514,34 +1529,6 @@ export class GenericCamera {
             }
         return this.#clockCheck.reason ? { supported: false, reason: this.#clockCheck.reason } : undefined
     }
-}
-
-/** The make people use for each USB vendor; another vendor keeps the name its DeviceInfo gives. */
-const MAKES: Record<number, string> = {
-    [VendorIDs.SONY]: 'Sony',
-    [VendorIDs.CANON]: 'Canon',
-    [VendorIDs.NIKON]: 'Nikon',
-    [VendorIDs.FUJIFILM]: 'Fujifilm',
-    [VendorIDs.PANASONIC]: 'Panasonic',
-    [VendorIDs.OLYMPUS]: 'Olympus',
-    [VendorIDs.OM_DIGITAL]: 'OM System',
-    [VendorIDs.LEICA]: 'Leica',
-    [VendorIDs.SIGMA]: 'Sigma',
-}
-
-/** The lens mount where the model name implies it (Sony ILCE/ILME/ILCA, Nikon Z/D, Canon EOS R); otherwise none, never a guess. */
-function lensMountForModel(vendorId: number | null, model: string): string | undefined {
-    const name = model.trim()
-    if (vendorId === VendorIDs.SONY) {
-        if (/^IL(CE|ME)-/i.test(name)) return 'E'
-        if (/^ILCA-/i.test(name)) return 'A'
-    }
-    if (vendorId === VendorIDs.NIKON) {
-        if (/^Z\s?[0-9fc]/i.test(name)) return 'Z'
-        if (/^D\d/i.test(name)) return 'F'
-    }
-    if (vendorId === VendorIDs.CANON && /\bEOS R(\d|P\b|\b)/i.test(name)) return 'RF'
-    return undefined
 }
 
 /** Event names, across the standard and vendor registries, that mean each public event. */

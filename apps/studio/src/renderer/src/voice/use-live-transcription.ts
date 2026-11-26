@@ -2,6 +2,7 @@ import { perf } from '@renderer/lib/perf'
 import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
 import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
+import { SPEECH_SAMPLE_RATE } from '@shared/wav'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
 import type { ListeningState } from '@voice/panel-switch'
@@ -15,6 +16,7 @@ import {
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { persisted } from '@renderer/lib/persisted'
 
 export interface Microphone {
     deviceId: string
@@ -23,28 +25,15 @@ export interface Microphone {
 
 export type { ListeningState } from '@voice/panel-switch'
 
-const SAMPLE_RATE = 16_000
 const MICROPHONE_STORAGE_KEY = 'voice.microphoneId'
 /** A pause this long starts a new paragraph. */
 const PARAGRAPH_PAUSE_MS = 1400
 /** A session that hasn't wound down this long after Stop is ended anyway, so voice never sticks between sessions. */
 const STOP_TIMEOUT_MS = 8000
 
-function readStoredMicrophone(): string {
-    try {
-        return localStorage.getItem(MICROPHONE_STORAGE_KEY) ?? 'default'
-    } catch {
-        return 'default'
-    }
-}
-
-function storeMicrophone(deviceId: string): void {
-    try {
-        localStorage.setItem(MICROPHONE_STORAGE_KEY, deviceId)
-    } catch {
-        // Remembering the choice is a convenience only.
-    }
-}
+const storedMicrophone = persisted<string>(MICROPHONE_STORAGE_KEY, saved => saved ?? undefined, 'default')
+const readStoredMicrophone = () => storedMicrophone.load()
+const storeMicrophone = (deviceId: string) => storedMicrophone.save(deviceId)
 
 async function listMicrophones(): Promise<Microphone[]> {
     const devices = await navigator.mediaDevices.enumerateDevices()
@@ -166,7 +155,7 @@ export function useLiveTranscription() {
     const startCapture = useCallback(
         async (deviceId: string): Promise<MessagePort> => {
             const stream = await openMicrophone(deviceId)
-            const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+            const context = new AudioContext({ sampleRate: SPEECH_SAMPLE_RATE })
             await context.audioWorklet.addModule(microphoneWorkletUrl)
             const node = new AudioWorkletNode(context, 'microphone-capture')
             const source = context.createMediaStreamSource(stream)

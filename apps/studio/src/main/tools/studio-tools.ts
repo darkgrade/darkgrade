@@ -2,13 +2,7 @@ import { readOperationInput, runOperation } from '@darkgrade/slate/runtime'
 import { cameraToolDefinitions } from '@darkgrade/slate/runtime/mcp'
 import { cameraService } from '@main/camera-service'
 import { studioView } from '@main/studio-view'
-import {
-    apertureToNumber,
-    isAutoValue,
-    isoToNumber,
-    nearestNumericOption,
-    shutterToNumber,
-} from '@shared/exposure-stops'
+import { apertureToNumber, isAutoValue, isoToNumber, shutterToNumber } from '@shared/exposure-stops'
 import { exposureVerdict } from '@shared/exposure-verdict'
 import { analyseFrame } from '@shared/frame-analysis'
 import {
@@ -124,11 +118,9 @@ async function applySetting(requestedName: SettingName, value: string): Promise<
             `${CAMERA_CONTROL_LABELS[name]} has no value "${value}". Choices: ${control.options.join(', ')}`
         )
     }
-    if (cameraService.getState().controls?.[name]) await cameraService.setControl(name, chosen)
-    else if (name === 'iso') await cameraService.setIso(chosen)
-    else if (name === 'shutterSpeed') await cameraService.setShutterSpeed(chosen)
-    else if (name === 'aperture') await cameraService.setAperture(chosen)
-    else throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be set on this camera`)
+    if (!cameraService.getState().controls?.[name] && name !== 'iso' && name !== 'shutterSpeed' && name !== 'aperture')
+        throw new Error(`${CAMERA_CONTROL_LABELS[name]} can't be set on this camera`)
+    await cameraService.setControl(name, chosen)
     if (chosen !== control.value) recordChange({ setting: name, from: control.value, to: chosen })
     return chosen
 }
@@ -153,20 +145,15 @@ async function undoLastChange(): Promise<unknown> {
 }
 
 async function adjustColorTemperature(kelvin: number): Promise<unknown> {
-    const settings = availableSettings()
-    const temperature = settings.colorTemperature
+    const temperature = availableSettings().colorTemperature
     if (!temperature) throw new Error("This camera doesn't offer a colour temperature setting right now")
-    const changes: unknown[] = []
-    if (!temperature.enabled && settings.whiteBalance) {
-        const kelvinMode = settings.whiteBalance.options.find(option => /temp|kelvin/i.test(option))
-        if (!kelvinMode) throw new Error('White balance has no colour temperature mode to switch to')
-        changes.push({ whiteBalance: await applySetting('whiteBalance', kelvinMode) })
-    }
-    const current = Number.parseFloat(availableSettings().colorTemperature?.value ?? '') || 5600
+    if (!temperature.enabled)
+        throw new Error("Colour temperature can't be changed with the current white balance; choose its colour temperature mode first")
+    const current = Number.parseFloat(temperature.value ?? '')
+    if (!Number.isFinite(current)) throw new Error('The camera is not reporting its colour temperature, so there is nothing to change it from')
     const target = Math.round((current + kelvin) / 100) * 100
     const applied = await applySetting('colorTemperature', String(target))
-    changes.push({ colorTemperature: { from: current, to: applied } })
-    return { changes }
+    return { changes: [{ colorTemperature: { from: current, to: applied } }] }
 }
 
 /** Brighter is positive. ISO and aperture-number scale differently from light: this maps each to stops. */
@@ -174,16 +161,11 @@ const EXPOSURE_SETTINGS: {
     name: 'iso' | 'shutterSpeed' | 'aperture'
     read: (value: string) => number | null
     stopsPerDoubling: number
-    /**
-     * Where to start when the camera is choosing this setting itself. It doesn't report what it chose,
-     * so this is a neutral middle value: base ISO, a normal shutter, a lens' common f-stop.
-     */
-    manualStart: number
 }[] = [
-    { name: 'iso', read: isoToNumber, stopsPerDoubling: 1, manualStart: 100 },
-    { name: 'shutterSpeed', read: shutterToNumber, stopsPerDoubling: 1, manualStart: 1 / 60 },
+    { name: 'iso', read: isoToNumber, stopsPerDoubling: 1 },
+    { name: 'shutterSpeed', read: shutterToNumber, stopsPerDoubling: 1 },
     // f-numbers scale with the square root of light: f/2.8 → f/4 is one stop darker.
-    { name: 'aperture', read: apertureToNumber, stopsPerDoubling: -2, manualStart: 4 },
+    { name: 'aperture', read: apertureToNumber, stopsPerDoubling: -2 },
 ]
 
 /** The option closest to `stops` brighter than the current value, or null when it can't move. */
@@ -234,40 +216,18 @@ async function adjustExposure(stops: number, using: string): Promise<unknown> {
             reasons.push(`${name}: locked in the current mode`)
             continue
         }
-        let current = control
-        let switchedFromAuto: string | null = null
+        // The camera is choosing this one itself and does not say what it chose, so there is no value to step from.
         if (isAutoValue(control.value, definition.read)) {
-            const manual = nearestNumericOption(control.options, definition.read, definition.manualStart)
-            if (!manual) {
-                reasons.push(`${name}: set to auto and has no manual value to switch to`)
-                continue
-            }
-            switchedFromAuto = control.value
-            await applySetting(definition.name, manual)
-            current = availableSettings()[definition.name] ?? { ...control, value: manual }
-        }
-        const next = stepByStops(current, definition.read, stops, definition.stopsPerDoubling)
-        if (!next) {
-            reasons.push(`${name}: already at its limit (${current.value})`)
+            reasons.push(`${name}: set to auto`)
             continue
         }
-        const from = current.value
-        const applied = await applySetting(definition.name, next)
-        return {
-            changed: CAMERA_CONTROL_LABELS[definition.name],
-            from,
-            to: applied,
-            requestedStops: stops,
-            ...(switchedFromAuto
-                ? {
-                      switchedFromAuto: {
-                          setting: CAMERA_CONTROL_LABELS[definition.name],
-                          was: switchedFromAuto,
-                          nowManual: from,
-                      },
-                  }
-                : {}),
+        const next = stepByStops(control, definition.read, stops, definition.stopsPerDoubling)
+        if (!next) {
+            reasons.push(`${name}: already at its limit (${control.value})`)
+            continue
         }
+        const applied = await applySetting(definition.name, next)
+        return { changed: CAMERA_CONTROL_LABELS[definition.name], from: control.value, to: applied, requestedStops: stops }
     }
     throw new Error(`Couldn't change exposure: ${reasons.join('; ')}`)
 }
@@ -344,7 +304,7 @@ const STUDIO_ONLY_TOOLS: StudioTool[] = [
         name: 'adjust_color_temperature',
         title: 'Warmer or cooler',
         description:
-            'Make the picture warmer (positive kelvin, more orange) or cooler (negative, bluer) from the current colour temperature, switching white balance to a Kelvin mode if needed. "A touch" is about 200–300 K, "a bit" 300–500 K, "a lot" 1000 K. Use this for any warmer/cooler/too blue/too orange request.',
+            'Make the picture warmer (positive kelvin, more orange) or cooler (negative, bluer) from the current colour temperature; white balance must already be in its colour temperature mode. "A touch" is about 200–300 K, "a bit" 300–500 K, "a lot" 1000 K. Use this for any warmer/cooler/too blue/too orange request.',
         inputSchema: z.object({ kelvin: z.number().min(-3000).max(3000).describe('Positive is warmer') }),
         changesSomething: true,
         run: async input => {

@@ -298,7 +298,8 @@ try {
         ensureAdvertised(controls, 'CanonFocusMode', rawValue)
         const canon = protocolSession(camera).driver
         if (!(canon instanceof CanonCamera)) throw new Error('set-focus-mode over PTP/IP needs a Canon EOS camera')
-        await canon.setFocusMode(rawValue)
+        const focusMode = canon.registry.properties.CanonFocusMode
+        await canon.set(focusMode, rawValue as CodecType<typeof focusMode.codec>)
         detail = `Focus mode changed to ${rawValue} over PTP/IP`
     } else if (action === 'set-white-balance') {
         if (!rawValue) throw new Error('set-white-balance requires --value')
@@ -341,7 +342,9 @@ try {
     } else if (action === 'set-shutter-speed') {
         if (!rawValue) throw new Error('set-shutter-speed requires --value')
         ensureAdvertised(controls, 'CanonShutterSpeed', rawValue)
-        await protocolSession(camera).driver.setShutterSpeed(rawValue)
+        const canonDriver = vendorDriver(camera, CanonCamera)
+        const shutter = canonDriver.registry.properties.CanonShutterSpeed
+        await canonDriver.set(shutter, rawValue as CodecType<typeof shutter.codec>)
         detail = `Shutter speed changed to ${rawValue} over PTP/IP`
     } else if (action === 'probe-movie-mode' || action === 'set-movie-format') {
         try {

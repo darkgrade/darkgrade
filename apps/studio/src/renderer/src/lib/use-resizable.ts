@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { persisted } from '@renderer/lib/persisted'
 
 /**
  * The pane's edge that drags: a right sidebar's left edge widens it leftward, a left sidebar's right edge widens it
@@ -6,14 +7,11 @@ import { useCallback, useState } from 'react'
  */
 export type ResizeEdge = 'left' | 'right' | 'top'
 
-function stored(key: string, fallback: number): number {
-    try {
-        const value = Number(localStorage.getItem(key))
-        return Number.isFinite(value) && value > 0 ? value : fallback
-    } catch {
-        return fallback
-    }
-}
+const storedSize = (key: string, fallback: number) =>
+    persisted<number>(key, text => {
+        const value = Number(text)
+        return Number.isFinite(value) && value > 0 ? value : undefined
+    }, fallback)
 
 /**
  * A pane's size that its edge drags, as old Outpost's panes do: it follows the pointer between min and max, is
@@ -21,20 +19,14 @@ function stored(key: string, fallback: number): number {
  * the pane tracks the pointer exactly.
  */
 export function useResizable(key: string, initial: number, min: number, max: () => number, edge: ResizeEdge) {
-    const [size, setSize] = useState(() => stored(key, initial))
+    const [size, setSize] = useState(() => storedSize(key, initial).load())
     const [dragging, setDragging] = useState(false)
     const clamp = useCallback(
         (value: number) => Math.round(Math.min(Math.max(value, min), Math.max(min, max()))),
         [min, max]
     )
     const save = useCallback(
-        (value: number) => {
-            try {
-                localStorage.setItem(key, String(value))
-            } catch {
-                // Not remembered; the pane still resizes for this session.
-            }
-        },
+        (value: number) => storedSize(key, value).save(value),
         [key]
     )
 

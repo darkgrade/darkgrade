@@ -8,10 +8,11 @@ import { wavFile } from '@shared/wav'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, readdirSync, rmSync, writeFileSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
+import { MODEL_PROGRESS_INTERVAL_MS, progressThrottle } from '@main/progress-throttle'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
-const PROGRESS_INTERVAL_MS = 150
 /** Recent sessions kept for replaying a bad transcript; older ones are deleted. */
 const KEPT_SESSION_RECORDINGS = 5
 
@@ -129,7 +130,7 @@ class VoiceService {
             this.log(`Speech engine ready (${speechModel(model).name})`)
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message, setupStep: null })
             throw error
@@ -139,12 +140,9 @@ class VoiceService {
     private async downloadModel(model: SpeechModelId): Promise<string[]> {
         const files = SPEECH_MODEL_FILES[model]
         if (!this.cache.isCached(files)) this.log(`Downloading ${speechModel(model).name} (one time)`)
-        let lastReportMs = 0
+        const report = progressThrottle(MODEL_PROGRESS_INTERVAL_MS)
         return this.cache.ensure(files, progress => {
-            const now = Date.now()
-            const done = progress.receivedBytes === progress.totalBytes
-            if (!done && now - lastReportMs < PROGRESS_INTERVAL_MS) return
-            lastReportMs = now
+            if (!report(progress.receivedBytes === progress.totalBytes)) return
             this.setStatus({ phase: 'downloading', setupStep: 'speech-model', ...progress })
         })
     }

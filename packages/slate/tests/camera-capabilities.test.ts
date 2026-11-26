@@ -474,7 +474,7 @@ describe('Sony native and SDK capabilities share the same exposure contract', ()
             },
             close: async () => {},
         })
-        await camera.connectUsb('fixture')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         try {
             expect((await camera.getCapabilities()).advertisedOperations).toBeNull()
             expect(await camera.getShutterSpeed()).toBe('180°')

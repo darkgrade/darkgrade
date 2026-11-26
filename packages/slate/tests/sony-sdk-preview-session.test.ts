@@ -52,15 +52,15 @@ const authentication = {
 describe('Sony preview session', () => {
     it('keeps an enabled OSD without rewriting or polling it for every frame', async () => {
         const { camera, commands } = session()
-        await camera.connectUsb('example')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         await camera.captureSonyOsdImage('/tmp/first.png')
         await camera.captureSonyOsdImage('/tmp/second.png')
-        expect(commands.map(command => command.cmd)).toEqual(['connect', 'properties', 'osd', 'osd'])
+        expect(commands.map(command => command.cmd)).toEqual(['connect_bluetooth_direct', 'properties', 'osd', 'osd'])
         await camera.disconnect()
     })
     it('rechecks OSD state after an image failure', async () => {
         const { camera, commands } = session({ failOsdOnce: true })
-        await camera.connectUsb('example')
+        await camera.connectBluetoothDirect({ host: '192.0.2.98', mac: '0C:80:2F:A7:36:AD', model: 'ILME-FX2', bluetoothAddress: '0C:80:2F:A7:36:AE' })
         await expect(camera.captureSonyOsdImage('/tmp/first.png')).rejects.toThrow('temporarily')
         await camera.captureSonyOsdImage('/tmp/second.png')
         expect(commands.filter(command => command.cmd === 'properties')).toHaveLength(2)

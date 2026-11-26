@@ -1,5 +1,7 @@
 import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext, type PTPProtocolViolation } from '@core/ptp-errors'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
+import { CONTAINER_HEADER_BYTES, ContainerType, isParameterBlock, readContainerHeader } from '@ptp/container'
 
 /** How long and how often darkgrade waits for a camera before giving up on a transaction. */
 export interface TransactionPolicy {
@@ -40,9 +42,6 @@ export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
     automaticUSBReset: true,
 }
 
-export const CONTAINER_TYPE = { command: 1, data: 2, response: 3, event: 4 } as const
-const HEADER_BYTES = 12
-const CLOSE_SESSION = 0x1003
 /** A reply this many transactions old is treated as a late answer to an abandoned transaction. */
 const STALE_WINDOW = 1024
 const MAXIMUM_DISCARDED_CONTAINERS = 8
@@ -80,13 +79,18 @@ function isStale(transactionId: number, expected: number): boolean {
  * transport itself throws (USB stalls, closed sockets) pass through unchanged.
  */
 export class TransactionChannel {
-    policy: TransactionPolicy = { ...DEFAULT_TRANSACTION_POLICY }
+    #policy: TransactionPolicy = { ...DEFAULT_TRANSACTION_POLICY }
     private readonly pendingOperations = new Set<Promise<unknown>>()
 
     constructor(
         private readonly transport: TransportInterface,
         private readonly onDiscard: (discarded: DiscardedContainer) => void = () => undefined
     ) {}
+
+    /** The policy in force; change it only through configure(), which validates it. */
+    get policy(): Readonly<TransactionPolicy> {
+        return this.#policy
+    }
 
     get hasPendingIO(): boolean {
         return this.pendingOperations.size > 0
@@ -128,19 +132,38 @@ export class TransactionChannel {
             throw new Error('Automatic USB reset must be enabled or disabled with a boolean')
         if (policy.recoverTransport !== undefined && typeof policy.recoverTransport !== 'function')
             throw new Error('Transport recovery must be an explicitly supplied callback')
-        this.policy = policy
+        this.#policy = policy
     }
 
     /**
      * The wait before DeviceBusy retry `retry` (0 for the first), or undefined when the retry count
      * or the time budget is spent. Delays double from the base and never exceed the transaction timeout.
      */
-    deviceBusyDelay(retry: number, elapsedMilliseconds: number): number | undefined {
+    private deviceBusyDelay(retry: number, elapsedMilliseconds: number): number | undefined {
         const { deviceBusyRetries, deviceBusyBackoffMilliseconds, deviceBusyBudgetMilliseconds, timeoutMilliseconds } =
             this.policy
         const remainingMilliseconds = deviceBusyBudgetMilliseconds - elapsedMilliseconds
         if (retry >= deviceBusyRetries || remainingMilliseconds <= 0) return undefined
         return Math.min(timeoutMilliseconds, remainingMilliseconds, deviceBusyBackoffMilliseconds * 2 ** retry)
+    }
+
+    /**
+     * Runs `attempt`, and again while `busy` says the camera answered DeviceBusy (ISO 15740: the operation
+     * was not performed), within this policy's retry count and time budget; returns the last result.
+     */
+    async retryWhileBusy<Result>(
+        attempt: () => Promise<Result>,
+        busy: (result: Result) => boolean,
+        wait: (milliseconds: number) => Promise<void>
+    ): Promise<Result> {
+        const startedAt = Date.now()
+        for (let retry = 0; ; retry++) {
+            const result = await attempt()
+            if (!busy(result)) return result
+            const delayMilliseconds = this.deviceBusyDelay(retry, Date.now() - startedAt)
+            if (delayMilliseconds === undefined) return result
+            await wait(delayMilliseconds)
+        }
     }
 
     async send(container: Uint8Array, sessionId: number, context: PTPErrorContext): Promise<void> {
@@ -209,26 +232,25 @@ export class TransactionChannel {
     }
 
     private parse(raw: Uint8Array, context: PTPErrorContext): Container {
-        if (raw.length < HEADER_BYTES)
+        if (raw.length < CONTAINER_HEADER_BYTES)
             throw new PTPProtocolError(
                 'short-container',
                 `container of ${raw.length} bytes has no complete header`,
                 context
             )
-        const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
-        const declaredLength = view.getUint32(0, true)
-        if (declaredLength < HEADER_BYTES)
+        const { length: declaredLength, type, code, transactionId } = readContainerHeader(raw)
+        if (declaredLength < CONTAINER_HEADER_BYTES)
             throw new PTPProtocolError('short-container', `container declares ${declaredLength} bytes`, context)
         if (raw.length < declaredLength) {
             const detail = `container declares ${declaredLength} bytes but ${raw.length} arrived`
             throw new PTPProtocolError('truncated-container', detail, context)
         }
         return {
-            type: view.getUint16(4, true),
-            code: view.getUint16(6, true),
-            transactionId: view.getUint32(8, true),
+            type,
+            code,
+            transactionId,
             // Bytes past the declared length are not part of the container and are ignored.
-            payload: raw.slice(HEADER_BYTES, declaredLength),
+            payload: raw.slice(CONTAINER_HEADER_BYTES, declaredLength),
         }
     }
 
@@ -242,15 +264,15 @@ export class TransactionChannel {
 
     private isCloseSessionReply(container: Container, expected: ExpectedContainer): boolean {
         return (
-            expected.operationCode === CLOSE_SESSION &&
-            container.type === CONTAINER_TYPE.response &&
+            expected.operationCode === genericOperationRegistry.CloseSession.code &&
+            container.type === ContainerType.RESPONSE &&
             container.transactionId === 0
         )
     }
 
     private check(container: Container, expected: ExpectedContainer, context: PTPErrorContext): Container {
         const allowed: number[] =
-            expected.phase === 'data' ? [CONTAINER_TYPE.data, CONTAINER_TYPE.response] : [CONTAINER_TYPE.response]
+            expected.phase === 'data' ? [ContainerType.DATA, ContainerType.RESPONSE] : [ContainerType.RESPONSE]
         const fail = (reason: PTPProtocolViolation, detail: string): never => {
             throw new PTPProtocolError(reason, detail, context)
         }
@@ -262,12 +284,12 @@ export class TransactionChannel {
                 `reply belongs to transaction ${container.transactionId}, expected ${expected.transactionId}`
             )
         const { type, code, payload } = container
-        if (type === CONTAINER_TYPE.data && code !== expected.operationCode && code !== expected.dataOperationCode)
+        if (type === ContainerType.DATA && code !== expected.operationCode && code !== expected.dataOperationCode)
             fail(
                 'operation-mismatch',
                 `data belongs to opcode 0x${code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`
             )
-        if (type === CONTAINER_TYPE.response && (payload.length % 4 || payload.length > 20))
+        if (type === ContainerType.RESPONSE && !isParameterBlock(payload))
             fail('unexpected-container-type', 'response has invalid UINT32 parameter framing')
         return container
     }

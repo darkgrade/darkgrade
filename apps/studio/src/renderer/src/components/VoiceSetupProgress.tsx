@@ -1,4 +1,5 @@
 import { Progress, Spinner } from '@kevinschaich/components'
+import { formatDownloadSize } from '@shared/format'
 import { modelLicenses } from '@shared/model-licenses'
 import type { SetupStep, SetupStepId, SetupSummary } from '@shared/setup-progress'
 import type { SpeechModelId } from '@shared/speech-models'
@@ -11,11 +12,6 @@ const WORKING_DESCRIPTIONS: Record<SetupStepId, string> = {
     assistant: 'Downloading the assistant',
 }
 
-/** Sizes in words a person recognises: whole megabytes below a gigabyte, one decimal above. */
-export function formatDownloadSize(bytes: number): string {
-    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
-    return `${Math.max(1, Math.round(bytes / 1e6))} MB`
-}
 
 /** One line under the bar: the whole download so far (not the current step's own), plus a note for the slow step. */
 function setupDetail(summary: SetupSummary): string | null {

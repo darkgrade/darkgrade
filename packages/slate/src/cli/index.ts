@@ -14,6 +14,7 @@ import {
 } from '@cli/commands'
 import { renderHelp, usageLine } from '@cli/help'
 import { createTerminal, type GlobalFlags, type Terminal, type TerminalStreams } from '@cli/terminal'
+import { CONTACT_CONFIRMATION_HOURS, installationIdOf } from '@contribute/schema'
 import { closeNodeDiagnostics, nodeDiagnostics, settingsDirectory, sharedSettings } from '@contribute/settings'
 import { randomUUID } from 'node:crypto'
 
@@ -115,7 +116,7 @@ async function runTelemetryCommand(path: readonly CommandDefinition[], words: re
     const store = sharedSettings()
     const saved = await store.read()
     if (!saved) throw new Error('Telemetry settings unavailable')
-    const installationId = saved.installationId ?? saved.installKey?.slice(4, 40)
+    const installationId = saved.installationId ?? (saved.installKey && installationIdOf(saved.installKey))
     const progress = terminal.progress()
     const during = async <Result>(text: string, work: () => Promise<Result>) => {
         if (terminal.animated) progress.update(text)
@@ -146,7 +147,7 @@ async function runTelemetryCommand(path: readonly CommandDefinition[], words: re
     } else if (action === 'login') {
         await during('Requesting a confirmation email…', async () => (await nodeDiagnostics()).requestContact(email!))
         terminal.print(
-            'Confirmation email requested. The submitted address is unverified until you open its link (expires in 2 hours). A verified replacement reassigns this installation’s retained history.'
+            `Confirmation email requested. The submitted address is unverified until you open its link (expires in ${CONTACT_CONFIRMATION_HOURS} hours). A verified replacement reassigns this installation’s retained history.`
         )
     } else if (action === 'logout') {
         if (saved.installKey)
@@ -323,25 +324,38 @@ async function runCommand(words: readonly string[], flags: GlobalFlags, host: Da
     if (path[1].name === 'telemetry') return runTelemetryCommand(path, remaining, terminal)
     if (path[1].name === 'camera') return runCameraCommand(path, remaining, terminal)
     const { flags: commandFlags, argument } = parseCommandArguments(path, remaining)
-    const json = commandFlags.has('json')
-    if (command.name === 'version') {
+    const run = Object.hasOwn(leafCommands, command.name) ? leafCommands[command.name] : undefined
+    if (!run) throw unknownCommand(path.slice(0, -1), command.name)
+    return run({ path, argument, json: commandFlags.has('json'), host, terminal, versionLine })
+}
+
+interface LeafCommandContext {
+    path: readonly CommandDefinition[]
+    argument: string | undefined
+    json: boolean
+    host: DarkgradeCliHost
+    terminal: Terminal
+    versionLine: string
+}
+
+/** The top-level commands without subcommands, by name; telemetry and camera have their own tables. */
+const leafCommands: Record<string, (context: LeafCommandContext) => Promise<number> | number> = {
+    version({ json, host, terminal, versionLine }) {
         const { node } = process.versions
         terminal.print(
             json ? JSON.stringify({ version: host.version ?? null, node, platform: process.platform, architecture: process.arch }) : versionLine
         )
         return 0
-    }
-    if (command.name === 'completions') {
+    },
+    async completions({ argument, path, terminal }) {
         if (!argument) throw new UsageError(`Name a shell: ${completionShells.join(', ')}.`, path)
         const { completionScript } = await import('@cli/completions')
         terminal.print(completionScript(argument as CompletionShell).trimEnd())
         return 0
-    }
-    if (command.name === 'man') return openManual(host.version, terminal)
-    if (command.name === 'cameras') return (await import('@cli/cameras')).runCamerasCommand({ json }, terminal)
-    if (command.name === 'doctor')
-        return (await import('@cli/doctor')).runDoctorCommand({ json, version: host.version }, terminal)
-    throw unknownCommand(path.slice(0, -1), command.name)
+    },
+    man: ({ host, terminal }) => openManual(host.version, terminal),
+    cameras: async ({ json, terminal }) => (await import('@cli/cameras')).runCamerasCommand({ json }, terminal),
+    doctor: async ({ json, host, terminal }) => (await import('@cli/doctor')).runDoctorCommand({ json, version: host.version }, terminal),
 }
 
 /** Terminal command behavior shared by the thin darkgrade executable and other Node hosts. */
