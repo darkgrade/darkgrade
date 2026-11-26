@@ -54,6 +54,9 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { batteryFromPower, readStandardPower } from '@vendors/power-reading'
 import { observeStandardControls, type ControlObservation, type ControlWrite } from '@vendors/generic/control-observation'
+import { readCameraCapabilities, writeCameraControl } from '@vendors/camera-controls'
+import { ptpMediaCapability } from '@vendors/generic/ptp-media'
+import { operationsAdvertised } from '@vendors/generic/generic-operations'
 import type { CameraPower } from '@workflows/camera-power'
 import { vendorEntry } from '@vendors/vendors'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
@@ -1382,15 +1385,14 @@ export class GenericCamera {
         return this.owner
     }
 
-    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits. Modules
-    // that import a brand driver are loaded on first use, so this module never imports one.
+    // Driver contract (`@camera/driver`): the standard PTP operations every driver inherits. Brands
+    // differ through the hooks they override; this module imports no brand driver.
     #mediaGroup?: MediaCapability
     #info?: { sessionId: number | null; info: CameraInfo }
     #clockCheck?: { sessionId: number | null; reason: string | undefined }
 
     /** The card-media group; Sony overrides it with its own card index. */
     protected async mediaGroup(): Promise<MediaCapability> {
-        const { ptpMediaCapability } = await import('@vendors/generic/ptp-media')
         return (this.#mediaGroup ??= ptpMediaCapability(this))
     }
 
@@ -1432,7 +1434,6 @@ export class GenericCamera {
     }
 
     async getCapabilities(requested?: CameraControlId): Promise<CameraCapabilities> {
-        const { readCameraCapabilities } = await import('@vendors/camera-controls')
         return readCameraCapabilities(this, requested)
     }
 
@@ -1441,7 +1442,6 @@ export class GenericCamera {
         value: CameraControlInputs[Id],
         context?: ExposureContext
     ): Promise<CameraControlState> {
-        const { writeCameraControl } = await import('@vendors/camera-controls')
         return writeCameraControl(this, id, value, context)
     }
 
@@ -1519,7 +1519,6 @@ export class GenericCamera {
         if (operation === 'getCardStatus' || operation === 'listMedia' || operation === 'getMediaPreview' || operation === 'downloadMedia')
             return (await (await this.mediaGroup()).availability?.(capabilities))?.[operation]
         if (operation === 'takePhoto' && this.takePhoto === GenericCamera.prototype.takePhoto) {
-            const { operationsAdvertised } = await import('@vendors/generic/generic-operations')
             return operationsAdvertised(capabilities, [this.registry.operations.InitiateCapture])
         }
         if (operation !== 'setClock') return undefined

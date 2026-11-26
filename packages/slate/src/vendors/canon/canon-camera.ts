@@ -30,7 +30,7 @@ import type { CanonExtendedDeviceInfo } from '@vendors/canon/datasets/canon-exte
 import { canonImageFormatFromPacked } from '@vendors/canon/datasets/canon-image-format-dataset'
 import { canonLiveViewPosition, type CanonLiveViewFrame, type CanonLiveViewPosition } from '@vendors/canon/datasets/canon-live-view-dataset'
 import { CANON_PROPERTY_NAMES } from '@vendors/canon/definitions/canon-property-names'
-import { canonControlProperties } from '@vendors/control-properties'
+import { canonControlProperties } from '@vendors/canon/control-properties'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { standardClockUnavailable } from '@vendors/generic/standard-clock'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
