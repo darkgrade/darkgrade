@@ -1,3 +1,4 @@
+import { CONTACT_CONFIRMATION_HOURS } from '@contribute/schema'
 import { fileRoles, kebabCase, surfaceOperations, type SurfaceOperation } from '@runtime/operations'
 
 /** The one description of the command tree. Help, the manual page, shell completions,
@@ -122,7 +123,7 @@ const telemetry: CommandDefinition = {
             name: 'login',
             summary: 'Link an email to your contributions',
             description:
-                'Requests a confirmation link. Open it within 2 hours; it works once. ' +
+                `Requests a confirmation link. Open it within ${CONTACT_CONFIRMATION_HOURS} hours; it works once. ` +
                 'On a terminal the address is asked for when left out.',
             section: 'Identity',
             arguments: [{ name: 'email', required: true }],

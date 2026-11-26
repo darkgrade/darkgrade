@@ -88,6 +88,18 @@ export interface Contribution {
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 export const isContributionId = (value: unknown): value is string => typeof value === 'string' && uuid.test(value)
+
+/** An installation's credential, `dgi_<installation id>.<secret>`: the id (group 1) and its 43-character base64url secret (group 2). */
+export const INSTALLATION_KEY = /^dgi_([a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})\.([A-Za-z0-9_-]{43})$/
+/** How long an emailed confirmation link works. */
+export const CONTACT_CONFIRMATION_MILLISECONDS = 2 * 60 * 60_000
+/** The same, in hours, for help and messages. */
+export const CONTACT_CONFIRMATION_HOURS = CONTACT_CONFIRMATION_MILLISECONDS / 3_600_000
+
+/** The credential for an installation id and its secret. */
+export const installationKey = (installationId: string, secret: string) => `dgi_${installationId}.${secret}`
+/** The installation id a credential carries. */
+export const installationIdOf = (key: string) => key.slice('dgi_'.length, 'dgi_'.length + 36)
 const integer = (value: unknown, maximum: number): value is number =>
     Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= maximum
 const keys = (value: unknown, allowed: string[]): value is Record<string, unknown> =>

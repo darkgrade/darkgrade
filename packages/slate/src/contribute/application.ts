@@ -8,6 +8,9 @@ import {
 } from '@contribute/batch'
 import { environmentDisabled, newContribution, observeTransport, type CameraTransport } from '@contribute/observe'
 import {
+    INSTALLATION_KEY,
+    installationIdOf,
+    installationKey,
     MAXIMUM_BODY_BYTES,
     MAXIMUM_ENTRIES,
     validateContribution,
@@ -50,7 +53,6 @@ const STATE_KEYS = [
     ...['enabled', 'noticeVersion', 'installKey', 'collectorOrigin', 'withdrawalPending'],
     ...['installationId', 'enrollmentKey', 'registrationPending'],
 ]
-const keyPattern = /^dgi_[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.[A-Za-z0-9_-]{43}$/
 export function validateInstallationState(state: unknown): asserts state is InstallationState {
     const value = state as InstallationState
     if (
@@ -61,9 +63,9 @@ export function validateInstallationState(state: unknown): asserts state is Inst
         typeof value.enabled !== 'boolean' ||
         typeof value.noticeVersion !== 'string' ||
         typeof value.withdrawalPending !== 'boolean' ||
-        (value.installKey !== undefined && !keyPattern.test(value.installKey)) ||
+        (value.installKey !== undefined && !INSTALLATION_KEY.test(value.installKey)) ||
         (value.registrationPending !== undefined && typeof value.registrationPending !== 'boolean') ||
-        (value.enrollmentKey !== undefined && !keyPattern.test(value.enrollmentKey)) ||
+        (value.enrollmentKey !== undefined && !INSTALLATION_KEY.test(value.enrollmentKey)) ||
         (value.installationId !== undefined &&
             !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value.installationId)) ||
         (value.collectorOrigin !== undefined && typeof value.collectorOrigin !== 'string')
@@ -231,7 +233,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 .replaceAll('+', '-')
                 .replaceAll('/', '_')
                 .replace(/=+$/, '')
-            state.enrollmentKey = `dgi_${state.installationId}.${secret}`
+            state.enrollmentKey = installationKey(state.installationId, secret)
             await persist()
         }
         state.registrationPending = true
@@ -242,14 +244,14 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         })
         if (
             !response.ok ||
-            !keyPattern.test(data.installKey) ||
+            !INSTALLATION_KEY.test(data.installKey) ||
             data.installKey !== state.enrollmentKey ||
             data.noticeVersion !== NOTICE_VERSION
         )
             throw new Error('Diagnostics enrollment unavailable')
         if (generation !== epoch || !enabled()) return undefined
         state.installKey = data.installKey
-        state.installationId = data.installKey.slice(4, 40)
+        state.installationId = installationIdOf(data.installKey)
         delete state.enrollmentKey
         state.registrationPending = false
         await persist() // Never upload with an identity the application cannot retain for withdrawal.
@@ -458,7 +460,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         status: () => ({
             enabled: enabled(),
             sharingEnabled: options.store.current?.()?.enabled ?? state.enabled,
-            installationId: state.installationId ?? state.installKey?.slice(4, 40) ?? null,
+            installationId: state.installationId ?? (state.installKey && installationIdOf(state.installKey)) ?? null,
             enrolled: !!state.installKey,
             withdrawalPending: state.withdrawalPending,
             queuedEntries:

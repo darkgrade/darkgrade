@@ -5,7 +5,7 @@ import {
     type InstallationStore,
 } from '@contribute/application'
 import { NOTICE_VERSION } from '@contribute/batch'
-import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
+import { installationKey, type CameraContext, type DiagnosticEntry } from '@contribute/schema'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
     appendFileSync,
@@ -109,7 +109,7 @@ export function sharedSettings(directory = settingsDirectory()): InstallationSto
                         withdrawalPending: false,
                         noticeVersion: NOTICE_VERSION,
                         installationId,
-                        enrollmentKey: `dgi_${installationId}.${randomBytes(32).toString('base64url')}`,
+                        enrollmentKey: installationKey(installationId, randomBytes(32).toString('base64url')),
                     }
                     save(previous)
                 }

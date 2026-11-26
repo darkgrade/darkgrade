@@ -14,6 +14,7 @@ import {
 } from '@cli/commands'
 import { renderHelp, usageLine } from '@cli/help'
 import { createTerminal, type GlobalFlags, type Terminal, type TerminalStreams } from '@cli/terminal'
+import { CONTACT_CONFIRMATION_HOURS, installationIdOf } from '@contribute/schema'
 import { closeNodeDiagnostics, nodeDiagnostics, settingsDirectory, sharedSettings } from '@contribute/settings'
 import { randomUUID } from 'node:crypto'
 
@@ -115,7 +116,7 @@ async function runTelemetryCommand(path: readonly CommandDefinition[], words: re
     const store = sharedSettings()
     const saved = await store.read()
     if (!saved) throw new Error('Telemetry settings unavailable')
-    const installationId = saved.installationId ?? saved.installKey?.slice(4, 40)
+    const installationId = saved.installationId ?? (saved.installKey && installationIdOf(saved.installKey))
     const progress = terminal.progress()
     const during = async <Result>(text: string, work: () => Promise<Result>) => {
         if (terminal.animated) progress.update(text)
@@ -146,7 +147,7 @@ async function runTelemetryCommand(path: readonly CommandDefinition[], words: re
     } else if (action === 'login') {
         await during('Requesting a confirmation email…', async () => (await nodeDiagnostics()).requestContact(email!))
         terminal.print(
-            'Confirmation email requested. The submitted address is unverified until you open its link (expires in 2 hours). A verified replacement reassigns this installation’s retained history.'
+            `Confirmation email requested. The submitted address is unverified until you open its link (expires in ${CONTACT_CONFIRMATION_HOURS} hours). A verified replacement reassigns this installation’s retained history.`
         )
     } else if (action === 'logout') {
         if (saved.installKey)

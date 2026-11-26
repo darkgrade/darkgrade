@@ -1,5 +1,6 @@
 import { createApplicationDiagnostics } from '@darkgrade/slate/telemetry/application'
 import { installationFileStore } from '@darkgrade/slate/telemetry/installation-store'
+import { installationIdOf } from '@darkgrade/slate/telemetry/schema'
 import {
     closeNodeDiagnostics,
     nodeDiagnostics,
@@ -36,7 +37,7 @@ export async function initializeDiagnostics() {
                         ...initial!,
                         ...saved,
                         installationId:
-                            saved.installationId ?? saved.installKey?.slice(4, 40) ?? initial!.installationId,
+                            saved.installationId ?? (saved.installKey && installationIdOf(saved.installKey)) ?? initial!.installationId,
                         ...(saved.installKey && { enrollmentKey: undefined }),
                     })
                 }
