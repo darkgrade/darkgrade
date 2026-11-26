@@ -3,6 +3,7 @@ import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Camera } from '@camera/index'
 import { protocolSession } from '@camera/protocol-session'
 import { captureDriverImage } from '@vendors/generic/capture-driver-image'
+import { sonyPropertyInventory } from '@tests/fixtures/camera-fixtures'
 
 function fixture() {
     const facade = new Camera({ vendorId: 0x054c, transport: { isLittleEndian: () => true } as any,
@@ -115,5 +116,46 @@ describe('Sony shutter and host transfer sequencing', () => {
         await expect(camera.captureImage({ autofocus: false, ...options })).rejects.toThrow('CameraBusy')
         expect(sent).toEqual(expect.arrayContaining(['ShutterReleaseButton:UP', 'ShutterHalfReleaseButton:UP', 'FocusMode:AF-C']))
         expect(sent.at(-1)).toBe(last)
+    })
+    // darkgrade02's FX2, 2026-11-25 (Matrix CI 929eafe3): switched from Movie Flexible Exposure to
+    // Program Auto in a dim room, the body chose 10" (DSC00245.JPG: ExposureTime 10/1, ISO 1250)
+    // and announced the image only after the exposure and its noise-reduction dark frame.
+    it.each([
+        ['10"', 0x0064000a, true],
+        ['1/250', 0x000100fa, false],
+    ] as const)('waits for the image of a %s exposure the body reports under S1', async (_label, shutterRaw, arrives) => {
+        vi.useFakeTimers()
+        try {
+            const { camera } = fixture()
+            const { registry } = camera
+            const inventory = sonyPropertyInventory(registry, [
+                { code: registry.properties.ExposureProgramMode.code, datatype: 6, current: 0x00010002 },
+                { code: registry.properties.ShutterSpeed.code, datatype: 6, current: shutterRaw, writable: false, enabled: 2 },
+                { code: registry.properties.FocusMode.code, datatype: 4, current: 0x0001, choices: [0x0001, 0x8004] },
+                { code: registry.properties.StillImageSaveDestination.code, datatype: 4, current: 0x0011, choices: [0x0010, 0x0011] },
+            ])
+            camera.refreshPropertyStates = vi.fn(async () => {
+                const cache = (camera as any).propertyCache as Map<number, unknown>
+                cache.clear()
+                for (const descriptor of inventory.properties) cache.set(descriptor.devicePropertyCode, descriptor)
+                return []
+            })
+            const original = (camera.set as any).getMockImplementation()
+            camera.set = vi.fn(async (property, value) => {
+                if (property.name !== 'ShutterReleaseButton' || value !== 'DOWN') return original(property, value)
+                // Exposure, dark frame, then the host object: 21 s after S2.
+                setTimeout(() => (camera as any).handleEvent({ code: 0xc201, parameters: [7], transactionId: 1 }), 21_000)
+            }) as any
+            const capture = camera.captureImage({ autofocus: false }).then(
+                image => ({ image }),
+                error => ({ error })
+            )
+            await vi.advanceTimersByTimeAsync(40_000)
+            const outcome: any = await capture
+            if (arrives) expect(outcome.image?.data).toEqual(Uint8Array.of(0xff, 0xd8, 0xff, 0xd9))
+            else expect(String(outcome.error)).toContain('Timed out after 15.008 seconds waiting for Sony captured-image handle')
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

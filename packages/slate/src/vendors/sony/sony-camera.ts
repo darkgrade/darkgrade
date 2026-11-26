@@ -218,6 +218,33 @@ const SONY_LIVE_VIEW_INTERVAL_SAMPLES = 9
 const SONY_LIVE_VIEW_INTERVAL_MIN_MS = 15
 const SONY_LIVE_VIEW_INTERVAL_MAX_MS = 70
 const SONY_CONTROL_SETTLE_TIMEOUT_MS = 3_000
+/** How long a released shutter may take to announce its image, beyond the exposure itself. */
+const SONY_CAPTURE_TIMEOUT_MS = 15_000
+/** The longest timed exposure Sony's shutter-speed property names is 30"; anything above is not trusted. */
+const SONY_LONGEST_TIMED_EXPOSURE_MS = 60_000
+
+/**
+ * A ShutterSpeed (0xD20D) raw value as milliseconds of exposure: numerator in the high 16 bits,
+ * denominator in the low (10" is 100/10, 1/250 is 1/250). Bulb (0) and the "no value" pattern
+ * (0xFFFFFFFF) are 0, so callers keep their plain wait.
+ */
+export function sonyExposureMs(raw: unknown): number {
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw <= 0 || raw >= 0xffffffff) return 0
+    const numerator = Math.floor(raw / 0x10000)
+    const denominator = raw % 0x10000
+    if (numerator === 0 || denominator === 0) return 0
+    const ms = (numerator / denominator) * 1000
+    return ms <= SONY_LONGEST_TIMED_EXPOSURE_MS ? ms : 0
+}
+
+/**
+ * The wait for a released shutter's image: the plain wait, plus the exposure and, for long
+ * exposure noise reduction, a dark frame as long again (Sony takes one after exposures of 1" and
+ * longer when it is on, and the setting is not in every body's inventory).
+ */
+export function sonyCaptureTimeoutMs(exposureMs: number): number {
+    return SONY_CAPTURE_TIMEOUT_MS + 2 * Math.ceil(exposureMs)
+}
 /** How long an exposure mode waits for the settings it hands over (see awaitExposureHandover). */
 const SONY_EXPOSURE_HANDOVER_MS = 1_500
 /**
@@ -840,6 +867,7 @@ export class SonyCamera extends GenericCamera {
             await this.set(this.registry.properties.SetPostViewEnable, 'DISABLE')
         }
 
+        let exposureMs = 0
         const release = async () => {
             // Sony requires S1 to remain held through S2, including manual focus.
             // libgphoto2 camera_sony_capture uses the same two-stage release.
@@ -853,6 +881,7 @@ export class SonyCamera extends GenericCamera {
                         throw shutterRefused(error)
                     }
                 } else await this.waitMs(500)
+                exposureMs = await this.heldExposureMs(autofocus)
                 shutter.sent = true
                 await this.set(this.registry.properties.ShutterReleaseButton, 'DOWN')
                 await this.waitMs(35)
@@ -874,13 +903,36 @@ export class SonyCamera extends GenericCamera {
         }
         // A card workflow verifies the newly indexed object itself. It must not
         // require the separate host-delivery event when no host image was requested.
+        const timeoutMs = () => sonyCaptureTimeoutMs(exposureMs)
         if (!includeInfo && !includeData) {
-            await confirm(() => this.waitForCapturedImageObjectHandle(release, false))
+            await confirm(() => this.waitForCapturedImageObjectHandle(release, false, timeoutMs))
             return {}
         }
         return confirm(async () =>
-            this.transferCapturedImage(await this.waitForCapturedImageObjectHandle(release), includeInfo, includeData)
+            this.transferCapturedImage(
+                await this.waitForCapturedImageObjectHandle(release, true, timeoutMs),
+                includeInfo,
+                includeData
+            )
         )
+    }
+
+    /**
+     * The exposure the body will make once S2 is pressed, in milliseconds, read with S1 held (where
+     * a program mode locks its metering). 0 for Bulb or a value Slate cannot read: the plain wait.
+     * An FX2 that Slate had switched from Movie Flexible Exposure to Program Auto in a dim room
+     * chose 10" at ISO 1250 (darkgrade02, 2026-11-25, DSC00245.JPG): with long-exposure noise
+     * reduction the image arrived well after the fixed 15 s wait for it.
+     */
+    private async heldExposureMs(inventoryFresh: boolean): Promise<number> {
+        const code = this.registry.properties.ShutterSpeed.code
+        try {
+            // Autofocus polled the inventory under S1 already; manual focus reads it once here.
+            if (!inventoryFresh || !this.propertyCache.has(code)) await this.refreshPropertyStates()
+        } catch {
+            // A read, never a reason to stop the release: keep what the last inventory said.
+        }
+        return sonyExposureMs(this.propertyCache.get(code)?.currentValueRaw)
     }
 
     private async transferCapturedImage(handle: number, includeInfo: boolean, includeData: boolean): Promise<SonyImage> {
@@ -1088,14 +1140,21 @@ export class SonyCamera extends GenericCamera {
         )
     }
 
-    protected async waitForCapturedImageObjectHandle(capture: () => Promise<void>, requireObject = true): Promise<number> {
+    protected async waitForCapturedImageObjectHandle(
+        capture: () => Promise<void>,
+        requireObject = true,
+        timeoutMs: () => number = () => SONY_CAPTURE_TIMEOUT_MS
+    ): Promise<number> {
         const { SDIE_ObjectAdded, SDIE_CapturedEvent } = this.registry.events
+        let waitedMs = SONY_CAPTURE_TIMEOUT_MS
+        // Measured once the release has returned, so it covers the exposure read under S1.
+        const timeout = () => (waitedMs = timeoutMs())
         const handle = requireObject
-            ? await this.awaitEvent(SDIE_ObjectAdded, event => event.ObjectHandle || undefined, capture, 15_000)
-            : await this.awaitEvent(SDIE_CapturedEvent, () => 0, capture, 15_000)
+            ? await this.awaitEvent(SDIE_ObjectAdded, event => event.ObjectHandle || undefined, capture, timeout)
+            : await this.awaitEvent(SDIE_CapturedEvent, () => 0, capture, timeout)
         if (handle !== undefined) return handle
         const awaited = requireObject ? 'captured-image handle' : 'capture completion'
-        throw new Error(`Timed out after 15 seconds waiting for Sony ${awaited}`)
+        throw new Error(`Timed out after ${waitedMs / 1000} seconds waiting for Sony ${awaited}`)
     }
 
     /** Runs `action` with a listener armed, then waits up to `timeoutMs` for the first event `read` accepts. */
@@ -1103,7 +1162,7 @@ export class SonyCamera extends GenericCamera {
         event: E,
         read: (params: EventParams<E>) => Result | undefined,
         action: () => Promise<void>,
-        timeoutMs: number
+        timeoutMs: number | (() => number)
     ): Promise<Result | undefined> {
         let result: Result | undefined
         const handler = (params: EventParams<E>) => {
@@ -1112,7 +1171,7 @@ export class SonyCamera extends GenericCamera {
         this.on(event, handler)
         try {
             await action()
-            const deadline = Date.now() + timeoutMs
+            const deadline = Date.now() + (typeof timeoutMs === 'function' ? timeoutMs() : timeoutMs)
             while (result === undefined && Date.now() < deadline) await this.waitMs(50)
             return result
         } finally {
