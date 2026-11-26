@@ -6,7 +6,8 @@ import { studioMcpServer } from '@main/mcp/mcp-server'
 import { sendDecodedSurface, sendLiveFrame } from '@main/metal-frames'
 import { openPerfWindow, perfMonitorOpen, receivePerfReport, sampleProcesses, tracePerf } from '@main/perf-monitor'
 import { preferences } from '@main/preferences'
-import { isTrustedRendererFrame, rendererDocumentUrl } from '@main/renderer-security'
+import { isTrustedRendererFrame } from '@main/renderer-security'
+import { studioRendererUrl } from '@main/studio-window'
 import { studioView } from '@main/studio-view'
 import { SWIFT_LIVE_VIEW_SURFACE, swiftLiveViewJpeg, type DecodedSurface } from '@main/usb-experiments'
 import { visionService } from '@main/vision/vision-service'
@@ -23,22 +24,16 @@ import type {
 } from '@shared/ipc'
 import { IPC, IPC_EVENTS } from '@shared/ipc'
 import type { VisionModelId } from '@shared/vision-models'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 import { errorMessage } from '@shared/format'
 
-const rendererUrl = rendererDocumentUrl(
-    pathToFileURL(join(fileURLToPath(new URL('.', import.meta.url)), '../renderer/index.html')).href,
-    app.isPackaged,
-    process.env.ELECTRON_RENDERER_URL
-)
 
 
 function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> | T): void {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<T>> => {
         try {
-            if (!isTrustedRendererFrame(event.senderFrame, rendererUrl)) throw new Error('Untrusted renderer frame')
+            if (!isTrustedRendererFrame(event.senderFrame, studioRendererUrl)) throw new Error('Untrusted renderer frame')
             const data = await operation(...(args as never[]))
             return { ok: true, data }
         } catch (error) {
