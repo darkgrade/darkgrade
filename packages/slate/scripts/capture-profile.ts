@@ -1,10 +1,10 @@
 import { Logger } from '@core/logger'
+import { slateBuildMetadata } from '@core/telemetry'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { formatUsbDeviceId, parseUsbDeviceId } from '@transport/usb/usb-device-id'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { createRecordingBundle } from '@transport/node-recording'
 import { captureCameraProfile } from '@vendors/profile-capture'
-import { execFileSync } from 'node:child_process'
 import { existsSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -29,8 +29,9 @@ if (existsSync(resolve(output))) throw new Error('Choose a new output file; exis
 const timeoutSeconds = Number(argument('--timeout-seconds') ?? 60)
 const logger = new Logger({ expanded: false })
 const transport = new USBTransport(logger, { maxBulkReadBytes: 16_384 })
-const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim()
-const dirty = execFileSync('git', ['diff', '--name-only', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim().length > 0
+const build = await slateBuildMetadata()
+if (!build) throw new Error('This checkout has no readable git revision; a profile is attributed to one')
+const { revision, dirty } = build
 const recordingDirectory = argument('--recording-directory')
 if (argumentsValue.includes('--recording-directory') && (!recordingDirectory || recordingDirectory.startsWith('--')))
     throw new Error('--recording-directory requires a new directory path')
