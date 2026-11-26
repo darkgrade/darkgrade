@@ -1,7 +1,7 @@
 import { captureDriverImage, type CaptureImageOptions } from '@vendors/generic/capture-driver-image'
 import { protocolAccess } from '@camera/protocol-session'
 import type { Camera } from '@camera/index'
-import { readCameraObjectHandles } from '@vendors/generic/storage'
+import { pollNewCardObjects, readCameraObjectHandles } from '@vendors/generic/storage'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { withSonyPhotoMode } from '@vendors/sony/photo-mode'
@@ -26,11 +26,12 @@ export async function captureProfilePhoto(
             return release({ includeInfo: true, includeData: true, ...options })
         const baseline = await readCameraObjectHandles(session.driver)
         await release({ includeInfo: false, includeData: false, ...options })
-        const deadline = Date.now() + 8000
-        do {
-            try {
-                for (const handle of await readCameraObjectHandles(session.driver)) {
-                    if (baseline.has(handle)) continue
+        const { found } = await pollNewCardObjects(session.driver, baseline, {
+            timeoutMilliseconds: 8000,
+            // Only a busy card is read again; any other failure ends the capture.
+            tolerate: error => error instanceof PTPResponseError && error.code === 0x2019,
+            scan: async handles => {
+                for (const handle of handles) {
                     const response = await session.send(session.driver.registry.operations.GetObjectInfo, {
                         ObjectHandle: handle,
                     })
@@ -50,12 +51,9 @@ export async function captureProfilePhoto(
                         throw new Error('New card image transfer length mismatch')
                     return { info, data }
                 }
-            } catch (error) {
-                if (!(error instanceof PTPResponseError) || error.code !== 0x2019) throw error
-            }
-            const remaining = deadline - Date.now()
-            if (remaining > 0) await new Promise(resolve => setTimeout(resolve, Math.min(250, remaining)))
-        } while (Date.now() < deadline)
+            },
+        })
+        if (found) return found
         throw new Error('Shutter completed but no new card image appeared')
     }
     if (vendor !== 0x054c) return capture()
