@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { HardwareBusyError } from '@runtime/errors'
+
+/** How long a claim lasts without a heartbeat, how often a held claim is renewed, and how often a waiting call retries. */
+export const OWNERSHIP_LEASE_MILLISECONDS = 45000
+export const OWNERSHIP_HEARTBEAT_MILLISECONDS = 10000
+const CLAIM_RETRY_MILLISECONDS = 50
 export interface OwnershipStore {
     claimHardwareResource(resource: string, owner: string, purpose: string, lifetimeMilliseconds: number): boolean
     heartbeatHardwareOwner(owner: string, lifetimeMilliseconds: number): unknown
@@ -22,9 +27,9 @@ export class HardwareCoordinator {
     }
     claim(resource: string, purpose: string) {
         const owner = crypto.randomUUID()
-        if (!this.database.claimHardwareResource(resource, owner, purpose, 45000))
+        if (!this.database.claimHardwareResource(resource, owner, purpose, OWNERSHIP_LEASE_MILLISECONDS))
             throw new HardwareBusyError('This camera input is already owned by another operation')
-        const heartbeat = setInterval(() => this.database.heartbeatHardwareOwner(owner, 45000), 10000)
+        const heartbeat = setInterval(() => this.database.heartbeatHardwareOwner(owner, OWNERSHIP_LEASE_MILLISECONDS), OWNERSHIP_HEARTBEAT_MILLISECONDS)
         let released = false
         return {
             release: () => {
@@ -48,22 +53,22 @@ export class HardwareCoordinator {
         context.operations++
         const acquire = async () => {
             if (context.resources.has(resource)) {
-                if (!this.database.claimHardwareResource(resource, context.owner, purpose, 45000))
+                if (!this.database.claimHardwareResource(resource, context.owner, purpose, OWNERSHIP_LEASE_MILLISECONDS))
                     throw new HardwareBusyError(
                         'Camera ownership expired or changed; no further command was sent. Inspect the current owner before retrying.'
                     )
                 return
             }
             const deadline = Date.now() + waitMilliseconds
-            while (!this.database.claimHardwareResource(resource, context.owner, purpose, 45000)) {
+            while (!this.database.claimHardwareResource(resource, context.owner, purpose, OWNERSHIP_LEASE_MILLISECONDS)) {
                 if (Date.now() >= deadline)
                     throw new HardwareBusyError(
                         'Camera is in use by another operation; waiting did not finish. No USB or power reset was attempted.'
                     )
-                await new Promise(resolve => setTimeout(resolve, 50))
+                await new Promise(resolve => setTimeout(resolve, CLAIM_RETRY_MILLISECONDS))
             }
             context.resources.add(resource)
-            context.heartbeat ??= setInterval(() => this.database.heartbeatHardwareOwner(context.owner, 45000), 10000)
+            context.heartbeat ??= setInterval(() => this.database.heartbeatHardwareOwner(context.owner, OWNERSHIP_LEASE_MILLISECONDS), OWNERSHIP_HEARTBEAT_MILLISECONDS)
         }
         return this.context.run(context, async () => {
             try {

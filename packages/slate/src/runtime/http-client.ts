@@ -1,5 +1,5 @@
 import type { DiscoveredCamera } from '@camera/driver'
-import { HardwareBusyError } from '@runtime/errors'
+import { HARDWARE_BUSY, HardwareBusyError } from '@runtime/errors'
 import { readOperationInput, surfaceOperation, type OperationInput } from '@runtime/operations'
 import type { CameraClient, OperationReply } from '@runtime/runtime'
 
@@ -41,7 +41,7 @@ export class HttpCameraClient implements CameraClient {
         }
         const failure = result && typeof result === 'object' ? result as { error?: unknown; code?: unknown } : {}
         const message = typeof failure.error === 'string' ? failure.error : undefined
-        if (response.status === 409 && failure.code === 'HARDWARE_BUSY') throw new HardwareBusyError(message || 'Camera is busy')
+        if (response.status === HARDWARE_BUSY.status && failure.code === HARDWARE_BUSY.code) throw new HardwareBusyError(message || 'Camera is busy')
         if (!response.ok) throw new Error(message || `Camera request failed (${response.status})`)
         return result
     }
