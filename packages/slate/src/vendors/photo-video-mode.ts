@@ -5,9 +5,9 @@ import {
     unrecognizedValueLabel,
     type CameraControlState,
     type UnrecognizedValues,
+    type CameraRecordingState,
 } from '@camera/controls'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { Camera } from '@camera/index'
 import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import type { PhotoVideoMode } from '@camera/settings/values'
 import { SonyCamera, type SonyPropertyState } from '@vendors/sony/sony-camera'
@@ -108,8 +108,7 @@ async function sendPhotoVideoMode(driver: GenericCamera, state: CameraControlSta
  * switch the camera never shows is CameraOutcomeUnknownError (a Canon whose lever is at Movie).
  */
 export async function writePhotoVideoMode(
-    owner: Camera,
-    driver: GenericCamera,
+    driver: GenericCamera & { getRecordingState?(): Promise<CameraRecordingState> },
     requested: string,
     read: () => Promise<CameraControlState | undefined>
 ): Promise<CameraControlState> {
@@ -122,7 +121,9 @@ export async function writePhotoVideoMode(
         throw new CameraRefusedError('photoVideoMode', `The camera does not offer ${requested} from its current mode`)
     if (state.value === requested) return state
     // Missing recording telemetry never proves idle.
-    const recording = await owner.getRecordingState()
+    if (!driver.getRecordingState)
+        throw new CameraUnsupportedError('getRecordingState', 'getRecordingState is not supported by this camera')
+    const recording = await driver.getRecordingState()
     if (recording !== 'idle')
         throw new CameraUnsupportedError('photoVideoMode', `Photo / video cannot change while recording is ${recording}`)
     await sendControlWrite(driver, 'photoVideoMode', () => sendPhotoVideoMode(driver, state, requested))

@@ -434,7 +434,7 @@ export async function writeCameraControl<Id extends CameraControlId>(
     context?: ExposureContext
 ): Promise<CameraControlState> {
     if (id === 'photoVideoMode')
-        return writePhotoVideoMode(owner, driver, String(value), async () =>
+        return writePhotoVideoMode(driver, String(value), async () =>
             (await readCameraCapabilities(driver, id)).controls.photoVideoMode
         )
     // Nikon descriptors are separate transactions: refresh this control and its live guards,
