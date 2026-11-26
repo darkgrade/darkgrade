@@ -13,7 +13,87 @@ The reviewers reported 525 problems. About 480 are left once duplicates seen fro
 
 The rough effect is 6-9k lines of executable code removed and about 1.5k added (interfaces, tables, the confirm primitive). Generated Sony data is reshaped into one catalog and reported separately; it is not counted as simplification. About 21 special cases stay. They are bench findings, documented SDK defects, cited vendor quirks, AGENTS-required polling, and the recorded Sony ISO/gain-mode exception, and some of them move into their driver.
 
-Nothing has changed yet. This file is the plan.
+Nothing has changed yet. This file is the plan. Its status on main after #126, and the revised order, are in [Revisions after #126 (2026-11-26)](#revisions-after-126-2026-11-26).
+
+## Revisions after #126 (2026-11-26)
+
+This plan was written at ebcab86 on the #126 branch, after the brands moved to `src/vendors/<brand>`. About 35 commits landed after it before the squash merge (7438458). Most paths still exist; line numbers drifted, most in `sony-camera.ts`, `nikon-camera.ts`, `canon-camera.ts`, `generic-camera.ts` and `camera-controls.ts`. Almost nothing in the plan is done. Statuses were checked by grep on main, not item by item.
+
+### Status per fix
+
+- **1. Driver interface: still needed, and larger.** One item is done: `availability` now uses its capabilities argument (`generic-camera.ts:1499-1508`). The `instanceof` switches remain in `vendors/camera-controls.ts` (233-602), `vendors/photo-video-mode.ts:91-93`, `vendors/generic/capture-driver-image.ts:32-43`, `vendors/profile-qualification.ts:16-19`, `workflows/telemetry-benchmark.ts:122-179`, `vendors/drivers.ts:74` and `generic-camera.ts:1424` (`SonyRemoteSdkTransport`). The TRANSITIONAL `owner` is at `generic-camera.ts:1371-1376`, the TRANSITIONAL block at `generic-operations.ts:13`. `CameraDriverInstance`, `DriverCore`, `settingActions`, `setSonySetting`/`setSonyProperty`, `NikonShotControls` and `storageHost` all remain. The per-setting string setters sit at `generic-camera.ts:1128-1150` and `canon-camera.ts:436-484`, plus Nikon's and Sony's `setIso`.
+- **2. Typed definitions: still needed.** Canon now has named responses (`canon-response-definitions.ts`, used for ObjectNotReady), but literal codes remain in Canon and Nikon. `use4ByteCode`, `canonicalExposureInput`, `canonicalControlInput`, `videoCodecValueNames` and `sdiControlCode` remain. `sdiControlCode` is now also read in `vendors/protocol-evidence.ts`. The collector item moved to `src/telemetry/server/transport.ts`.
+- **3. One vendor table: still needed; the USB scope item is partly done.** The USB default is now class-only (`usb-transport.ts:156-159`), so every vendor's PTP body is found; `cli/benchmark.ts:85` and `scripts/camera-api-check.ts:14` keep their own lists. Raw vendor ids in `protocol-evidence.ts` went from 9 to 15. Studio's `VENDOR_NAMES` and `vendorIdForMake` remain (`apps/studio/src/main/camera-service/shared.ts:85-97`). `protocol-evidence.ts` grew by about 120 lines of request evidence and needs the table too.
+- **4. Operation descriptors: partly done.** The list is committed (`src/runtime/camera-operations.ts`) and `check:guards` checks it. `generate-camera-operations.ts --compatibility` still writes a re-export at the old `build/generated` path for older readers; delete it once Matrix and Test Bench read `src/runtime`. Studio's `writtenSetting` still strips "set" (`studio-tools.ts:459-460`). The other items were not changed.
+- **5. One media lifecycle: still needed, and larger.** Sony's `takePhoto` now watches the card index (`watchCardIndex` in `sony-camera.ts:1681-1727`, parsed by `vendors/sony/content-info-list.ts`). That is a fourth way to find a new file, beside Canon's ObjectAddedEx, Nikon's ObjectAdded and the generic pollers. `captureProfilePhoto` and `UsbVideoRecording` remain; the Studio RAW walker is at `shared.ts:216-257`.
+- **6. Body mode: partly started.** `vendors/generic/focus-point-changes.ts` (`FocusPointChanges`, used by Canon, Nikon and Sony) records what `setFocusPoint` changed and undoes it on `resetFocusPoint` and disconnect, only while the body still shows Slate's value. It is the first shared restore record; `withMode` should grow from it rather than beside it. The Sony flags and Studio's `withLiveViewPaused` remain.
+- **7. SonySession and catalog: still needed.** No `SonySession`; `sdk-camera.ts` (845 lines) and `sdk-controls.ts` keep their own tables.
+- **8. Per-session state: still needed.** `randomSessionId` remains in `ptp/definitions/session.ts`, used by `generic-camera.ts` and `sony-camera.ts`.
+- **9. Container codec and transport contract: still needed.** No `linkKind`. Call attribution was added in `core/telemetry.ts` (the observer takes a `callId`), not as another transport decorator, so the three decorators are still three.
+- **10. Typed errors: still needed in Slate; partly done in Studio.** Studio's `zoom.ts` and `live-view.ts:160` now catch `CameraUnsupportedError`, but the `/not supported/i` fallback and `withTimeout` remain.
+- **11. Injected services: still needed, and larger.** `core/telemetry.ts` is now 491 lines and also holds the call instrumentation (`instrumentCameraOperations`). `FocusPointChanges` keeps a module-global map by body. `createContributions` remains; `installationIdOf` does not exist; `isContributionId` exists in `contribute/schema.ts` but the other UUID regexes were not checked. Eight `./contribute/*` package exports are compatibility aliases of `./telemetry/*` with no caller in this repository.
+- **12. CLI table: still needed.** The CLI files are unchanged since the plan apart from four lines in `camera-operation.ts`.
+- **13. Studio as a runtime host: still needed.** Studio keeps its own queue (`camera-service.ts:141-178`, used at `studio-tools.ts:491`), so `cameraArgument` in `runtime/mcp.ts` stays. `mcp-server.ts` has no function named `protect`; its hand-written catch (31-49) still flattens errors to text. Undo is still global; the 1500 ms hotplug wait is `HOTPLUG_CONNECT_DELAY_MS` in `shared.ts:37`.
+- **14. Control passthrough: partly done.** Studio writes through `camera.setControl` and uses Slate's control list (2acf3f9). Still there: `matchOption` snapping within a third of a stop (`shared/setting-values.ts:39-65`) and `VALUE_SYNONYMS`; the setIso/setShutterSpeed/setAperture channels (`ipc.ts:436-438`, preload 34-36, `ipc-handlers.ts:117-119`); the `settings` block; the white-balance switch with a 5600 K guess (`studio-tools.ts:157-168`); the lossy `CameraControl` type; `nearestIndex`; the dead `controlProperties` map.
+- **15, 16, 17. Studio IPC table, model engine, renderer primitives: still needed.** Unchanged.
+- **18. Small fixes: still needed.** `runCameraBenchmark` is still exported (`src/index.ts:1`), so are `movie-audio` (index.ts:76) and the `export *` of PTP types (95-107). The Firestore-shaped interface is now `src/telemetry/server/database.ts`. The Studio items remain.
+
+Nothing in the plan is obsolete. The special cases still stand.
+
+### New consolidation #126 created
+
+- **`captureDriverImage` beside `takePhoto`.** `vendors/generic/capture-driver-image.ts` keeps an `instanceof` chain for the capture modes `takePhoto` lacks (host memory, RAW compression, release without transfer). `profile-media.ts`, `tests/bench-ptpip.ts` and Matrix's harness call it. Make those modes driver capture options under fix 1 and fix 5, or keep it on `/protocol` only.
+- **String setters beside `setControl`.** `Camera`'s typed setters are generated over `setControl`, which is right, but each driver still has its own `setIso(string)`-style methods with their own admission. Delete them under fix 1.
+- **The main entry still carries a second API.** `src/index.ts` exports `VideoTake`, `optimiseShot`, `analyseShot`, `normalizeCameraPower`/`readCameraPower` (which take a vendor string) and raw PTP types. Under the public/private bar these are workflows on top of `Camera` or protocol access.
+- **`/protocol` keeps three recording classes and vendor helpers.** `UsbVideoRecording`, `SonyVideoRecording`, `SonyPtpVideoRecording`, `NikonShotControls` and the card-index parser are exported there. Fix 5 and fix 7 should leave one recording capability, and Test Bench and Matrix should be checked before each export goes.
+- **Studio imports `/protocol`** for `VendorIDs`, Sony content types, `parseSonyFocalFrameInfo` and `TransportType` (`camera-service/shared.ts`, `settings.ts`, `usb-experiments.ts`). A host should need none of them.
+- **Four "find the new file" paths**, one per brand (above, fix 5). One card-index hook on the driver, with Sony's content list as its Sony implementation.
+- **Vendor request decoding in shared code.** `requestEvidence(vendorId, …)` in `vendors/protocol-evidence.ts`, called from generic telemetry, decodes Canon 0x9110, Sony 0xd2dc and Nikon 0xd102 itself; FixedMovie 0xd1c2 is now a constant in a fourth place and Sony 0xd2dc in a second. Each driver should supply its decoder, as `explainResponse` already does.
+- **More shared Nikon and exposure logic** in `camera-controls.ts`: a Z5 II FNumber filter (199-205), `canonicalShutterChoices` and a second exposure comparator, `sameExposure`, with a fifth float tolerance.
+- **Compatibility shims with a removal date:** the `build/generated` re-export and the `./contribute/*` aliases.
+- **The Matrix field allowlist** in `src/telemetry/server/review.ts` (`matrixProtocolFields`, `matrixKinds`) restates Matrix's importer schema from the other repository. Keep one list and test the export against Matrix's importer.
+
+### Revised order of work
+
+1. Deploy the collector from main and run the end-to-end telemetry test (below). It does not depend on any refactor, and every bench run until then loses its call entries.
+2. Remove what breaks the repository's own rules in Studio: `matchOption` snapping, the 5600 K white-balance guess and the manual-value guess (fix 14). They are small and change behaviour, so they go first.
+3. Delete dead surface and shims (fix 18 deletions, `runCameraBenchmark`, `movie-audio`, `createContributions`, the `build/generated` re-export, the `./contribute/*` aliases), after tracing Test Bench and Matrix.
+4. Inert defaults and injected services (fix 11), including the telemetry module state and the focus-point store.
+5. The container codec and transport contract (fix 9), then the vendor table and per-session state (fixes 3 and 8).
+6. Typed definitions (fix 2), then the driver interface (fix 1) one vendor at a time, folding in the driver string setters and `captureDriverImage`.
+7. The body-mode primitive (fix 6), grown from `FocusPointChanges`, then the media lifecycle (fix 5) with one card-index hook.
+8. The Sony catalog and `SonySession` (fix 7).
+9. Typed errors (fix 10), the rest of the operation descriptors (fix 4) and the CLI table (fix 12).
+10. Studio: the runtime host (fix 13), the rest of fix 14, then fixes 15, 16 and 17.
+11. Comments with each fix; tests last, as before. Re-checks are unchanged: the Slate suite, `test:package`, `camera:api-check` on every bench camera, and the telemetry test again after fixes 1, 5 and 9, which move the code that emits call and protocol entries.
+
+## Other final blocker: end-to-end telemetry testing
+
+#126 changed what Slate records and what the collector accepts. Each public `Camera` call is one `call` entry with a `callId`, and every PTP, evidence and SDK entry made during it carries that `callId` (`instrumentCameraOperations` in `src/core/telemetry.ts`, linked by `src/core/call-context.ts`). Every `data` and `response` entry carries `commandCode`. A property write carries `prior` and `priorAgeMilliseconds` when the session had read the property (`requestEvidence` in `src/vendors/protocol-evidence.ts`). A session that starts on an open connection begins with an `attach` entry.
+
+The collector code for all of this is on main in `src/telemetry/server`. The schema accepts `call`, `attach`, `callId` and `commandCode` (`src/contribute/schema.ts`, `src/contribute/protocol.ts` for `prior`). `postgres.ts` derives the `call:<operation>:<outcome>` signal and the named busy signals. `operator-queries.ts` returns `command_code` and the call columns on issues. `review.ts` (`diagnosticPattern`) leaves call and attach entries, `prior` and the new evidence types out of the Matrix export. `tests/telemetry/postgres.test.ts` covers these against a real Postgres.
+
+What has not happened is the deployed path. The deployed collector is older than this code:
+
+- The only run of `.github/workflows/telemetry-deploy.yml` (on 86e6e9c, 2026-11-25) failed at "Check deployment configuration": the `telemetry` environment's variables are not set. No collector image from #126 has been deployed through it.
+- Read through Outpost's Telemetry on 2026-11-26: the benches uploaded about 650,000 events in the last day, all from revisions that record calls (7466e4a to 473ff64), but no `call:` signal exists in the last 7 days, issues carry no `command_code`, and Canon 0xA102 is listed as plain `response:0xa102` rather than the named busy signal. That is what an older collector does: it rejects batches with the new fields, and the client (`legacyBatch` in `src/contribute/application.ts`) sends them again without calls, `attach`, `commandCode`, the new evidence types or `prior`. Those entries are dropped, not kept for later.
+
+An end-to-end test must prove, on a deployed collector built from main:
+
+1. A Slate client on a bench camera (USB first, then PTP/IP) makes a few public calls through each surface (library, MCP, CLI) with one call that succeeds, one the camera refuses and one that is unsupported. The batch it uploads holds the `call` entries and the protocol entries linked to them by `callId`, `commandCode` on responses, and `prior` on a property write.
+2. The collector accepts that batch on the first try (no legacy resend) and stores the entries as sent.
+3. Outpost's Telemetry app (0.12/0.13) shows the refused call in Issues as `<operation> · <outcome>` with its error class and response, groups it by `command_code`, and its Replay shows the call with its protocol work indented under it and the Request row's `prior` value.
+4. Matrix's sync (`sync_matrix`) completes for that session and receives the protocol patterns it did before, and none of the new kinds or fields: no `call` or `attach` entries, no `commandCode`, no `prior`, none of the new evidence types.
+5. An older client's batch is still accepted unchanged.
+
+Not verified yet:
+
+- The deployed collector's revision. `/healthz` reports only `ok`, so the deploy should also report its revision.
+- The deployment itself: the workflow's environment variables, then a deploy of main, then its smoke check.
+- Any of steps 1-5 with real data. The collector tests use fixtures; Outpost's Telemetry pages were built against fixtures and the branch collector; Matrix sync has run only on data without the new fields.
+- That the Sony SDK path and Studio (the `studio` surface) emit call entries the same way.
+- What happens to the call entries the benches recorded since 2026-11-25: the legacy resend dropped them, so they are not in Telemetry and will not be.
+
 
 ## Fixes
 
