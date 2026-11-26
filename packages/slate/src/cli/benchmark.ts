@@ -3,6 +3,7 @@ import type { Camera, CameraOptions } from '@camera/index'
 import type { Terminal } from '@cli/terminal'
 import { getVendorName, isSupportedVendor, VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { BenchmarkCheck, runBenchmark } from '@workflows/telemetry-benchmark'
+import { formatUsbDeviceId, parseUsbDeviceId } from '@transport/usb/usb-device-id'
 export type { DiscoveredCamera }
 
 export const benchmarkUsage = 'benchmark [--camera VID:PID] [--no-capture] [--no-live] [--json]'
@@ -34,9 +35,9 @@ export function parseBenchmarkArguments(args: readonly string[]): BenchmarkArgum
 }
 
 export function parseCameraId(text: string): { vendorId: number; productId: number } {
-    if (!/^[a-f0-9]{4}:[a-f0-9]{4}$/i.test(text)) throw new Error(`"${text}" is not a USB id such as 054c:0e78`)
-    const [vendorId, productId] = text.split(':').map(part => parseInt(part, 16))
-    return { vendorId: vendorId!, productId: productId! }
+    const id = parseUsbDeviceId(text)
+    if (!id) throw new Error(`"${text}" is not a USB id such as 054c:0e78`)
+    return id
 }
 
 /** A Camera for one discovered USB device, logging nothing to the terminal. */
@@ -56,8 +57,7 @@ export function onProcessStopRequest(request: () => void): () => void {
     return () => void process.removeListener('SIGINT', request).removeListener('SIGTERM', request)
 }
 
-export const usbId = (device: { vendorId: number; productId: number }) =>
-    [device.vendorId, device.productId].map(value => value.toString(16).padStart(4, '0')).join(':')
+export const usbId = (device: { vendorId: number; productId: number }) => formatUsbDeviceId(device)
 
 export const describeDevice = (device: DiscoveredCamera) =>
     `${device.model ?? getVendorName(device.vendorId)} (${usbId(device)})`

@@ -1,4 +1,6 @@
 import { Logger } from '@core/logger'
+import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { formatUsbDeviceId, parseUsbDeviceId } from '@transport/usb/usb-device-id'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { createRecordingBundle } from '@transport/node-recording'
 import { captureCameraProfile } from '@vendors/profile-capture'
@@ -17,7 +19,7 @@ const argument = (name: string) => {
     const index = argumentsValue.indexOf(name)
     return index >= 0 ? argumentsValue[index + 1] : undefined
 }
-const identifier = argument('--camera')?.match(/^([0-9a-f]{4}):([0-9a-f]{4})$/i)
+const identifier = parseUsbDeviceId(argument('--camera') ?? '')
 const output = argument('--output')
 const qualifiedProperty = argument('--qualify-property')
 const qualifiedValue = argument('--qualify-value')
@@ -42,11 +44,11 @@ if (takePhoto && (!argumentsValue.includes('--initialize') || !['true', 'false']
 if (!takePhoto && autofocus !== undefined) throw new Error('--autofocus requires --take-photo')
 if ((destination || rawCompression) && !takePhoto) throw new Error('Media options require --take-photo')
 if (destination !== undefined && !['card', 'memory'].includes(destination)) throw new Error('Invalid destination')
-if (rawCompression !== undefined && (rawCompression !== 'lossless' || identifier[1].toLowerCase() !== '04b0'))
+if (rawCompression !== undefined && (rawCompression !== 'lossless' || identifier.vendorId !== VendorIDs.NIKON))
     throw new Error('Lossless RAW requires Nikon')
 if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > 3) throw new Error('Repeat 1–3 times')
 const recording = recordingDirectory ? await createRecordingBundle(transport, resolve(recordingDirectory), {
-    evidence: 'hardware', camera: identifier[0], firmware: 'unknown-before-probe', transport: 'usb',
+    evidence: 'hardware', camera: formatUsbDeviceId(identifier), firmware: 'unknown-before-probe', transport: 'usb',
     revision: revision + (dirty ? '+dirty' : ''), scenario: [
         'profile', ...(takePhoto ? [`still-autofocus-${autofocus}`, destination ?? 'card', rawCompression ?? 'original-format'] : []),
         ...(argumentsValue.includes('--live-view') ? ['live-view'] : []),
@@ -69,8 +71,8 @@ const watchdog = setTimeout(
 )
 try {
     const report = await captureCameraProfile(recording?.transport ?? transport, {
-        vendorId: Number.parseInt(identifier[1], 16),
-        productId: Number.parseInt(identifier[2], 16),
+        vendorId: identifier.vendorId,
+        productId: identifier.productId,
         serialNumber: argument('--serial'),
         revision,
         initialize: argumentsValue.includes('--initialize'),

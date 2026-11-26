@@ -17,28 +17,25 @@ import { constants } from 'node:os'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hardwareTestEnvironmentVariable } from '@tests/setup/hardware'
+import { formatUsbDeviceId, parseUsbDeviceId } from '@transport/usb/usb-device-id'
 
 const usage = 'Usage: bun run camera:lease -- [--camera VID:PID[:SERIAL]] [--wait-minutes 30] [--purpose TEXT] <command...>'
 const daemonIntervalMilliseconds = 1000
 
 export type LeasedCamera = Pick<DiscoveredCamera, 'vendorId' | 'productId' | 'serialNumber'>
 
-const hexadecimal = (value: number) => value.toString(16).padStart(4, '0')
-
 /** `vvvv:pppp:SERIAL`, or `vvvv:pppp` for a body that reports no serial number. */
 export function cameraLabel(camera: LeasedCamera): string {
-    return [hexadecimal(camera.vendorId), hexadecimal(camera.productId), camera.serialNumber].filter(Boolean).join(':')
+    return formatUsbDeviceId(camera, true)
 }
 
 export const cameraLeaseResource = (camera: LeasedCamera) => `usb-camera:${cameraLabel(camera)}`
 
 /** Parses `VID:PID[:SERIAL]` in hexadecimal, as cameraLabel prints it. */
 export function parseCameraSelector(selector: string): LeasedCamera {
-    const [vendor, product, ...serial] = selector.split(':')
-    const vendorId = Number.parseInt(vendor ?? '', 16)
-    const productId = Number.parseInt(product ?? '', 16)
-    if (!Number.isFinite(vendorId) || !Number.isFinite(productId)) throw new Error(`--camera ${selector} is not VID:PID[:SERIAL]\n${usage}`)
-    return { vendorId, productId, ...(serial.length ? { serialNumber: serial.join(':') } : {}) }
+    const camera = parseUsbDeviceId(selector, true)
+    if (!camera) throw new Error(`--camera ${selector} is not VID:PID[:SERIAL]\n${usage}`)
+    return camera
 }
 
 function describeClaim(claim: HardwareClaim) {
