@@ -1,4 +1,4 @@
-import {describe,it,expect,vi} from 'vitest'
+import {describe,it,expect,vi,afterEach} from 'vitest'
 import {TransportType} from '@transport/interfaces/transport-types'
 import {nikonCamera} from '@tests/fixtures/nikon'
 import {PTPResponseError} from '@core/ptp-errors'
@@ -97,18 +97,42 @@ describe('Nikon documented sequence-error recovery',()=>{
         await expect(stuck.camera.recoverSequenceError()).rejects.toThrow('did not clear')
         expect(stuck.operations.filter(code=>code===0x9207)).toHaveLength(1)
     })
-    it('says the camera is not ready yet when, right after power-on, it refuses the clearing release too',async()=>{
-        // darkgrade01 Z5 II, 2026-11-25: StartLiveView and the 0x9207 release both answered HardwareError with
-        // WarningStatus 1; the same photo worked 2.5 minutes later.
+    // darkgrade01 Z5 II, 2026-11-25: StartLiveView and the 0x9207 release both answered HardwareError with
+    // WarningStatus 1 about 50 s after a cold power-on; the same photo worked 2.5 minutes later.
+    function warmingUp(refusals:number){
         const {camera,operations,setReleaseCode}=setup();setReleaseCode(0xa001)
         camera.get=vi.fn(async property=>property.code===0xd102?1:property.name==='LiveViewStatus'?'OFF':[]) as any
         const send=camera.send as any,inner=send.getMockImplementation()
-        send.mockImplementation(async(operation:any,...rest:any[])=>operation.code===0x9201?(operations.push(0x9201),{code:0xa001}):inner(operation,...rest))
+        let starts=0
+        send.mockImplementation(async(operation:any,...rest:any[])=>operation.code===0x9201
+            ?(operations.push(0x9201),{code:++starts<=refusals?0xa001:0x2001}):inner(operation,...rest))
+        let now=0;const waits:number[]=[]
+        vi.spyOn(Date,'now').mockImplementation(()=>now)
+        vi.spyOn(camera as any,'waitMs').mockImplementation(async(ms:any)=>{waits.push(ms);now+=ms})
+        const captures=()=>operations.filter(code=>[0x100e,0x90c0,0x9207,0x9203,0x920a].includes(code))
+        return {camera,operations,waits,captures,elapsed:()=>now}
+    }
+    afterEach(()=>vi.restoreAllMocks())
+    it('waits for a body still warming up, sending only StartLiveView again, never the release',async()=>{
+        const {camera,operations,waits,captures}=warmingUp(5)
+        await (camera as any).enableLiveView()
+        expect((camera as any).liveViewStatus).toBe('ON')
+        // The one clearing release, refused by the camera (nothing taken), and no other capture command.
+        expect(captures()).toEqual([0x9207])
+        expect(operations.filter(code=>code===0x9201)).toHaveLength(6)
+        expect(waits.filter(ms=>ms>=1000)).toEqual([1000,2000,4000,8000,8000])
+    })
+    it('still says the camera is not ready yet once the warm-up budget has passed',async()=>{
+        const {camera,operations,captures,elapsed}=warmingUp(Infinity)
         const refused=await (camera as any).enableLiveView().catch((error:unknown)=>error)
         expect(refused).toBeInstanceOf(PTPResponseError)
+        expect(refused.code).toBe(0xa001)
         expect(refused.message).toMatch(/^The camera is not ready yet/)
-        expect(operations.filter(code=>code===0x9207)).toHaveLength(1)
-        expect(operations.filter(code=>code===0x9201)).toHaveLength(1)
+        expect(captures()).toEqual([0x9207])
+        expect(elapsed()).toBe(90_000)
+        const starts=operations.filter(code=>code===0x9201).length
+        expect(starts).toBeGreaterThan(5);expect(starts).toBeLessThan(20)
+        expect((camera as any).liveViewStatus).not.toBe('ON')
     })
     it('retries live-view startup once after verified recovery, without an unbounded release loop',async()=>{
         const {camera}=setup();let starts=0

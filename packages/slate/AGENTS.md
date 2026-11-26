@@ -131,7 +131,9 @@ Slate switches an advertised FocusMeteringMode (0x501C, libgphoto2's Nikon value
 refuses from LiveViewObject afModeState 2 when the body has none (the Z5 II does not advertise 0x501C;
 its own AF-area property and values are not known here). Right after power-on the Z5 II refused
 StartLiveView and the clearing release with HardwareError while WarningStatus stayed 1: that is "not
-ready yet", a refusal, never retried. FNumber 0 then is no aperture. 0xD061 value 5 is AF-A. Shutter
+ready yet", a refusal. The release is never repeated; live view then sends only StartLiveView again (after
+1, 2, 4, then every 8 s, 90 s in all: the gate's cold Z5 II on 07a2f28 was asked 50 s after power-on) and
+gives the same refusal if the body is still not ready. FNumber 0 then is no aperture. 0xD061 value 5 is AF-A. Shutter
 choices are named in Slate's spelling on every vendor; a write sends the camera's own choice. ISO BMFF
 atoms of size 0 and 1 are legal (R8 Mark II MP4s). A name table's missing word is unrecognized, not a choice.
 The full sweep the same day: the Sony card index answers oldest first, at most 1000 contents a

@@ -71,6 +71,15 @@ const NIKON_FOCUS_STEPS: Record<FocusStepSize, number> = { small: 10, medium: 10
 const NIKON_CARD_FILE_TIMEOUT_MS = 15_000
 /** How long a RAW announced first waits for its JPEG pair, which may arrive in a later event poll. */
 const NIKON_PAIR_GRACE_MS = 1_000
+/**
+ * How long live view waits for a Nikon that is still warming up. A Z5 II on darkgrade01 refused StartLiveView
+ * and the clearing release with HardwareError (WarningStatus 1) about 50 s after a cold power-on, and worked
+ * minutes later. Only StartLiveView is sent again, after 1, 2, 4 then every 8 s; the release is never repeated.
+ */
+const NIKON_WARM_UP_MS = 90_000
+const NIKON_WARM_UP_MAX_DELAY_MS = 8_000
+const NIKON_NOT_READY =
+    'The camera is not ready yet: it refuses live view and the release that clears its sequence error (HardwareError, WarningStatus 1), as a Nikon does for a while after power-on; nothing was taken, try again in a few minutes'
 
 export type NikonLiveViewMetadata = Omit<
     NikonLiveViewDataset,
@@ -887,9 +896,8 @@ export class NikonCamera extends GenericCamera {
             }
         }
         if (this.liveViewStatus === 'ON') return
-        let response = await this.send(this.registry.operations.StartLiveView, {})
-        if (response.code === HardwareError.code && (await this.recoverSequenceError()))
-            response = await this.send(this.registry.operations.StartLiveView, {})
+        let response: { code: number } = await this.send(this.registry.operations.StartLiveView, {})
+        if (response.code === HardwareError.code) response = await this.startLiveViewAfterHardwareError(response.code)
         if (response.code !== OK.code && response.code !== DeviceBusy.code)
             throw new PTPResponseError(response.code, `Nikon StartLiveView failed with response 0x${response.code.toString(16)}`)
         this.ownsLiveView = true
@@ -897,6 +905,30 @@ export class NikonCamera extends GenericCamera {
         await this.pollDeviceReady()
         this.liveViewStatus = 'ON'
         this.liveViewStartPending = false
+    }
+
+    /**
+     * StartLiveView answered HardwareError: clear a sequence error once (one release, never repeated), then
+     * start again. A body still warming up refuses that release too; then only StartLiveView is sent again,
+     * with growing pauses, until it is accepted or NIKON_WARM_UP_MS has passed, which ends in the same
+     * not-ready refusal. Nothing that can take a photo is repeated.
+     */
+    private async startLiveViewAfterHardwareError(code: number): Promise<{ code: number }> {
+        let notReady: PTPResponseError
+        try {
+            if (!(await this.recoverSequenceError())) return { code }
+            return await this.send(this.registry.operations.StartLiveView, {})
+        } catch (error) {
+            if (!(error instanceof PTPResponseError) || error.message !== NIKON_NOT_READY) throw error
+            notReady = error
+        }
+        const deadline = Date.now() + NIKON_WARM_UP_MS
+        for (let delay = 1000; Date.now() < deadline; delay = Math.min(delay * 2, NIKON_WARM_UP_MAX_DELAY_MS)) {
+            await this.waitMs(Math.min(delay, Math.max(0, deadline - Date.now())))
+            const response = await this.send(this.registry.operations.StartLiveView, {})
+            if (response.code !== HardwareError.code) return response
+        }
+        throw notReady
     }
 
     /**
@@ -923,11 +955,8 @@ export class NikonCamera extends GenericCamera {
         const released = await this.send(this.registry.operations.InitiateCaptureRecInMedia, { AfMode: 0xffffffff, Target: 0 })
         // Right after power-on a Z5 II refused live view and this release alike with HardwareError while
         // WarningStatus stayed 1, and worked minutes later: the camera is not ready, and nothing was taken.
-        if (released.code === HardwareError.code)
-            throw new PTPResponseError(
-                released.code,
-                'The camera is not ready yet: it refuses live view and the release that clears its sequence error (HardwareError, WarningStatus 1), as a Nikon does for a while after power-on; nothing was taken, try again in a few minutes'
-            )
+        // Live view waits for it (startLiveViewAfterHardwareError); this release is never sent again.
+        if (released.code === HardwareError.code) throw new PTPResponseError(released.code, NIKON_NOT_READY)
         this.assertNikonResponse(released.code, 'sequence-error shutter release')
         await this.pollDeviceReady()
         const observed = await this.get(warning)
