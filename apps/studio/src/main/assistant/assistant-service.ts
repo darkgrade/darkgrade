@@ -19,6 +19,7 @@ import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import * as z from 'zod/v4'
 import { errorMessage } from '@shared/format'
+import { MODEL_PROGRESS_INTERVAL_MS, progressThrottle } from '@main/progress-throttle'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
@@ -33,7 +34,6 @@ const PARALLEL_REQUESTS = 2
 const INTENT_SLOT = 0
 const AGENT_SLOT = 1
 const MAXIMUM_AGENT_STEPS = 5
-const PROGRESS_INTERVAL_MS = 150
 /** A request from speech gets this long in all; past it, it's reported as failed and the next one runs. */
 const REQUEST_TIMEOUT_MS = 30_000
 /** One tool (a camera command) gets this long before it counts as failed. */
@@ -762,11 +762,9 @@ class AssistantService {
     private async startEngine(): Promise<number> {
         try {
             if (!this.cache.isCached(NEMOTRON_ASSISTANT)) this.log('Downloading the assistant model (one time)')
-            let lastReportMs = 0
+            const report = progressThrottle(MODEL_PROGRESS_INTERVAL_MS)
             const [modelPath, projectorPath] = await this.cache.ensure(NEMOTRON_ASSISTANT, progress => {
-                const now = Date.now()
-                if (progress.receivedBytes !== progress.totalBytes && now - lastReportMs < PROGRESS_INTERVAL_MS) return
-                lastReportMs = now
+                if (!report(progress.receivedBytes === progress.totalBytes)) return
                 this.setStatus({ phase: 'downloading', ...progress })
             })
             this.setStatus({ phase: 'starting', message: null })

@@ -32,6 +32,7 @@ import { app } from 'electron'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { errorMessage } from '@shared/format'
+import { loadNativeAddon } from '@main/native-addon'
 
 type CameraOptions = NonNullable<ConstructorParameters<typeof Camera>[0]>
 type Transport = NonNullable<CameraOptions['transport']>
@@ -69,21 +70,7 @@ interface SwiftUsbAddon {
 
 const require = createRequire(import.meta.url)
 
-let swiftAddon: SwiftUsbAddon | null | undefined
-function loadSwiftAddon(): SwiftUsbAddon | null {
-    if (swiftAddon !== undefined) return swiftAddon
-    swiftAddon = null
-    if (process.platform !== 'darwin') return null
-    const file = app.isPackaged
-        ? join(process.resourcesPath, 'native', 'swift-usb.node')
-        : join(app.getAppPath(), 'native', 'build', 'swift-usb.node')
-    try {
-        swiftAddon = require(file) as SwiftUsbAddon
-    } catch {
-        // Not built on this machine.
-    }
-    return swiftAddon
-}
+const loadSwiftAddon = () => loadNativeAddon<SwiftUsbAddon>('swift-usb')
 
 /** Slate's transport interface on the Swift add-on: containers in and out, the class reset and the camera's events. */
 class SwiftUsbTransport implements Transport {

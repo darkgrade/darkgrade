@@ -36,10 +36,6 @@ export class LlamaServerProcess {
 
     constructor(private readonly options: LlamaServerOptions) {}
 
-    get running(): boolean {
-        return this.child !== null
-    }
-
     async start(): Promise<number> {
         const port = await findFreePort()
         const options = this.options
