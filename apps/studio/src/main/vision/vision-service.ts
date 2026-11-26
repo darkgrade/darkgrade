@@ -20,6 +20,7 @@ import {
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
@@ -119,7 +120,7 @@ class VisionEngine {
             this.host.log(`${name} ready`)
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.host.log(`${name}: ${message}`, 'error')
             this.failedKey = key
             this.setStatus({ phase: 'error', message })

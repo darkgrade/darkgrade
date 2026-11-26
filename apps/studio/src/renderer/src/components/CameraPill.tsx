@@ -9,6 +9,7 @@ import {
     Spinner,
     Switch,
 } from '@kevinschaich/components'
+import { formatGigabytes } from '@shared/format'
 import { formatFocalLength } from '@renderer/components/LensPanel'
 import type { CameraBattery, CameraState } from '@shared/ipc'
 import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap, Unplug } from 'lucide-react'
@@ -30,11 +31,6 @@ function formatDuration(totalMinutes: number): string {
     return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`
 }
 
-/** Decimal gigabytes, as macOS and the camera both count them. */
-function formatGigabytes(bytes: number): string {
-    const gigabytes = bytes / 1e9
-    return `${gigabytes >= 100 ? Math.round(gigabytes) : gigabytes.toFixed(1)} GB`
-}
 
 function batteryLabel(battery: CameraBattery): string {
     if (battery.percent !== null) return `${battery.percent}%`

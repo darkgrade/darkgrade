@@ -8,6 +8,7 @@ import { wavFile } from '@shared/wav'
 import { app } from 'electron'
 import { createWriteStream, mkdirSync, readdirSync, rmSync, writeFileSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
@@ -129,7 +130,7 @@ class VoiceService {
             this.log(`Speech engine ready (${speechModel(model).name})`)
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message, setupStep: null })
             throw error

@@ -1,11 +1,11 @@
 import { Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@kevinschaich/components'
+import { formatDownloadSize } from '@shared/format'
 import { HoverTip } from '@renderer/components/HoverTip'
 import { LiveTranscript } from '@renderer/components/LiveTranscript'
 import { Resizer } from '@renderer/components/Resizer'
 import { VoiceRibbons } from '@renderer/components/VoiceRibbons'
 import {
     AssistantSetupNotice,
-    formatDownloadSize,
     ModelLicenseNotice,
     VoiceSetupProgress,
 } from '@renderer/components/VoiceSetupProgress'

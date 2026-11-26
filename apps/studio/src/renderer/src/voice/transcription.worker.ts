@@ -10,6 +10,7 @@ import { SPEECH_SAMPLE_RATE, wavFile } from '@shared/wav'
 import { SileroVoiceDetector } from '@voice/silero-voice-detector'
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import { concatenate, type Utterance, UtteranceCutter } from '@voice/utterance-cutter'
+import { errorMessage } from '@shared/format'
 
 const WINDOW_SAMPLES = SPEECH_SETTINGS.detector.windowSamples
 const PARTIAL_INTERVAL_SAMPLES = Math.round(SPEECH_SETTINGS.live.partialIntervalSeconds * SPEECH_SAMPLE_RATE)
@@ -68,7 +69,7 @@ async function transcribeFinal(utterance: Utterance): Promise<void> {
         if (text) emit({ type: 'delta', text: ` ${text}` })
         else emit({ type: 'partial', text: '' })
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
+        const message = errorMessage(error)
         diagnostic(`engine error: ${message}`)
         emit({ type: 'partial', text: '' })
         // A sentence for the person; the engine's own words go to the diagnostics log above.
@@ -83,7 +84,7 @@ async function transcribePartial(utterance: Utterance): Promise<void> {
         const text = await requestTranscript(utterance.samples)
         if (generation === utteranceGeneration && finalsPending === 0) emit({ type: 'partial', text })
     } catch (error) {
-        diagnostic(`partial transcription failed: ${error instanceof Error ? error.message : String(error)}`)
+        diagnostic(`partial transcription failed: ${errorMessage(error)}`)
     } finally {
         partialInFlight = false
     }
@@ -183,7 +184,7 @@ async function start(command: Extract<TranscriptionCommand, { type: 'start' }>):
         detector ??= await SileroVoiceDetector.create(enginePort)
         detector.reset()
     } catch (error) {
-        diagnostic(`start failed: ${error instanceof Error ? error.message : String(error)}`)
+        diagnostic(`start failed: ${errorMessage(error)}`)
         emit({ type: 'error', message: "Couldn't reach the speech engine." })
         emit({ type: 'stopped' })
         return

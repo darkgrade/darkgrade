@@ -2,6 +2,7 @@ import { perf } from '@renderer/lib/perf'
 import type { LocalModelStatus, VoiceEngineStatus } from '@shared/ipc'
 import { describeMicrophoneError } from '@shared/microphone-errors'
 import { DEFAULT_SPEECH_MODEL, type SpeechModelId } from '@shared/speech-models'
+import { SPEECH_SAMPLE_RATE } from '@shared/wav'
 import { IntentFollower } from '@voice/intent-follower'
 import microphoneWorkletUrl from '@voice/microphone-worklet?worker&url'
 import type { ListeningState } from '@voice/panel-switch'
@@ -23,7 +24,6 @@ export interface Microphone {
 
 export type { ListeningState } from '@voice/panel-switch'
 
-const SAMPLE_RATE = 16_000
 const MICROPHONE_STORAGE_KEY = 'voice.microphoneId'
 /** A pause this long starts a new paragraph. */
 const PARAGRAPH_PAUSE_MS = 1400
@@ -166,7 +166,7 @@ export function useLiveTranscription() {
     const startCapture = useCallback(
         async (deviceId: string): Promise<MessagePort> => {
             const stream = await openMicrophone(deviceId)
-            const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+            const context = new AudioContext({ sampleRate: SPEECH_SAMPLE_RATE })
             await context.audioWorklet.addModule(microphoneWorkletUrl)
             const node = new AudioWorkletNode(context, 'microphone-capture')
             const source = context.createMediaStreamSource(stream)

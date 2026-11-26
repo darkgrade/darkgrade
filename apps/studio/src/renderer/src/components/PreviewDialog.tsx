@@ -7,6 +7,7 @@ import {
     DialogTitle,
     Progress,
 } from '@kevinschaich/components'
+import { formatMegabytes } from '@shared/format'
 import { formatCaptureDate } from '@renderer/components/FilesPanel'
 import type { FileEntry, FilePreview, PreviewProgress } from '@shared/ipc'
 import { Download, ImageOff, X } from 'lucide-react'
@@ -38,9 +39,6 @@ function usePreviewUrl(state: PreviewState): string | null {
     return url
 }
 
-function formatMegabytes(bytes: number): string {
-    return `${(bytes / 1e6).toFixed(1)} MB`
-}
 
 function ReadingProgress(): React.JSX.Element {
     const [progress, setProgress] = useState<PreviewProgress | null>(null)

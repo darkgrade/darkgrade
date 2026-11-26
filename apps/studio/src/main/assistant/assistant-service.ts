@@ -18,6 +18,7 @@ import { app } from 'electron'
 import { appendFileSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as z from 'zod/v4'
+import { errorMessage } from '@shared/format'
 
 type Broadcast = (channel: string, payload: unknown) => void
 
@@ -613,7 +614,7 @@ class AssistantService {
             )
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'done', reply } satisfies VoiceIntent)
         } catch (error) {
-            const reply = error instanceof Error ? error.message : String(error)
+            const reply = errorMessage(error)
             this.trace(`intent ${intent.id} direct ${tool.name} failed (${Date.now() - startedMs} ms): ${reply}`)
             this.log(`“${intent.quote}” failed: ${reply}`, 'error')
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'failed', reply } satisfies VoiceIntent)
@@ -674,7 +675,7 @@ class AssistantService {
                 reply,
             } satisfies VoiceIntent)
         } catch (error) {
-            const reply = error instanceof Error ? error.message : String(error)
+            const reply = errorMessage(error)
             this.log(`“${intent.quote}” failed: ${reply}`, 'error')
             this.broadcast(IPC_EVENTS.VoiceIntent, { ...intent, state: 'failed', reply } satisfies VoiceIntent)
         }
@@ -689,7 +690,7 @@ class AssistantService {
         } catch (error) {
             return {
                 ok: false,
-                text: `Invalid arguments for ${tool.name}: ${error instanceof Error ? error.message : String(error)}`,
+                text: `Invalid arguments for ${tool.name}: ${errorMessage(error)}`,
             }
         }
         progress.onToolCall?.(tool.name, input)
@@ -704,7 +705,7 @@ class AssistantService {
                 image: result.image,
             }
         } catch (error) {
-            const text = error instanceof Error ? error.message : String(error)
+            const text = errorMessage(error)
             progress.onToolResult?.(tool.name, false, text, Date.now() - toolStartedMs)
             return { ok: false, text }
         }
@@ -800,7 +801,7 @@ class AssistantService {
             this.log('Assistant ready')
             return port
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
+            const message = errorMessage(error)
             this.log(message, 'error')
             this.setStatus({ phase: 'error', port: null, message })
             throw error

@@ -31,6 +31,7 @@ import { IPC_EVENTS, type UsbTransportChoice } from '@shared/ipc'
 import { app } from 'electron'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { errorMessage } from '@shared/format'
 
 type CameraOptions = NonNullable<ConstructorParameters<typeof Camera>[0]>
 type Transport = NonNullable<CameraOptions['transport']>
@@ -181,7 +182,7 @@ export function experimentalCameraOptions(
             return { usb: new WebUSB({ allowAllDevices: true }) }
         } catch (error) {
             log(
-                `node-usb-rs could not be loaded (${error instanceof Error ? error.message : String(error)}); using node-usb`
+                `node-usb-rs could not be loaded (${errorMessage(error)}); using node-usb`
             )
             return {}
         }
@@ -270,7 +271,7 @@ export async function runSwiftLiveView(host: SwiftLiveViewHost): Promise<boolean
                 void host
                     .enqueue(() => host.camera.getLiveViewFrame())
                     .catch(error =>
-                        host.log(`Live view could not return to shooting: ${error instanceof Error ? error.message : String(error)}`, true)
+                        host.log(`Live view could not return to shooting: ${errorMessage(error)}`, true)
                     )
                     .finally(() => (returningToShooting = false))
             }

@@ -26,6 +26,7 @@ import type { VisionModelId } from '@shared/vision-models'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { errorMessage } from '@shared/format'
 
 const rendererUrl = rendererDocumentUrl(
     pathToFileURL(join(fileURLToPath(new URL('.', import.meta.url)), '../renderer/index.html')).href,
@@ -33,9 +34,6 @@ const rendererUrl = rendererDocumentUrl(
     process.env.ELECTRON_RENDERER_URL
 )
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error)
-}
 
 function handle<T>(channel: string, operation: (...args: never[]) => Promise<T> | T): void {
     ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<T>> => {
