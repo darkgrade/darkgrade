@@ -605,15 +605,10 @@ export class GenericCamera {
         const encodedParams = this.encodeParameters(operation, paramsRecord)
         await this.resynchronizeIfNeeded()
 
-        const retriesDeviceBusy = operation.code >= STANDARD_OPERATIONS.from && operation.code <= STANDARD_OPERATIONS.to
-        const startedAt = Date.now()
-        for (let attempt = 0; ; attempt++) {
-            const response = await this.runTransaction(operation, paramsRecord, encodedParams, data, maxDataLength)
-            if (response.code !== DeviceBusy.code || !retriesDeviceBusy) return response
-            const delayMilliseconds = this.channel.deviceBusyDelay(attempt, Date.now() - startedAt)
-            if (delayMilliseconds === undefined) return response
-            await this.waitMs(delayMilliseconds)
-        }
+        const transaction = () => this.runTransaction(operation, paramsRecord, encodedParams, data, maxDataLength)
+        const standard = operation.code >= STANDARD_OPERATIONS.from && operation.code <= STANDARD_OPERATIONS.to
+        if (!standard) return transaction()
+        return this.channel.retryWhileBusy(transaction, response => response.code === DeviceBusy.code, milliseconds => this.waitMs(milliseconds))
     }
 
     private encodeParameters(operation: OperationDefinition, paramsRecord: Record<string, number | bigint | string>): Uint8Array[] {

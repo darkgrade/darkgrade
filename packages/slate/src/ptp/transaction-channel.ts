@@ -79,13 +79,18 @@ function isStale(transactionId: number, expected: number): boolean {
  * transport itself throws (USB stalls, closed sockets) pass through unchanged.
  */
 export class TransactionChannel {
-    policy: TransactionPolicy = { ...DEFAULT_TRANSACTION_POLICY }
+    #policy: TransactionPolicy = { ...DEFAULT_TRANSACTION_POLICY }
     private readonly pendingOperations = new Set<Promise<unknown>>()
 
     constructor(
         private readonly transport: TransportInterface,
         private readonly onDiscard: (discarded: DiscardedContainer) => void = () => undefined
     ) {}
+
+    /** The policy in force; change it only through configure(), which validates it. */
+    get policy(): Readonly<TransactionPolicy> {
+        return this.#policy
+    }
 
     get hasPendingIO(): boolean {
         return this.pendingOperations.size > 0
@@ -127,19 +132,38 @@ export class TransactionChannel {
             throw new Error('Automatic USB reset must be enabled or disabled with a boolean')
         if (policy.recoverTransport !== undefined && typeof policy.recoverTransport !== 'function')
             throw new Error('Transport recovery must be an explicitly supplied callback')
-        this.policy = policy
+        this.#policy = policy
     }
 
     /**
      * The wait before DeviceBusy retry `retry` (0 for the first), or undefined when the retry count
      * or the time budget is spent. Delays double from the base and never exceed the transaction timeout.
      */
-    deviceBusyDelay(retry: number, elapsedMilliseconds: number): number | undefined {
+    private deviceBusyDelay(retry: number, elapsedMilliseconds: number): number | undefined {
         const { deviceBusyRetries, deviceBusyBackoffMilliseconds, deviceBusyBudgetMilliseconds, timeoutMilliseconds } =
             this.policy
         const remainingMilliseconds = deviceBusyBudgetMilliseconds - elapsedMilliseconds
         if (retry >= deviceBusyRetries || remainingMilliseconds <= 0) return undefined
         return Math.min(timeoutMilliseconds, remainingMilliseconds, deviceBusyBackoffMilliseconds * 2 ** retry)
+    }
+
+    /**
+     * Runs `attempt`, and again while `busy` says the camera answered DeviceBusy (ISO 15740: the operation
+     * was not performed), within this policy's retry count and time budget; returns the last result.
+     */
+    async retryWhileBusy<Result>(
+        attempt: () => Promise<Result>,
+        busy: (result: Result) => boolean,
+        wait: (milliseconds: number) => Promise<void>
+    ): Promise<Result> {
+        const startedAt = Date.now()
+        for (let retry = 0; ; retry++) {
+            const result = await attempt()
+            if (!busy(result)) return result
+            const delayMilliseconds = this.deviceBusyDelay(retry, Date.now() - startedAt)
+            if (delayMilliseconds === undefined) return result
+            await wait(delayMilliseconds)
+        }
     }
 
     async send(container: Uint8Array, sessionId: number, context: PTPErrorContext): Promise<void> {
