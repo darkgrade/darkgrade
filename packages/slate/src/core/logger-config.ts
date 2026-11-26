@@ -6,9 +6,10 @@ export type LoggerConfig = {
     maxTransactions?: number
 }
 
+/** Inert by default: a logger takes over the console or draws in the terminal only when asked. */
 export const defaultLoggerConfig: LoggerConfig = {
     expanded: true,
-    captureConsole: true,
-    renderInTerminal: true,
+    captureConsole: false,
+    renderInTerminal: false,
     maxTransactions: 1000,
 }

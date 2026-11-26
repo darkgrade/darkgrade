@@ -84,8 +84,7 @@ export class Camera {
     }
 
     constructor(options: CameraOptions = {}) {
-        // Library construction must not replace the host's console or exception handlers.
-        const logger = new Logger({ captureConsole: false, renderInTerminal: false, ...options.logger })
+        const logger = new Logger(options.logger)
         const transport = options.transport ?? new USBTransport(logger, options.usb ? { usb: options.usb } : {})
         const partial = { options, logger, transport }
         const context: CameraContext = {

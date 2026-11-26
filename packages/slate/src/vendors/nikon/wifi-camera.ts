@@ -23,7 +23,7 @@ export async function connectNikonWifiCamera(options:NikonWifiConnectionOptions)
     const timeout=options.timeoutMilliseconds??20000
     if(!Number.isFinite(timeout)||timeout<250||timeout>30000)throw new Error('Nikon Wi-Fi timeout must be 250–30000 ms')
     const transport=new IPTransport({address:options.address,port:options.port,localAddress:options.localAddress,clientGuid:options.clientGuid,clientName:'Darkgrade',timeout})
-    const camera=new Camera({vendorId:0x04b0,transport,logger:{renderInTerminal:false,captureConsole:false}})
+    const camera=new Camera({vendorId:0x04b0,transport})
     try{
         await camera.connect()
         const instance=protocolAccess(camera).driver

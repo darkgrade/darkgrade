@@ -45,7 +45,6 @@ export async function cameraForDevice(device: DiscoveredCamera, options: CameraO
     const { vendorId, productId, serialNumber } = device
     return new Camera({
         device: { usb: { filters: [{ vendorId, productId, ...(serialNumber && { serialNumber }) }] } },
-        logger: { renderInTerminal: false, captureConsole: false },
         ...options,
     })
 }
@@ -121,7 +120,7 @@ export async function camerasInOtherModes(): Promise<DiscoveredCamera[]> {
     try {
         const { Logger } = await import('@core/logger')
         const { USBTransport } = await import('@transport/usb/usb-transport')
-        const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
+        const transport = new USBTransport(new Logger())
         const devices = await transport.discover({ usb: { filters: Object.values(VendorIDs).map(vendorId => ({ vendorId })) } })
         return devices.filter(device => device.classCode !== 0x06)
     } catch {

@@ -25,7 +25,7 @@ if ((qualifiedProperty === undefined) !== (qualifiedValue === undefined)) throw 
 if (!identifier || !output) throw new Error('Usage: ' + usage)
 if (existsSync(resolve(output))) throw new Error('Choose a new output file; existing captures are never overwritten')
 const timeoutSeconds = Number(argument('--timeout-seconds') ?? 60)
-const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
+const logger = new Logger({ expanded: false })
 const transport = new USBTransport(logger, { maxBulkReadBytes: 16_384 })
 const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim()
 const dirty = execFileSync('git', ['diff', '--name-only', 'HEAD'], { cwd: import.meta.dir, encoding: 'utf8' }).trim().length > 0

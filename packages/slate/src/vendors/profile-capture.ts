@@ -266,14 +266,13 @@ export async function captureCameraProfile(source: TransportInterface, options: 
             transactions.push({ operation, transactionId, parameters, response: { code: response.code, parameters: response.parameters }, redactions })
         }
     })
-    const logger = new Logger({ renderInTerminal: false, captureConsole: false, expanded: false })
+    const logger = new Logger({ expanded: false })
     const registry = captureRegistry(options.vendorId)
     const descriptorPolicy = { timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false }
     const facade = options.initialize
         ? new Camera({
               transport: trace.transport,
               vendorId: options.vendorId,
-              logger: { renderInTerminal: false, captureConsole: false },
               // The profile is the inventory; a first-contact inventory would add its own reads.
               firstContact: false,
               // Applied to whichever driver connect selects for the opened body.

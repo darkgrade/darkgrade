@@ -21,7 +21,7 @@ import { SonyCamera } from '@vendors/sony/sony-camera'
 
 /** Enumerate USB PTP devices of any vendor without opening a camera session: the bodies connect() can choose from. */
 export async function discoverCameras(): Promise<DiscoveredCamera[]> {
-    const transport = new USBTransport(new Logger({ renderInTerminal: false, captureConsole: false }))
+    const transport = new USBTransport(new Logger())
     const devices = await transport.listAttached()
     return devices.map(({ vendorId, productId, serialNumber, manufacturer, model }) => ({ vendorId, productId, serialNumber, manufacturer, model }))
 }
