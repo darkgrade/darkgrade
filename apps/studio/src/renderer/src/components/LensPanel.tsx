@@ -3,6 +3,7 @@ import { ControlRow } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import type { CameraControlName, CameraState } from '@shared/ipc'
 import { ZoomIn, ZoomOut } from 'lucide-react'
+import { formatFocalLength } from '@shared/format'
 
 interface LensPanelProps {
     cameraState: CameraState
@@ -10,11 +11,6 @@ interface LensPanelProps {
     onZoomStart: (direction: 'wide' | 'tele') => void
     onZoomStop: () => void
     onChange: (name: CameraControlName, value: string) => void
-}
-
-/** "24 mm", "70.5 mm". */
-export function formatFocalLength(millimetres: number): string {
-    return `${Number.isInteger(millimetres) ? millimetres : millimetres.toFixed(1)} mm`
 }
 
 export function LensPanel({

@@ -2,20 +2,12 @@ import { ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { ControlRow } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
 import type { CameraControl, CameraControlName, CameraState } from '@shared/ipc'
-import { useEffect, useState } from 'react'
+import { useRecordingClock } from '@renderer/lib/recording-clock'
 
 interface RecordingPanelProps {
     cameraState: CameraState
     locked: boolean
     onChange: (name: CameraControlName, value: string) => void
-}
-
-function formatElapsed(totalSeconds: number): string {
-    const hours = Math.floor(totalSeconds / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
-    const seconds = totalSeconds % 60
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
 }
 
 type ShootingMode = 'photo' | 'video'
@@ -38,23 +30,6 @@ function unavailableModeTip(control: CameraControl | null | undefined, target: S
 
 const SEGMENT_CLASS =
     'flex-1 rounded-md! text-muted-foreground hover:bg-transparent hover:text-foreground data-[pressed]:bg-foreground/12 data-[pressed]:text-foreground'
-
-/** Counts up from when recording started, as a timecode-style clock. */
-export function useRecordingClock(recording: boolean): string | null {
-    const [startedAtMs, setStartedAtMs] = useState<number | null>(null)
-    const [, setTick] = useState(0)
-    useEffect(() => {
-        if (!recording) {
-            setStartedAtMs(null)
-            return
-        }
-        setStartedAtMs(Date.now())
-        const timer = setInterval(() => setTick(tick => tick + 1), 250)
-        return () => clearInterval(timer)
-    }, [recording])
-    if (startedAtMs === null) return null
-    return formatElapsed(Math.floor((Date.now() - startedAtMs) / 1000))
-}
 
 export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanelProps): React.JSX.Element {
     const controls = cameraState.controls

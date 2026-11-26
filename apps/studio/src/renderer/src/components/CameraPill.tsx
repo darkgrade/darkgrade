@@ -10,7 +10,7 @@ import {
     Switch,
 } from '@kevinschaich/components'
 import { formatGigabytes } from '@shared/format'
-import { formatFocalLength } from '@renderer/components/LensPanel'
+import { formatFocalLength } from '@shared/format'
 import type { CameraBattery, CameraState } from '@shared/ipc'
 import { BatteryFull, BatteryLow, BatteryMedium, BatteryWarning, CardSim, PlugZap, Unplug } from 'lucide-react'
 

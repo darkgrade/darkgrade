@@ -34,3 +34,26 @@ export const shortenHomePath = (path: string): string => path.replace(/^\/Users\
 
 /** Every home-folder path in a message, shortened the same way. */
 export const shortenHomePaths = (text: string): string => text.replace(/\/Users\/[^/\s]+/g, '~')
+
+/** "24 mm", "70.5 mm". */
+export function formatFocalLength(millimetres: number): string {
+    return `${Number.isInteger(millimetres) ? millimetres : millimetres.toFixed(1)} mm`
+}
+
+/** PTP dates arrive as "YYYYMMDDThhmmss"; show them the way Finder would. */
+export function formatCaptureDate(raw: string): string {
+    const match = /^(\d{4})-?(\d{2})-?(\d{2})T(\d{2}):?(\d{2})/.exec(raw)
+    if (!match) return raw
+    const [, year, month, day, hour, minute] = match
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute))
+    return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+/** Seconds as a timecode-style clock: mm:ss, or h:mm:ss from an hour. */
+export function formatElapsed(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    const pad = (value: number): string => String(value).padStart(2, '0')
+    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
+}

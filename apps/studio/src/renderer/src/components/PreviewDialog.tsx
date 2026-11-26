@@ -8,7 +8,7 @@ import {
     Progress,
 } from '@kevinschaich/components'
 import { formatMegabytes } from '@shared/format'
-import { formatCaptureDate } from '@renderer/components/FilesPanel'
+import { formatCaptureDate } from '@shared/format'
 import type { FileEntry, FilePreview, PreviewProgress } from '@shared/ipc'
 import { Download, ImageOff, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
