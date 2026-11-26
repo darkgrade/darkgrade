@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {nikonAuthenticationDigest,requestNikonWifi} from '../src/vendors/nikon/bluetooth-wifi'
+import {nikonAuthenticationDigest,requestNikonWifi} from '@vendors/nikon/bluetooth-wifi'
 const bytes=(hex:string)=>Uint8Array.from(Buffer.from(hex,'hex'))
 const options={controllerIdentity:bytes('01e53a3c51a4da3f'),challenge:bytes('dbe113ec44a17d67'),expectedSerialNumber:'0000003023406',expectedName:'fixture-camera'}
 const second=bytes('0229fa26805e3d94b9e4f2b3a8136ad516')

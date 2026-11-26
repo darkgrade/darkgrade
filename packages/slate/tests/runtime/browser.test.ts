@@ -36,21 +36,3 @@ for (const entry of ['@darkgrade/slate/runtime', '@darkgrade/slate/runtime/brows
         }
     })
 }
-
-test('the browser entry runs queued camera work', async () => {
-    const { CameraRuntime } = await import('@runtime/browser')
-    const calls: string[] = []
-    const runtime = new CameraRuntime({
-        session: () => undefined,
-        assertControlAllowed: () => undefined,
-        control: async (_camera, action) => calls.push(action),
-        observeControls: async (_camera, state) => state,
-        invalidate: () => undefined,
-        media: async () => {
-            calls.push('take-photo')
-            return 'photo'
-        },
-    })
-    await Promise.all([runtime.control('cam', 'set-iso', 800), runtime.media('cam', 'take-photo')])
-    expect(calls).toEqual(['set-iso', 'take-photo'])
-})

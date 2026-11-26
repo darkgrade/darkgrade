@@ -422,9 +422,9 @@ Set live view mode.
 
 ---
 
-## CanonRecordingDestination (`0xd1b8`)
+## CanonRecordStatus (`0xd1b8`)
 
-Movie recording destination.
+Movie Record command and status: 4 records to the card, 0 stops.
 
 **Datatype:** UINT16
 
@@ -434,9 +434,9 @@ Movie recording destination.
 
 | Value | Name | Description |
 | ----- | ---- | ----------- |
-| `0x0` | NONE | None (not recording) |
-| `0x3` | SDRAM | Camera memory |
-| `0x4` | CARD | Memory card |
+| `0x0` | NONE | Not recording; writing it stops a recording |
+| `0x3` | SDRAM | Movie standby (not recording) |
+| `0x4` | CARD | Recording to the card; writing it starts a recording |
 
 ---
 

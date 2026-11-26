@@ -42,6 +42,35 @@ export function isSonyMovieExposureProgram(value: unknown): boolean {
         (value.includes('Movie') || value.startsWith('S&Q '))
 }
 
+/**
+ * Which half of the dial a recognized program belongs to: movie and S&Q programs record video,
+ * every other named program takes photos. Undefined for a program Slate has no name for.
+ */
+export function sonyExposureProgramKind(value: unknown): 'photo' | 'video' | undefined {
+    if (typeof value !== 'string' || !Object.values(modes).includes(value)) return undefined
+    return isSonyMovieExposureProgram(value) ? 'video' : 'photo'
+}
+
+/** The same program in the photo and the video half. Programs not listed have no counterpart. */
+const counterparts: readonly (readonly [photo: string, video: string])[] = [
+    ['Manual', 'Movie Manual'],
+    ['Program Auto', 'Movie Program Auto'],
+    ['Aperture Priority', 'Movie Aperture Priority'],
+    ['Shutter Priority', 'Movie Shutter Priority'],
+    ['Still', 'Movie'],
+]
+
+/**
+ * The same program in the other half (Manual ↔ Movie Manual, Still ↔ Movie), or undefined when
+ * there is none. Used by photoVideoMode and by recording preparation, so both select the same
+ * program; neither falls back to another one.
+ */
+export function sonyCounterpartExposureProgram(value: unknown): string | undefined {
+    const pair = counterparts.find(([photo, video]) => photo === value || video === value)
+    if (!pair) return undefined
+    return pair[0] === value ? pair[1] : pair[0]
+}
+
 /** Preserve the descriptor's width and every vendor bit, including unknown modes. */
 export class SonyExposureProgramCodec extends CustomCodec<string> {
     constructor(registry: PTPRegistry, private datatype: number) {

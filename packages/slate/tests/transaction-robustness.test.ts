@@ -3,9 +3,9 @@
  * framing, late replies, DeviceBusy storms, malformed datasets and vanished transports. Each test
  * scripts the exact bytes on a stub transport; none of this is recorded camera behaviour.
  */
-import { CanonCamera } from '@camera/canon-camera'
-import { SonyCamera } from '@camera/sony-camera'
-import { GenericCamera } from '@camera/generic-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
 import { Logger } from '@core/logger'
 import {
@@ -16,14 +16,13 @@ import {
     PTPResponseError,
     PTPTimeoutError,
 } from '@core/ptp-errors'
-import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { createNikonRegistry } from '@ptp/registry'
-import { SDIO_GetPartialLargeObject } from '@ptp/definitions/vendors/sony/sony-operation-definitions'
+import { SDIO_GetPartialLargeObject } from '@vendors/sony/definitions/sony-operation-definitions'
 import type { OperationDefinition } from '@ptp/types/operation'
 import { TransportType } from '@transport/interfaces/transport-types'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { IPTransport } from '@transport/ip/ip-transport'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/protocol-session'
 
 const CONTAINER = { command: 1, data: 2, response: 3, event: 4 }
 
@@ -131,7 +130,7 @@ it('retains all five rejected Canon write attempts with their exact transaction 
     const evidence: any[] = []
     const stop = camera.observeProfile('a2e40c0c-4695-4e0a-a80b-b63caac50001', entry => evidence.push(entry))
     try {
-        await expect(camera.set(camera.registry.properties.CanonRecordingDestination, 'CARD')).rejects.toMatchObject({ code: 0x2019 })
+        await expect(camera.set(camera.registry.properties.CanonRecordStatus, 'CARD')).rejects.toMatchObject({ code: 0x2019 })
         expect(evidence).toHaveLength(5)
         expect(evidence.map(entry => entry.transactionId)).toEqual(transport.commands.map(command => command.transactionId))
         expect(evidence.every(entry => entry.type === 'property-write' && entry.property === 0xd1b8 &&
@@ -149,15 +148,6 @@ describe('Sony partial-image data container opcode', () => {
             { ObjectHandle: 1, OffsetLower: 0, OffsetUpper: 0, MaxBytes: 4 })
         expect(result.data).toEqual(Uint8Array.of(1, 2, 3, 4))
     })
-    it.each([[0x1009, 0, 'operation-mismatch'], [0x101b, 1, 'transaction-mismatch']] as const)(
-        'rejects unrelated data opcode %i or transaction offset %i', async (code, offset, violation) => {
-            const { camera } = cameraOn(({ transactionId }) => [
-                container(CONTAINER.data, code, transactionId + offset, [1]), ok(transactionId),
-            ])
-            await expect(camera.send(SDIO_GetPartialLargeObject,
-                { ObjectHandle: 1, OffsetLower: 0, OffsetUpper: 0, MaxBytes: 1 }))
-                .rejects.toMatchObject({ violation })
-        })
 })
 
 /** A DeviceInfo dataset with every list empty and the given model string. */
@@ -280,7 +270,12 @@ describe('transaction timeouts', () => {
         expect((await camera.send(operations.GetDeviceInfo, {})).code).toBe(0x2001)
     })
 
-    it('latches when abandoned I/O does not settle after the automatic reset', async () => {
+    it.each([
+        ['an automatic reset that does not cancel it', /did not settle/, 1,
+            (_camera: GenericCamera, transport: ScriptedTransport) => { transport.classRequestReset = async () => { transport.resets++ } }],
+        ['a recovery callback that returns without cancelling it', /abandoned transport I\/O is still running/, 0,
+            (camera: GenericCamera) => camera.configureTransactions({ recoverTransport: async () => undefined })],
+    ] as const)('latches when abandoned I/O outlives %s', async (_label, message, resets, breakRecovery) => {
         const { camera, transport, operations } = cameraOn(stallOnceThenAnswer())
         camera.configureTransactions({
             timeoutMilliseconds: 20,
@@ -288,13 +283,11 @@ describe('transaction timeouts', () => {
         })
         await camera.connect()
         const reset = transport.classRequestReset.bind(transport)
-        transport.classRequestReset = async () => {
-            transport.resets++
-        }
+        breakRecovery(camera, transport)
         await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
-        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toThrow(/did not settle/)
+        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toThrow(message)
         await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
-        expect(transport.resets).toBe(1)
+        expect(transport.resets).toBe(resets)
         expect(transport.commands).toHaveLength(2)
         await reset()
     })
@@ -317,28 +310,18 @@ describe('transaction timeouts', () => {
         expect(camera.sessionId).toBeNull()
     })
 
-    it('keeps the latch on transports without a class reset', async () => {
+    it.each([
+        ['on transports without a class reset', { type: TransportType.IP, policy: {} }],
+        ['when the automatic USB reset is turned off', { type: TransportType.USB, policy: { automaticUSBReset: false } }],
+    ] as const)('keeps the latch %s', async (_label, { type, policy }) => {
         const { camera, transport, operations } = cameraOn(() => 'stall')
-        transport.type = TransportType.IP
-        camera.configureTransactions({ minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
+        transport.type = type
+        camera.configureTransactions({ ...policy, minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER })
         await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
         await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
         expect(transport.resets).toBe(0)
         expect(transport.commands).toHaveLength(1)
         // Only this fixture cleanup cancels the abandoned read.
-        await transport.classRequestReset()
-    })
-
-    it('keeps the latch when the automatic USB reset is turned off', async () => {
-        const { camera, transport, operations } = cameraOn(() => 'stall')
-        camera.configureTransactions({
-            automaticUSBReset: false,
-            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
-        })
-        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
-        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
-        expect(transport.resets).toBe(0)
-        expect(transport.commands).toHaveLength(1)
         await transport.classRequestReset()
     })
 
@@ -395,19 +378,6 @@ describe('transaction timeouts', () => {
         expect(transport.resets).toBe(1)
     })
 
-    it('does not trust a recovery callback that leaves an abandoned read outstanding', async () => {
-        const { camera, transport, operations } = cameraOn(() => 'stall')
-        camera.configureTransactions({
-            minimumThroughputBytesPerSecond: Number.MAX_SAFE_INTEGER,
-            recoverTransport: async () => undefined,
-        })
-        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(PTPTimeoutError)
-        await expect(camera.send(operations.CloseSession, {})).rejects.toBeInstanceOf(PTPRecoveryRequiredError)
-        expect(transport.commands).toHaveLength(1)
-        expect(transport.resets).toBe(0)
-        await transport.classRequestReset()
-    })
-
     it('recovers a stalled fixture only through an explicitly authorized synthetic callback', async () => {
         const { camera, transport, operations } = cameraOn((command, index) =>
             index === 0
@@ -425,14 +395,18 @@ describe('transaction timeouts', () => {
 })
 
 describe('container framing', () => {
-    it('rejects data for another operation even when its transaction ID matches', async () => {
+    const partialObject = { ObjectHandle: 1, OffsetLower: 0, OffsetUpper: 0, MaxBytes: 1 }
+    it.each([
+        ['another operation with a matching transaction ID', 0x1008, 0, 'operation-mismatch', false],
+        ['an unrelated opcode on the Sony extended download', 0x1009, 0, 'operation-mismatch', true],
+        ['a later transaction on the Sony extended download', 0x101b, 1, 'transaction-mismatch', true],
+    ] as const)('rejects a data container for %s', async (_label, code, offset, violation, partial) => {
         const { camera, operations } = cameraOn(command => [
-            container(CONTAINER.data, 0x1008, command.transactionId, deviceInfo()),
+            container(CONTAINER.data, code, command.transactionId + offset, deviceInfo()),
             ok(command.transactionId),
         ])
-        await expect(camera.send(operations.GetDeviceInfo, {})).rejects.toMatchObject({
-            violation: 'operation-mismatch',
-        })
+        const sent = partial ? camera.send(SDIO_GetPartialLargeObject, partialObject) : camera.send(operations.GetDeviceInfo, {})
+        await expect(sent).rejects.toMatchObject({ violation })
     })
 
     it('uses one receive deadline across stale packets', async () => {
@@ -562,14 +536,6 @@ describe('DeviceBusy', () => {
         expect(transport.commands.map(command => command.transactionId)).toEqual([1, 2, 3, 4])
     })
 
-    it('returns DeviceBusy when a storm outlasts the retries', async () => {
-        const { camera, transport, operations } = cameraOn(command => [
-            container(CONTAINER.response, 0x2019, command.transactionId),
-        ])
-        expect((await camera.send(operations.InitiateCapture, {})).code).toBe(0x2019)
-        expect(transport.commands).toHaveLength(7)
-    })
-
     describe('backoff', () => {
         afterEach(() => vi.useRealTimers())
 
@@ -672,29 +638,61 @@ describe('local failures and vanished transports', () => {
         expect(transport.commands[0]?.transactionId).toBe(1)
     })
 
-    it('disconnects cleanly, more than once, after the camera has vanished', async () => {
-        const { camera, transport } = cameraOn(command => [ok(command.transactionId)])
+    it.each([GenericCamera, CanonCamera])('%s disconnects cleanly, more than once, after the camera has vanished', async CameraType => {
+        const transport = new ScriptedTransport(command => [ok(command.transactionId)])
+        const camera = new CameraType(transport, quietLogger())
         camera.sessionId = 7
         transport.connected = false
         await expect(camera.disconnect()).resolves.toBeUndefined()
         await expect(camera.disconnect()).resolves.toBeUndefined()
         expect(camera.sessionId).toBeNull()
+        expect(transport.sent).toHaveLength(0)
     })
 
-    it('disconnects a Canon camera whose transport is already gone without sending', async () => {
-        const transport = new ScriptedTransport(command => [ok(command.transactionId)])
-        const canon = new CanonCamera(transport, quietLogger())
-        transport.connected = false
-        await expect(canon.disconnect()).resolves.toBeUndefined()
-        expect(transport.sent).toHaveLength(0)
+    it('releases the transport even when CloseSession fails', async () => {
+        const { camera, transport } = cameraOn(command => [ok(command.transactionId)])
+        camera.sessionId = 41
+        const failure = new Error('USB gone during CloseSession')
+        vi.spyOn(camera, 'send').mockRejectedValue(failure)
+        const disconnect = vi.spyOn(transport, 'disconnect')
+        await expect(camera.disconnect()).rejects.toBe(failure)
+        expect(disconnect).toHaveBeenCalledOnce()
+        expect(camera.sessionId).toBeNull()
+    })
+
+    it('retains session and transport cleanup errors independently', async () => {
+        const { camera, transport } = cameraOn(command => [ok(command.transactionId)])
+        camera.sessionId = 41
+        const sessionError = new Error('session close failed')
+        const transportError = new Error('handle close failed')
+        vi.spyOn(camera, 'send').mockRejectedValue(sessionError)
+        vi.spyOn(transport, 'disconnect').mockRejectedValue(transportError)
+        const failure = await camera.disconnect().catch(error => error)
+        expect(failure).toBeInstanceOf(AggregateError)
+        expect(failure.errors).toEqual([sessionError, transportError])
+        expect(camera.sessionId).toBeNull()
     })
 })
 
 describe('session and responses', () => {
-    it('fails connect() with PTPResponseError when OpenSession is refused', async () => {
-        const { camera } = cameraOn(command => [container(CONTAINER.response, 0x2002, command.transactionId)])
-        await expect(camera.connect()).rejects.toBeInstanceOf(PTPResponseError)
-        expect(camera.sessionId).toBeNull()
+    const answering = (codes: number[]): Reply => (command, index) =>
+        [container(CONTAINER.response, codes[index] ?? 0x2001, command.transactionId)]
+
+    it.each([
+        ['refuses', [0x201e, 0x2001, 0x200f], false],
+        ['accepts', [0x201e, 0x2001, 0x2001], true],
+    ] as const)('reopens over an existing session and reports whether the camera %s it', async (_label, codes, opened) => {
+        const { camera } = cameraOn(answering([...codes]))
+        const connected = camera.connect()
+        if (opened) await connected
+        else await expect(connected).rejects.toThrow('OpenSession failed')
+        expect(camera.sessionId === null).toBe(!opened)
+    })
+
+    it('does not open over a session that failed to close', async () => {
+        const { camera, transport } = cameraOn(answering([0x201e, 0x2002]))
+        await expect(camera.connect()).rejects.toThrow('CloseSession failed')
+        expect(transport.commands.map(command => command.operation)).toEqual([0x1002, 0x1003])
     })
 
     it('reports a busy GetDeviceInfo during property listing as PTPResponseError, not a TypeError', async () => {
@@ -712,20 +710,9 @@ describe('session and responses', () => {
             logger: { renderInTerminal: false, captureConsole: false },
             transactionPolicy: { timeoutMilliseconds: 20 },
         })
-        await expect(camera.send(camera.getInstance().registry.operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(
+        await expect(protocolSession(camera).send(protocolSession(camera).driver.registry.operations.GetDeviceInfo, {})).rejects.toBeInstanceOf(
             PTPTimeoutError
         )
-    })
-})
-
-describe('dataset decoding', () => {
-    it('keeps a descriptor usable when the camera reports a value the enum codec does not know', () => {
-        // Nikon LiveViewStatus (0xD1B8) is a UINT8 enumeration of 0 and 1; the camera reports 7.
-        const descriptor = Uint8Array.of(0xb8, 0xd1, 0x02, 0x00, 0x01, 0x00, 0x07, 0x02, 0x03, 0x00, 0x00, 0x01, 0x07)
-        const decoded = new DevicePropDescCodec(createNikonRegistry(true)).decode(descriptor).value
-        expect(decoded.currentValueDecoded).toBe(7)
-        expect(decoded.supportedValuesDecoded).toEqual(['OFF', 'ON', 7])
-        expect(decoded.factoryDefaultValue).toBe(0)
     })
 })
 

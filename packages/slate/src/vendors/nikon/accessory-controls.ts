@@ -1,6 +1,7 @@
 import type {Camera} from '@camera/index'
+import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
 import type {OperationDefinition} from '@ptp/types/operation'
-import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+import {requireNikonIdle} from '@vendors/nikon/recording-status'
 import {NikonMenuController} from '@vendors/nikon/menu-controls'
 
 export type NikonAccessoryKey='menu'|'up'|'down'|'left'|'right'|'ok'|'playback'|'display'
@@ -48,20 +49,22 @@ const accessoryReady={code:0x9456,name:'NikonAccessoryReady',description:'Reques
 const accessoryKeys={code:0x9457,name:'NikonAccessoryKeys',description:'Send a five-byte accessory key state',dataDirection:'in',operationParameters:[],responseParameters:[]} as const satisfies OperationDefinition
 const needsConfirmation=(code:number)=>code===0x2019||code===0x200f
 const sleep=(milliseconds:number)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
-type AccessoryCamera=Pick<Camera,'send'|'getInstance'>
+type AccessorySession=Pick<ProtocolSession,'send'|'driver'>
 
 /** One persistent Nikon PTP session. Command acceptance never verifies a visible menu change. */
 export class NikonAccessoryController {
     private currentState:NikonAccessoryState='not-ready'
     private ownedSession:number|null=null
-    private ownedInstance:ReturnType<Camera['getInstance']>|undefined
+    private ownedInstance:ProtocolSession['driver']|undefined
     private busy=false
-    private operationInstance:ReturnType<Camera['getInstance']>|undefined
+    private operationInstance:ProtocolSession['driver']|undefined
 
-    constructor(private readonly camera:AccessoryCamera){}
+    private readonly camera:AccessorySession
+
+    constructor(camera:Camera|AccessorySession){this.camera=protocolAccess(camera)}
 
     get state():NikonAccessoryState{
-        if(this.ownedInstance&&(this.camera.getInstance()!==this.ownedInstance||this.ownedInstance.sessionId!==this.ownedSession||this.ownedSession===null))this.invalidate()
+        if(this.ownedInstance&&(this.camera.driver!==this.ownedInstance||this.ownedInstance.sessionId!==this.ownedSession||this.ownedSession===null))this.invalidate()
         return this.currentState
     }
 
@@ -150,19 +153,16 @@ export class NikonAccessoryController {
     }
 
     private acquire(){
-        const instance=this.camera.getInstance()
+        const instance=this.camera.driver
         if(this.busy||activeInstances.has(instance))throw new Error('Nikon accessory operation is already in progress')
         this.busy=true;this.operationInstance=instance;activeInstances.add(instance)
     }
     private release(){if(this.operationInstance)activeInstances.delete(this.operationInstance);this.operationInstance=undefined;this.busy=false}
     private invalidate(){this.currentState='not-ready';this.ownedSession=null;this.ownedInstance=undefined}
     private requireSession(){
-        if(!this.ownedInstance||this.camera.getInstance()!==this.ownedInstance||this.ownedSession===null||this.ownedInstance.sessionId!==this.ownedSession){this.invalidate();throw new Error('Nikon PTP session changed; request accessory readiness again')}
+        if(!this.ownedInstance||this.camera.driver!==this.ownedInstance||this.ownedSession===null||this.ownedInstance.sessionId!==this.ownedSession){this.invalidate();throw new Error('Nikon PTP session changed; request accessory readiness again')}
     }
-    private async requireIdle(){
-        const recording=await readNikonRecordingStatus(this.camera)
-        if(!recording||recording.recording||recording.bufferedImages)throw new Error('Nikon must confirm recording and pending card writes are idle before accessory controls')
-    }
+    private requireIdle(){return requireNikonIdle(this.camera,'Nikon must confirm recording and pending card writes are idle before accessory controls')}
     private readinessFailure(code:number){this.currentState=needsConfirmation(code)?'needs-camera-confirmation':'not-ready'}
     private readinessResponse(code:number){
         if(code===0x2001)this.currentState='ready'

@@ -43,9 +43,7 @@ export class HardwareCoordinator {
     }
     async run<T>(resource: string, purpose: string, operation: () => Promise<T>, waitMilliseconds = 15000): Promise<T> {
         const existing = this.context.getStore()
-        const context: Context = existing?.operations
-            ? existing
-            : { owner: crypto.randomUUID(), resources: new Set<string>(), operations: 0 }
+        const context: Context = existing?.operations ? existing : { owner: crypto.randomUUID(), resources: new Set<string>(), operations: 0 }
         // Count before acquisition: a sibling can finish while this call waits.
         context.operations++
         const acquire = async () => {
@@ -65,10 +63,7 @@ export class HardwareCoordinator {
                 await new Promise(resolve => setTimeout(resolve, 50))
             }
             context.resources.add(resource)
-            context.heartbeat ??= setInterval(
-                () => this.database.heartbeatHardwareOwner(context.owner, 45000),
-                10000
-            )
+            context.heartbeat ??= setInterval(() => this.database.heartbeatHardwareOwner(context.owner, 45000), 10000)
         }
         return this.context.run(context, async () => {
             try {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
     SonyRemoteSdkTransport,
     type SonyRemoteSdkChannel,
-} from '../src/transport/sony-remote/sony-remote-sdk-transport'
+} from '@transport/sony-remote/sony-remote-sdk-transport'
 
 function channel(): SonyRemoteSdkChannel & { emit: (code: number) => void } {
     let eventHandler: ((event: { code: number; transactionId: number; parameters: number[] }) => void) | undefined
@@ -23,12 +23,7 @@ describe('SonyRemoteSdkTransport', () => {
         const sdkChannel = channel()
         const createChannel = vi.fn(async () => sdkChannel)
         const transport = new SonyRemoteSdkTransport(
-            {
-                host: '192.0.2.10',
-                username: 'user',
-                password: 'secret',
-                fingerprint: 'sha256:test',
-            },
+            { host: '192.0.2.10', username: 'user', password: 'secret', fingerprint: 'sha256:test' },
             createChannel
         )
         const event = vi.fn()

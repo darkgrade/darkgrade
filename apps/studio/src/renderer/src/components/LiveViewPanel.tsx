@@ -295,9 +295,9 @@ function FocusFrames({
     const currentFocusFrame = focusFrames.find(frame => frame.kind === 'focus')
     if (currentFocusFrame) lastFocusFrame.current = currentFocusFrame
     if (marker) return <CameraFocusFrame frame={lastFocusFrame.current} marker={marker} />
-    // The camera reports faces and eyes in every area, but in a Flexible Spot it focuses on the spot:
-    // only show them where the camera picks the subject itself.
-    const cameraPicksSubject = !/flexible spot/i.test(focusArea ?? '')
+    // The camera reports faces and eyes in every area, but in a spot (Sony's Flexible Spot) it focuses
+    // on the spot: only show them where the camera picks the subject itself.
+    const cameraPicksSubject = !/\bspot\b/i.test(focusArea ?? '')
     const shownFrames = cameraPicksSubject ? focusFrames : focusFrames.filter(frame => frame.kind === 'focus')
     return (
         <>

@@ -1,4 +1,4 @@
-import { createNikonRegistry } from '@ptp/registry'
+import { createNikonRegistry } from '@vendors/registry'
 import { NikonEventDataCodec } from '@vendors/nikon/event-data'
 import { describe, expect, it } from 'vitest'
 

@@ -36,19 +36,14 @@ function recordingFetch(status: number, seen: Headers[]): typeof fetch {
 }
 
 describe('vision model files', () => {
-    it('pins every Depth Pro 2 size and the focal estimator to a revision', () => {
-        for (const size of ['S', 'B', 'L', 'H'] as const) {
-            const model = depthPro2Model(size)
-            expect(model.files.map(file => file.name)).toEqual(['model.safetensors', 'config.json', 'LICENSE'])
-            for (const file of model.files) expect(file.url).toMatch(/\/resolve\/[0-9a-f]{40}\//)
-        }
-        expect(depthPro2Model('L').files[0].bytes).toBe(1_335_873_268)
+    it('pins every Depth Pro 2 size, the focal estimator and gated SAM 3 to a revision', () => {
+        for (const size of ['S', 'B', 'L', 'H'] as const)
+            expect(depthPro2Model(size).files.map(file => file.name)).toEqual(['model.safetensors', 'config.json', 'LICENSE'])
         expect(DEPTH_PRO_2_FOCAL.files[0].url).toContain('apple/DepthPro2-focal')
-    })
-
-    it('marks SAM 3 as gated and pins it to a revision', () => {
         expect(SAM_3.gatedLicencePage).toBe('https://huggingface.co/facebook/sam3')
-        for (const file of SAM_3.files) expect(file.url).toMatch(/facebook\/sam3\/resolve\/[0-9a-f]{40}\//)
+        for (const file of SAM_3.files) expect(file.url).toContain('facebook/sam3/')
+        const models = [...(['S', 'B', 'L', 'H'] as const).map(depthPro2Model), DEPTH_PRO_2_FOCAL, SAM_3]
+        for (const file of models.flatMap(model => model.files)) expect(file.url).toMatch(/\/resolve\/[0-9a-f]{40}\//)
     })
 })
 

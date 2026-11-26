@@ -33,6 +33,7 @@ const connectedState: CameraState = {
     clock: null,
     controls: null,
     osdOverlay: null,
+    clickToFocus: true,
     liveView: true,
     recording: true,
     recordingState: 'recording',

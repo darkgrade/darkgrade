@@ -1,11 +1,17 @@
 # Slate
 
-Read the root `AGENTS.md` first; this file only adds to it.
+Read the root [`AGENTS.md`](../../AGENTS.md) first: its rules apply here too, and this file only adds
+to them.
 
 Notes for work inside `packages/slate`. The repository-wide rules are in the root `AGENTS.md`;
-telemetry and collector rules are in `apps/contribution-collector/AGENTS.md`.
+telemetry and collector rules are in `packages/slate/src/telemetry/AGENTS.md`.
 
 ## Where things live
+
+The telemetry server lives in `src/telemetry/server`, exported through
+`@darkgrade/slate/telemetry/server`; `/telemetry/postgres` alone needs the optional database
+driver. Deployment assets are in `telemetry/`, and server tests in `tests/telemetry` run
+with `test:telemetry` or the full suite. Do not create another telemetry app or package.
 
 Diagnostics live in `packages/slate/src/contribute` and are exported as
 `@darkgrade/slate/contribute` and `/contribute/{application,batch,node,protocol,schema,settings,installation-store}`.
@@ -18,11 +24,51 @@ The shared camera runtime (operation ordering, leases, the common MCP tools) liv
 `/ownership`). There is no `packages/runtime`: put new camera code in Slate. Its tests run under
 Bun (`bun run --cwd packages/slate test:runtime`, which builds first) because they check package
 resolution with Bun's bundler; Vitest excludes `tests/runtime`. Hosts that load it by path
-(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`.
+(Test Bench) use `packages/slate/src/runtime/index.ts` and `mcp.ts`. A host hands the runtime its
+Camera (`CameraProvider.camera(id)`, with `discover`, `assertAllowed` and optional `saveFile` and
+`benchmark`) and the runtime runs every operation through that Camera; HTTP hosts serve
+`POST /api/cameras/<id>/operations/<name>`, `/api/cameras/discover` and
+`/api/cameras/<id>/benchmark`. Hosts keep no vendor tables and no tool list of their own.
 DeviceInfo carries numeric lists as `operationsSupportedRaw`, `eventsSupportedRaw` and
 `devicePropertiesSupported`; there is no `operationsSupported` or `devicePropertiesSupportedRaw`.
 Two recoveries read fields that do not exist and their tests faked them. Build test replies with
 the real codec.
+
+## Tests and the attached camera
+
+Release CI belongs in the Matrix application on Outpost. Simulation and physical
+qualification share that app's tracked workflow; hardware goes through Fleet Bench's
+native Test Bench job against the exact PR commit. Do not add another standalone
+Matrix worker or a copied engine. Inspect the existing Matrix, Fleet and Test Bench
+paths before changing a gate. Preserve current-head checks, first-attempt failures,
+native camera leases, cleanup receipts and the existing `matrix/*` check names.
+An infrastructure error is not a camera regression, and a skipped camera is not a pass.
+Hardware qualification loads the pinned source entries; distribution and type checks stay in
+GitHub CI. Retain staging logs with the receipt and reinstall discarded dependencies when
+resuming partial qualification.
+Per-capture RAW fixtures must reuse Slate's existing photo-mode capture and restoration
+scope, rather than pre-writing a photo-only control from a movie-mode inventory. Refuse
+before the shutter if idle cannot be confirmed, and verify the returned original's bytes.
+
+To check the public API on real cameras, run `bun run --cwd packages/slate camera:api-check`
+(every attached Sony, Canon and Nikon, in parallel, once) and follow `docs/camera-api-check.md`.
+`camera:parity` then lists what each vendor is missing against Sony, Studio's gaps first.
+
+`bun run --cwd packages/slate test` never opens a camera: hardware tests run only with
+`SLATE_HARDWARE_TESTS=1`, and without it native USB enumeration reports no devices
+(`tests/setup/`). Anything that opens a USB camera runs under the shared lease:
+`bun run --cwd packages/slate camera:lease -- <command>` waits for exclusive use across every
+checkout and worktree (`~/.darkgrade/leases`), stops the macOS camera daemons while it runs, sets
+the variable and always releases. `check:guards` (in `test` and
+`test:package`) is strict: it fails on any vendor-named main-entry export or Camera member (raw
+access is `protocolSession(camera)` from `@darkgrade/slate/protocol`), on a file whose
+`any`/`as never`/`as unknown as` count differs from its budget (lower it with `-- --update`), and
+on a Camera method missing from the generated operation list, without a doc comment, or a list
+that is out of date. The MCP tools (`src/runtime/mcp.ts`) and `darkgrade camera <command>`s
+(`src/cli/commands.ts`) are generated from Camera's signatures and doc comments
+(`scripts/generate-camera-operations.ts`, committed as `src/runtime/camera-operations.ts`, since
+Matrix and the bench CI build `src` alone; refresh it with `generate:operations`) through
+`src/runtime/operations.ts`: document a method's inputs on Camera, never add a tool by hand.
 
 ## Driver invariants
 
@@ -76,6 +122,72 @@ Focus refusals say what the body reported: a Sony focus timeout includes the las
 and a Canon refusal names the SDK reason. Sony bodies in movie mode stayed at UNLOCK on a
 half-press in bench tests, so focus confirmation was never obtained there.
 
+Public API hardware check (darkgrade01, 2026-11-25: a6700 2.00, Z5 II V1.00, R8 Mark II 3-1.0.0, USB).
+What a focus point changes (focus area, Sony subject detection, Nikon AF-area mode) is kept per body by
+serial number (`vendors/generic/focus-point-changes.ts`) and put back by resetFocusPoint and disconnect,
+also from a later Camera on the same body (Test Bench opens one per idle period), only where the body
+still shows Slate's value. A Z5 II in auto-area AF accepts ChangeAfArea and shows its frame at (0, 0):
+Slate switches an advertised FocusMeteringMode (0x501C, libgphoto2's Nikon values) to Single-point, or
+refuses from LiveViewObject afModeState 2 when the body has none (the Z5 II does not advertise 0x501C;
+its own AF-area property and values are not known here). Right after power-on the Z5 II refused
+StartLiveView and the clearing release with HardwareError while WarningStatus stayed 1: that is "not
+ready yet", a refusal. The release is never repeated; live view then sends only StartLiveView again (after
+1, 2, 4, then every 8 s, 90 s in all: the gate's cold Z5 II on 07a2f28 was asked 50 s after power-on) and
+gives the same refusal if the body is still not ready. FNumber 0 then is no aperture. 0xD061 value 5 is AF-A. Shutter
+choices are named in Slate's spelling on every vendor; a write sends the camera's own choice. ISO BMFF
+atoms of size 0 and 1 are legal (R8 Mark II MP4s). A name table's missing word is unrecognized, not a choice.
+The full sweep the same day: the Sony card index answers oldest first, at most 1000 contents a
+query, so it is paged (2 s overlap, merged by content id); newest-first follows the camera's own
+numbering (DCF folder and file number, Sony content id), never its clock (a Z5 II's had reset to
+2025) nor the object handle (a Nikon handle's top byte is the file type: JPG 0x29…, MOV 0x59…, so a
+Z6 III's new NEF listed below older files; names outside DCF are merged in by capture time); a Sony computer photo
+is the card file, not the reduced 0xFFFFC001 host copy; a Z5 II answers the standard InitiateCapture
+with GeneralError, so a Nikon with 0x9207 focuses through it (OutOfFocus is a refusal); card slots
+are numbered in GetStorageIDs order (Canon's SD is 0x0002 on a one-slot R8 Mark II). EOS setClock
+writes UTCTime 0xD17C as libgphoto2 does; it has not run on hardware yet, so safe-probe it on the
+bench before claiming Canon clock support.
+The darkgrade01 acceptance run the same day (Test Bench 31bbe67): a Z5 II in AF-A uses auto-area with no
+AF-area setting, so getCapabilities judges setFocusPoint from a running live view's afModeState, as the call
+does, and leaves it unreported while live view is off rather than starting it. Sony zoomTo (rewritten after
+the a6700 + E PZ 16-50mm II landed 20 to 28 for 25, fw 2.00, traces df92ae65…057ebf9b): ZoomDistance 0xD00B
+is whole millimetres (whatever its descriptor says), changes every 160–250 ms and trails the lens about
+0.25 s; speed 1 is 12–13 mm/s (about 20 near tele) and coasts 2–4 mm after the stop, speed 4 35–55 mm/s and
+7–9 mm. So a movement stops on an estimate (`vendors/sony/zoom-motion.ts`: the newest reading carried
+forward by the measured rate over the lag, plus the coast; dead reckoning before the first change), learns
+the coast and lag per lens, speed and way from each landing, ends with slow movements from one side (a lens
+past the target backs off and comes again), accepts ±1 mm and, after six movements, fails with
+CameraOutcomeUnknownError naming where it is. A stopped-before-it-showed movement must hold its reading
+800 ms before it counts as unmoved. Slate 86e6e9c's exact 35 and 23 were not precision: its zoomTo 23 started
+at 23 (it returned in 498 ms) and its 35 was settled on two equal reads 60 ms apart, which the 160–250 ms
+update cadence makes the value at the stop. The a6700 also lists Camera Remote SDK ZoomPositionSetting
+(0xE040, SDK 700, writable, 0) and ZoomPositionCurrentValue (0xE041, 5180, enabled flag 2): an absolute
+lens-position zoom not tried on hardware, so not used. 23 ms after Auto to Manual the
+a6700 still showed Auto's shutter and aperture read-only: a Sony exposure mode resolves once the settings it
+hands over are writable (at most 1.5 s, re-read on SDIE_DevicePropChanged). Back from Movie Manual to Manual
+the a6700 showed them writable, read-only again about 100 ms later, then writable: a Sony photo/video switch
+resolves once they have stayed writable on every read for 400 ms (at most 3 s). A value the camera does not
+offer is refused (CameraRefusedError) before writability is judged, so the same input gets the same answer
+while a control is read-only for a moment; an offered value on a read-only control is CameraUnsupportedError.
+Sony focus waits latch AF_S_FOCUSED/AF_C_FOCUSED (0x02/0x06, "[AF-C] Focused State" in Sony's FocusIndication
+table): an inventory read in flight that still says AF_C_TRACKING (0x05) no longer takes back an SDIE_AFStatus
+that reported focus.
+darkgrade02 the same day (FX2 1.01, R6 Mark III 3-1.0.1, Z6 III V2.00): Camera.discover lists PTP
+interfaces from USB descriptors without opening them, so a body already open in the process (or
+claimed elsewhere) is still listed, without its strings. The FX2 pads its live-view JPEG with 0xFF
+to a multiple of 512 bytes, and the R6 Mark III its GetThumb with zeros and a 12-byte trailer: a
+picture (live view or preview) is returned through the end marker its segments and scan lead to, and
+one without it is read once more (live view) or reported, never returned. After a download a Sony
+body stays in content-transfer mode and answers card-index reads (list, preview) with
+CameraStatusError 0xA106: they leave it first. The FX2's card index is ordered by its clock, which
+was set back during the session: lookups take only contents numbered above the last one, reading
+the whole index once when the time window shows none. Colour temperature 0 (any vendor), and an unnamed
+value that is disabled or has nothing to choose (FX2 drive mode 0x0 in movie mode, a Nikon's f/0), do
+not apply: `withoutInapplicableValues` (`camera/controls.ts`, on PTP and Sony SDK observations alike)
+reports them `enabled: false` with no `value` and no choices, the raw reading in `unrecognized.value`,
+and the getter answers CameraUnsupportedError (the FX2 in Auto reported "0", which failed the bench's
+spelling check); the R6 Mark III offers movie
+sound 0 and 1, and its clip at 0 has audio, so 0 is On there.
+
 Canon sessions send advertised KeepDeviceOn automatically every ten seconds through the
 existing serialized event loop. Camera({keepAlive:false}) disables this session heartbeat;
 no saved body power setting is rewritten. Explicit KeepDeviceOn rejects non-OK responses.
@@ -93,6 +205,21 @@ libgphoto2 card-target enumeration; it is not proof of the R8 Mark II failure's 
 Numeric Canon property-write telemetry retains intent, transaction and response separately
 from observed state. Deploy the matching collector and Matrix contract before rolling out
 this Slate candidate. Preserve real versus simulated evidence.
+A Z5 II nudge in AF-A (acceptance, 2026-11-25) drove the lens to its end stop: MfDrive answered OK and
+DeviceReady then MfDriveStepEnd (0xA00C). That is a completed nudge, `{ atLimit: true }`, as is 0xA00C
+straight from MfDrive (already at that end); the AF-S hint goes only with InvalidStatus (0xA004).
+Sony takePhoto to the card, on a body whose DeviceInfo advertises SDIE_ContentInfoListChanged
+(0xC234), waits for that announcement and then reads SDIO_GetContentInfoList (0x923C) for the new
+file; no announcement in time is CameraOutcomeUnknownError, and the card is never scanned instead.
+From a movie program it selects that program's photo counterpart, or the first advertised still
+mode when there is none (Movie Flexible Exposure became Program Auto on the FX2), and puts the movie
+program back afterwards (`withSonyPhotoMode`, `vendors/sony/photo-mode.ts`). In a dim room that
+Program Auto chose 10" at ISO 1250 (darkgrade02 FX2, Matrix CI 929eafe3, DSC00245.JPG), and with
+the long-exposure noise-reduction dark frame the image came after the fixed 15 s wait, so every
+restoration ran while the body was still exposing. captureImage now reads ShutterSpeed with S1
+held and waits 15 s plus twice that exposure; Bulb or an unreadable value keeps 15 s, and the
+timeout names the wait it used. A Sony stopZoom after a zoom Slate started resolves once the focal
+length holds still (the lens coasts on and ZoomDistance trails it by up to 0.4 s).
 
 ## Private camera recordings
 

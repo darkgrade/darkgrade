@@ -1,0 +1,217 @@
+# Darkgrade telemetry
+
+Slate owns the telemetry client and server. One HTTPS service and one Postgres database
+validate and batch camera metadata, serve the private investigation timeline, and perform
+cleanup. Optional email confirmation uses the existing Resend adapter.
+
+What Darkgrade collects, why, which services receive it and the controls people have are
+stated only in the [privacy policy](https://darkgrade.com/privacy). This document covers how the service works.
+
+## Local development
+
+Build `packages/slate`, then run a local Postgres 17 database. Set
+`DATABASE_URL` to its connection string and `TELEMETRY_PUBLIC_URL` to the intended HTTPS
+origin. From the repository root:
+
+```sh
+npm run build --prefix packages/slate
+npm run telemetry:start --prefix packages/slate
+npm run test:telemetry --prefix packages/slate
+npm run telemetry:smoke --prefix packages/slate
+```
+
+The service starts on port 8080. Tests include real Postgres
+integration tests when `DATABASE_URL` is set. The smoke check uses `TELEMETRY_SMOKE_URL`
+(HTTPS, or explicit loopback HTTP for local checks). It creates and deletes only its own
+synthetic installation; it does not operate a camera.
+
+The Dockerfile is built from the repository root after Slate is built:
+
+```sh
+docker build -f packages/slate/telemetry/Dockerfile -t darkgrade-telemetry .
+```
+
+Production
+connects through Cloud SQL's authenticated Unix socket; direct remote Postgres connections
+must use certificate-verified TLS. Do not expose a plaintext Postgres port publicly.
+
+## Module boundaries
+
+- `@darkgrade/slate/telemetry` (also `/telemetry/application`) is the existing portable
+  application client. `/telemetry/settings` supplies Node installation settings.
+  `/telemetry/{batch,schema,protocol}` share the same validators with the server.
+  The earlier `/contribute/*` exports remain aliases of these implementations.
+- `@darkgrade/slate/telemetry/server` exposes the existing request handler,
+  withdrawal/cleanup, Resend confirmation, operator queries and Matrix export APIs.
+  Importing it does not start a listener, read deployment configuration or connect a database.
+- `@darkgrade/slate/telemetry/postgres` is the database adapter. `pg@8.16.3` is an
+  optional peer used only by this entry and the standalone service; camera, CLI and
+  browser clients do not load it.
+- Server source and tests live in `src/telemetry/server` and `tests/telemetry`.
+  This directory contains deployment assets, not another workspace or application.
+  `telemetry:cleanup`, `telemetry:review RECORD_ID` and `telemetry:export FILE` reuse
+  the existing operational commands.
+
+The standalone service composes these same implementations. Its HTTPS routes,
+environment variable names, database tables, maintenance markers and Cloud Run resource
+names are unchanged. Outpost Telemetry and Matrix keep using their existing HTTP contracts.
+
+## Data and behavior
+
+- `telemetry_events` is the flat investigation table: installation/session IDs, client/server
+  timestamps, model, firmware, Slate revision, transport, operation code and flexible JSONB
+  properties, and optional versioned camera-body fingerprints. Fingerprints hash manufacturer, model
+  and reliable serial identity.
+- `telemetry_state` holds installation credential hashes, immutable original batches, quotas,
+  review records and deletion state. Original batch hashes retain provenance for Matrix.
+- Serializability keeps uploads, revocation and review consistent. Retrying an identical
+  batch is idempotent; changing an existing batch's contents is rejected. No plaintext
+  installation secrets enter the database.
+- Registration accepts a locally generated random identity and secret so network retries
+  cannot create multiple identities. Revocation also tombstones pending registration;
+  delayed requests cannot recreate withdrawn records.
+- Batches expire after 90 days. The resident service removes expired batches and their flat
+  events, and retries interrupted withdrawals every minute. It catches up after downtime.
+  Reviewed patterns expire with their original batch and remain withdrawal-linked;
+  minimal credential tombstones prevent replay.
+- Admission limits: 1,000 registrations/day across the service and 4,096 batches/day per
+  installation by default. `TELEMETRY_DAILY_BATCH_LIMIT` (Terraform `daily_batch_limit`)
+  sets an explicit integer service budget from 1 through 65,536; existing quota counts
+  and installation identities stay intact. The day resets at UTC midnight, and daily
+  rejection returns the seconds until that reset. Slate identifies this rejection
+  explicitly; its bounded queue can still drop events if delivery remains blocked.
+  Shared Postgres windows also limit registrations to 30/minute and uploads
+  to 600/minute globally and 120/minute per installation. Repeated registrations consume
+  the same burst budget. Before parsing bodies or querying Postgres, each process admits
+  at most 100 requests/second and 32 concurrent requests. Rejections return Retry-After;
+  withdrawal is not blocked by an exhausted upload budget. These are application limits,
+  not a DDoS shield or proof the caller is an official Slate client.
+  Bodies are capped at 256 KiB, 1,000 entries and 16 camera contexts.
+- Deep benchmarks add typed advertised inventories and allowlisted numeric descriptors.
+  `/internal/api/profile` exports their retained evidence and `/internal/api/protocol`
+  groups unknown codes by exact model, firmware, revision, transport and evidence class.
+  Operator-only `/internal/api/protocol-finding` attaches interpretations and exact source
+  references to an original unknown observation. Tested findings require a regression-test
+  reference; the label is an operator assertion, not automatic hardware qualification.
+  Expired/withdrawn sources disappear from these views immediately, including while
+  cleanup is pending. Matrix automatically receives the same source-linked findings.
+- Optional email linking uses a single-use confirmation. `darkgrade telemetry login EMAIL`
+  can enroll before camera use; `darkgrade telemetry status --email` reads the verified
+  association (`verified: false` before confirmation, or `contact: null` before submission).
+  A previous verified address stays current while a replacement is pending. Ordinary `status` stays offline.
+  `logout` removes the association without changing sharing, including after opting out.
+  It stays unavailable until `TELEMETRY_EMAIL_API_KEY` (Resend) and a verified
+  `TELEMETRY_EMAIL_FROM` are configured. Anonymous `whoami` works without email.
+  The private operator `/internal/api/contributors` support lookup exposes current/pending identities and joins
+  the installation's retained summaries, including history before enrollment; it never exposes credentials.
+  Confirmation links expire after 2 hours, are single-use, and are invalidated by a
+  replacement request, logout or withdrawal. Requests are limited to five per installation
+  per day; resends to the same address require one minute. Provider rejection and ambiguous acknowledgements fail
+  without reporting an email as sent; the API does not return provider errors or secrets.
+  Unverified submissions persist for private support lookup even when delivery fails.
+  Logout/withdrawal remove both pending and verified associations.
+
+## Resend configuration
+
+1. Add and verify the sender's domain in Resend. Add its DKIM and sending DNS records
+   without replacing the domain's existing inbound mail records. A mailbox address alone
+   does not authorize Resend to send from that domain.
+2. Store the key in the collector's Secret Manager configuration using Terraform
+   `email_api_key`; set `email_from` to the verified sender address. Neither value belongs
+   in the CLI or Studio build. Local development uses `TELEMETRY_EMAIL_API_KEY` and
+   `TELEMETRY_EMAIL_FROM`; both must be configured together.
+3. Deploy the collector through the existing telemetry workflow. Updating the image
+   preserves its existing secret references and sender environment configuration.
+4. Run `darkgrade telemetry login you@example.com`, open the received confirmation link,
+   then run `darkgrade telemetry status --email`. Confirm logout removes the association
+   without changing sharing. Provider acceptance alone does not prove inbox delivery.
+
+The tests exercise Resend acceptance/rejection and the actual CLI over a local HTTPS
+collector. They never require a production key or send messages to real people.
+
+## Investigation and Matrix
+
+Set a random `TELEMETRY_ADMIN_KEY` (at least 32 characters) to enable `/internal`. Sign in
+as `outpost` with that key over HTTPS. The compact timeline filters by installation, camera
+model or session and displays at most 500 observations. Full payloads and database secrets
+are never sent to this view. It is an operator tool, not a customer-facing recording page.
+The page reports observations and camera responses; it does not infer a proven root cause.
+
+Outpost's Telemetry app uses the same operator credential through `/internal/api`.
+It reads bounded issue/event reports and anonymous installation IDs, reviews original
+batches, exports full Matrix snapshots and revokes/deletes an installation. Sessions and
+the unreviewed batch queue use cursors so older evidence remains reachable. Mutations
+require JSON, a server operator header and no browser Origin; an ID deletion also confirms
+the exact ID. Credentials and optional contact details are never returned. Internal
+installation labels live in Outpost and are not contributor attribution.
+Fully deleted installation tombstones are omitted from the normal list; an exact ID lookup
+still verifies revocation. Their minimal key hashes remain to reject delayed or replayed uploads.
+
+Operators use database credentials with these scripts:
+
+```
+npm run review -- INSTALLATION_ID_BATCH_ID
+npm run export:matrix -- /private/path/reviewed-patterns.json
+npm run cleanup
+```
+
+Review retains model, firmware, transport, revision, synthetic/hardware origin and hashes.
+Non-OK response codes count as error observations, including retries; they do not establish
+a failed final workflow. Matrix's existing `import_diagnostics` tool replaces the complete
+snapshot. The scalable path uses `/internal/api/matrix/page` and Matrix's
+`import_diagnostics_page`: 100 source records per page, staged in SQLite and published
+only after the final page. All validated originals are eligible without human review;
+review remains a separate nullable label. Outpost runs this immediately at server startup
+and every five minutes, with bounded retries. A committed ingestion watermark excludes
+later uploads without restarting an export. Review, withdrawal and contributor changes invalidate a
+running export; the client restarts with a fresh generation. Records expire within
+24 hours or at the source expiry, whichever comes first. A replacement removes withdrawn
+evidence. Neither
+an observation nor a reviewed pattern automatically becomes a hardware pass. Automated
+agent diagnosis/PR creation and exact byte replay remain future work, not this timeline.
+
+## GCP deployment
+
+Terraform provisions Cloud Run and Cloud SQL for Postgres, plus the registry, restricted
+service identities and configuration secrets needed to run those two services. Cloud Run
+supplies HTTPS; Cloud SQL supplies encrypted storage/backups. No custom load balancer is
+needed. One resident, CPU-allocated Cloud Run instance runs cleanup and scales to at most
+two. This has an idle cost; it is a simplicity choice, not a scale-to-zero claim. The small
+Postgres instance is single-zone, with backups and point-in-time recovery, not HA.
+Terraform also enables server-side deletion protection, encrypted connections, an external
+HTTPS/database uptime check, and sustained database CPU/disk alerts. Set
+`notification_channels` to existing verified Cloud Monitoring channel IDs; without them,
+alerts create console incidents only. Billing budgets require separate billing-account
+permissions. Optional `email_api_key` and `email_from` inject the sender through Secret Manager.
+
+1. Select the billing-enabled project and region. Create a private versioned Terraform
+   state bucket; run `terraform init -backend-config=bucket=BUCKET -backend-config=prefix=telemetry`.
+2. Supply `project_id`, `region`, `collector_image` pinned by digest, `public_url`, a random
+   `database_password` and a separate random `admin_key`. Inject secrets through the
+   deployment environment; do not commit tfvars or print a plan/state containing secrets.
+   Sensitive values still exist in Terraform state: restrict access to that bucket.
+   If the bootstrap identity lacks permission to act as the new runtime identity, set
+   `bootstrap_principal` to its `serviceAccount:EMAIL` (or `user:EMAIL`). Terraform grants
+   Service Account User on the collector identity only, before deploying Cloud Run.
+3. For a new registry, provision just `google_artifact_registry_repository.telemetry`, build
+   and push a **linux/amd64** image, then apply the full reviewed plan with its real digest.
+   For the first default Cloud Run hostname, use `https://pending.invalid`, read the
+   `collector_url` output and apply again with the actual URL before configuring any client.
+   A custom hostname needs separately configured DNS/TLS.
+4. Test `/health` (public Cloud Run frontends reserve `/healthz`, which remains an internal probe alias), enrollment, duplicates, opt-out, withdrawal and `/internal`. Verify
+   database/network permissions and backup restoration before accepting customer diagnostics.
+   Configure project-level billing notifications; instance counts are not hard spending caps.
+5. Node Slate, CLI and Studio use the built-in hosted collector by default.
+   `DARKGRADE_TELEMETRY_URL` overrides it for self-hosting. Saved opt-outs and environment
+   overrides still disable uploads; automatic clients also stay local under `NODE_ENV=test`.
+   Publishing packages is a separate release step.
+
+The manual GitHub deployment workflow uses OIDC, restricted to this repository and
+`deploy_ref` (main by default; explicitly choose the open PR's branch for staging). Set the
+`telemetry` environment variables `TELEMETRY_PROJECT`, `TELEMETRY_REGION`,
+`TELEMETRY_PUBLIC_URL`, `TELEMETRY_WIF_PROVIDER`, `TELEMETRY_DEPLOY_ACCOUNT` from Terraform.
+It updates only the web service and smoke-tests it. Record its image digest in Terraform
+inputs so a later apply does not roll it back. Database destruction is protected.
+
+Nothing has been deployed by building or validating these files. No live Firestore data
+needs migration in this workspace; do not point this plan at an unrelated existing database.

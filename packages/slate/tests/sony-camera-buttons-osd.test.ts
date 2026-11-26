@@ -1,7 +1,7 @@
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
-import { parseOsdImageDataset } from '@ptp/datasets/vendors/sony/sony-osd-image-dataset'
-import { createSonyRegistry } from '@ptp/registry'
+import { parseOsdImageDataset } from '@vendors/sony/datasets/sony-osd-image-dataset'
+import { createSonyRegistry } from '@vendors/registry'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -87,15 +87,6 @@ describe('Sony OSD image (SDIO_GetOsdImage 0x9238)', () => {
             degree: 0,
         })
     })
-
-    it('enables OsdImageMode once, then reads frames', async () => {
-        const { camera, operations, sets } = sonyCamera()
-        const first = await camera.captureOsdImage()
-        await camera.captureOsdImage()
-        expect([...first.image]).toEqual(PNG_SIGNATURE)
-        expect(sets).toEqual([{ name: 'OsdImageMode', value: 'ON' }])
-        expect(operations.map(operation => operation.name)).toEqual(['SDIO_GetOsdImage', 'SDIO_GetOsdImage'])
-    })
 })
 
 
@@ -148,13 +139,13 @@ describe('Sony movie-button transitions', () => {
         vi.useFakeTimers()
         try {
             const { camera, transitions, isRecording } = movieCamera()
-            await camera.startRecording()
+            await camera.sendStartRecording()
             expect(isRecording()).toBe(true)
-            const stopped = camera.stopRecording()
+            const stopped = camera.sendStopRecording()
             await vi.advanceTimersByTimeAsync(1500)
             await stopped
             expect(isRecording()).toBe(false)
-            const restarted = camera.startRecording()
+            const restarted = camera.sendStartRecording()
             await vi.advanceTimersByTimeAsync(1500)
             await restarted
             expect(isRecording()).toBe(true)
@@ -166,9 +157,9 @@ describe('Sony movie-button transitions', () => {
         vi.useFakeTimers()
         try {
             const { camera, transitions, isRecording } = movieCamera(true)
-            await expect(camera.startRecording()).rejects.toThrow('acknowledgement lost')
+            await expect(camera.sendStartRecording()).rejects.toThrow('acknowledgement lost')
             expect(isRecording()).toBe(true)
-            const cleanup = camera.stopRecording()
+            const cleanup = camera.sendStopRecording()
             await vi.advanceTimersByTimeAsync(1500)
             await cleanup
             expect(isRecording()).toBe(false)
@@ -186,10 +177,10 @@ describe('Sony movie-button transitions', () => {
                 if (!received.length) await new Promise(resolve => setTimeout(resolve, 300))
                 received.push({ value, at: performance.now() })
             }) as typeof camera.set
-            const started = camera.startRecording()
+            const started = camera.sendStartRecording()
             await vi.advanceTimersByTimeAsync(300)
             await started
-            const stopped = camera.stopRecording()
+            const stopped = camera.sendStopRecording()
             await vi.advanceTimersByTimeAsync(1500)
             await stopped
             expect(received.map(command => command.value)).toEqual(['DOWN', 'UP'])

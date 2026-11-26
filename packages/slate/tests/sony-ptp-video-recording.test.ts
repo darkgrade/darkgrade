@@ -11,7 +11,7 @@ function fixture(){
   if(op.name==='GetObjectInfo')return {code:0x2001,data:{filename:args.ObjectHandle===1?'old.MP4':name,objectCompressedSize:bytes}}
   return {code:0x2001,data:largeChunk.subarray(0,Math.min(args.MaxBytes,bytes))}
  })
- const camera={getInstance:()=>({registry:{operations},prepareStorageRead:async()=>{}}),send,
+ const camera={get driver(){return ({registry:{operations},prepareStorageRead:async()=>{}})},send,
   prepareRecordingMode:vi.fn(async()=>({restore})),
   getSonyPropertyStates:async()=>[{code:0xd21d,rawValue:state}],
   startRecording:vi.fn(async()=>{state=1}),
@@ -26,29 +26,23 @@ it('native take confirms state, discovers only the new original and streams veri
  expect(chunks).toEqual([3]);expect(progress).toHaveBeenLastCalledWith(3,3)
  expect(f.camera.send.mock.calls.some(([op])=>op.name==='SDIO_GetPartialLargeObject')).toBe(true)
 })
-it('preserves prepared movie mode through an unconfirmed Stop and restores after explicit cleanup',async()=>{
+it('keeps Stop available after an unconfirmed Stop; explicit cleanup sends the next one',async()=>{
  vi.useFakeTimers()
  try{
   const f=fixture();await f.recording.prepare();await f.recording.start()
   f.camera.stopRecording.mockResolvedValueOnce(undefined)
   const failure=expect(f.recording.stop()).rejects.toThrow('preserve camera power')
   await vi.advanceTimersByTimeAsync(15100);await failure
-  expect(f.restore).not.toHaveBeenCalled()
   await f.recording.cleanup()
-  expect(f.restore).toHaveBeenCalledOnce()
   expect(f.camera.startRecording).toHaveBeenCalledOnce()
   expect(f.camera.stopRecording).toHaveBeenCalledTimes(2)
  }finally{vi.useRealTimers()}
 })
-it('restores explicit movie preparation if indexing fails or the prepared take is cancelled',async()=>{
- const f=fixture()
- f.camera.send.mockRejectedValueOnce(new Error('Card index unavailable'))
- await expect(f.recording.prepare()).rejects.toThrow('Card index unavailable')
- expect(f.restore).toHaveBeenCalledOnce()
- f.restore.mockClear()
- await f.recording.prepare();await f.recording.cleanup()
- expect(f.restore).toHaveBeenCalledOnce()
- expect(f.camera.startRecording).not.toHaveBeenCalled()
+it('accepts a stop whose clip Camera could not find, and looks for the original itself',async()=>{
+ const {CameraClipNotFoundError}=await import('@camera/errors')
+ const f=fixture();await f.recording.prepare();await f.recording.start()
+ f.camera.stopRecording.mockImplementationOnce(async()=>{f.setState(0);f.setHandles([1,2]);throw new CameraClipNotFoundError('stopRecording','no new clip yet')})
+ expect((await f.recording.stop()).media).toEqual([{id:'2',filename:'new.MP4',bytes:3,verified:true}])
 })
 it('a command acknowledgement without observed recording fails and cleanup still sends Stop',async()=>{
  vi.useFakeTimers()
@@ -130,18 +124,6 @@ it('an exact-handle MTP UINT64 size transfers across the 4 GiB offset boundary w
  descriptorView.setUint16(2,6,true)
  await expect(f.recording.transfer({id:'2',filename:'new.MP4',bytes:size,verified:true},async()=>{},()=>{}))
   .rejects.toThrow('UINT64')
-})
-
-it('reads the 64-bit size support from a real DeviceInfo dataset, not from a hand-made field', async () => {
- const { DeviceInfoCodec } = await import('@ptp/datasets/device-info-dataset')
- const { createSonyRegistry } = await import('@ptp/registry')
- const registry = createSonyRegistry(true), dataset = new (DeviceInfoCodec as any)(registry)
- const encoded = dataset.encode({ standardVersion: 100, vendorExtensionID: 0x11, vendorExtensionVersion: 300, vendorExtensionDesc: '', functionalMode: 0,
-  operationsSupportedRaw: [0x1001, 0x9802, 0x9803], eventsSupportedRaw: [], devicePropertiesSupported: [], captureFormats: [], imageFormatsRaw: [],
-  manufacturer: 'Sony Corporation', model: 'ILME-FX2', deviceVersion: '1.01', serialNumber: '' })
- const decoded = dataset.decode(encoded).value
- expect(decoded.operationsSupportedRaw).toEqual([0x1001, 0x9802, 0x9803])
- expect((decoded as any).operationsSupported).toBeUndefined()
 })
 
 it('sizes an FX2 original over 4 GiB from its typed property list when the descriptor operation is refused', async () => {

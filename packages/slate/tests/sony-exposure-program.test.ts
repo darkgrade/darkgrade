@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
-import { createSonyRegistry } from '@ptp/registry'
+import { createSonyRegistry } from '@vendors/registry'
 import { SonyExposureProgramCodec } from '@vendors/sony/exposure-program'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 

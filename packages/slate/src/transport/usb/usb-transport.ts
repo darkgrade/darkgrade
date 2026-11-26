@@ -1,17 +1,12 @@
 import { identifyCamera } from '@camera/identification/camera-identification'
 import { Logger } from '@core/logger'
+import { PTPDisconnectedError } from '@core/ptp-errors'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import type { USBTransportOptions } from '@transport/transport-factory'
+import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
 import { InEndpoint, Interface, usb } from 'usb'
-import { USBContainerBuilder, USBContainerType } from './usb-container'
-
-export enum EndpointType {
-    BULK_IN = 'bulk_in',
-    BULK_OUT = 'bulk_out',
-    INTERRUPT = 'interrupt',
-}
 
 export interface EndpointConfiguration {
     bulkIn: USBEndpoint
@@ -19,64 +14,90 @@ export interface EndpointConfiguration {
     interrupt: USBEndpoint
 }
 
-enum USBClassRequest {
-    CANCEL_REQUEST = 0x64,
-    GET_EXTENDED_EVENT_DATA = 0x65,
-    DEVICE_RESET = 0x66,
-    GET_DEVICE_STATUS = 0x67,
-}
-
-export interface DeviceStatus {
-    code: number
-    parameters: number[]
-}
-export interface ExtendedEventData {
-    eventCode: number
-    transactionId: number
-    parameters: Array<{ size: number; value: Uint8Array }>
-}
+/** Still-image class Device Reset Request. */
+const DEVICE_RESET_REQUEST = 0x66
 
 export const USB_LIMITS = { MAX_USB_TRANSFER: 1024 * 1024 * 1024, DEFAULT_BULK_SIZE: 8192 } as const
 
-export const PTP_DISCOVERY_VENDORS = [
-    { vendorId: 0x04b0, name: 'Nikon' },
-    { vendorId: 0x054c, name: 'Sony' },
-    { vendorId: 0x04a9, name: 'Canon' },
-    { vendorId: 0x07b4, name: 'Olympus' },
-] as const
+/** Any vendor's PTP still-image interface; the default when no device descriptor names a body. */
+const PTP_STILL_IMAGE_FILTER = { classCode: 0x06, subclassCode: 0x01 } as const
 
 const LIBUSB_ENDPOINT_IN = usb.LIBUSB_ENDPOINT_IN
 /** Marks a bulk-IN reader released by a Device Reset Request or disconnect. */
 const RELEASED = new Error('Bulk IN reader released')
 
-interface DiscoveredUSBIdentity {
-    vendorId: number
-    productId: number
-    serialNumber?: string
-    classCode?: number
-    subclassCode?: number
-    protocolCode?: number
+type NodeUSBDevice = ReturnType<typeof usb.getDeviceList>[number]
+
+function hasMatchingInterface(device: NodeUSBDevice, filter: USBDeviceFilter): boolean {
+    try {
+        return device.allConfigDescriptors.some(configuration =>
+            configuration.interfaces.flat().some(
+                descriptor =>
+                    descriptor.bInterfaceClass === filter.classCode &&
+                    (filter.subclassCode === undefined || descriptor.bInterfaceSubClass === filter.subclassCode) &&
+                    (filter.protocolCode === undefined || descriptor.bInterfaceProtocol === filter.protocolCode)
+            )
+        )
+    } catch {
+        return false
+    }
 }
 
-/** A physical mapping must select one body, including serial and exclusions, before opening USB. */
-export function selectMatchingUSBDevice<T extends DiscoveredUSBIdentity>(
-    devices: T[],
-    descriptor?: DeviceDescriptor
-): T {
-    const { filters, exclusionFilters = [] } = descriptor?.usb ?? { filters: [{ classCode: 0x06, subclassCode: 0x01 }] }
-    type Filter = NonNullable<DeviceDescriptor['usb']>['filters'][number]
-    const matches = (device: T, filter: Filter) =>
-        (['vendorId', 'productId', 'serialNumber', 'classCode', 'subclassCode', 'protocolCode'] as const).every(
-            field => filter[field] === undefined || device[field] === filter[field]
+/**
+ * node-usb opens every device a filter without vendor and product admits, to read its interfaces.
+ * Narrow such an interface-class filter to the ids whose config descriptors, readable without
+ * opening the device, carry that interface, so hubs, capture cards and other devices stay closed.
+ */
+function narrowInterfaceFilters(filters: USBDeviceFilter[], devices: NodeUSBDevice[]): USBDeviceFilter[] {
+    return filters.flatMap(filter => {
+        if (filter.vendorId !== undefined || filter.productId !== undefined || filter.classCode === undefined)
+            return [filter]
+        return devices
+            .filter(device => hasMatchingInterface(device, filter))
+            .map(device => ({ ...filter, vendorId: device.deviceDescriptor.idVendor, productId: device.deviceDescriptor.idProduct }))
+    })
+}
+
+/** One string descriptor through node-usb's callback API; undefined when the device has none or will not say. */
+function stringDescriptor(device: NodeUSBDevice, index: number): Promise<string | undefined> {
+    if (!index) return Promise.resolve(undefined)
+    return new Promise(resolve => {
+        try {
+            device.getStringDescriptor(index, (error, value) => resolve(error ? undefined : value || undefined))
+        } catch {
+            resolve(undefined)
+        }
+    })
+}
+
+/**
+ * A device's manufacturer, product and serial strings. One this process already has open (its
+ * interfaces are set) is read on that handle and left open; another is opened for the read and
+ * closed after. A device that cannot be opened (claimed by another process) is listed without them.
+ */
+async function deviceStrings(device: NodeUSBDevice): Promise<{ manufacturer?: string; model?: string; serialNumber?: string }> {
+    const alreadyOpen = device.interfaces !== undefined
+    if (!alreadyOpen) {
+        try {
+            device.open(false)
+        } catch {
+            return {}
+        }
+    }
+    try {
+        const { iManufacturer, iProduct, iSerialNumber } = device.deviceDescriptor
+        const [manufacturer, model, serialNumber] = await Promise.all(
+            [iManufacturer, iProduct, iSerialNumber].map(index => stringDescriptor(device, index))
         )
-    const matching = devices.filter(
-        device =>
-            filters.some(filter => matches(device, filter)) && !exclusionFilters.some(filter => matches(device, filter))
-    )
-    if (!matching.length) throw new Error('No matching device found in discovered devices')
-    if (matching.length !== 1)
-        throw new Error('Multiple USB cameras match; select a unique serialNumber before connecting')
-    return matching[0]
+        return { ...(manufacturer && { manufacturer }), ...(model && { model }), ...(serialNumber && { serialNumber }) }
+    } finally {
+        if (!alreadyOpen)
+            try {
+                device.close()
+            } catch {
+                /* The strings were read or not; closing a handle this call opened never fails the list. */
+            }
+    }
 }
 
 function isUsbDeviceGone(error: unknown): boolean {
@@ -107,7 +128,10 @@ export class USBTransport implements TransportInterface {
     /** The caller's own WebUSB implementation (USBTransportOptions.usb), used as it is. */
     private readonly suppliedUsb: USB | null
 
-    constructor(private logger: Logger, options: USBTransportOptions = {}) {
+    constructor(
+        private logger: Logger,
+        options: USBTransportOptions = {}
+    ) {
         // A receive limit bounds a complete PTP dataset, not one libusb allocation.
         // Large object reads are assembled below from bounded endpoint transfers.
         const limit = options.maxBulkReadBytes ?? USB_LIMITS.DEFAULT_BULK_SIZE
@@ -131,37 +155,70 @@ export class USBTransport implements TransportInterface {
 
     private discoveryFilters(device?: DeviceDescriptor): USBDeviceFilter[] {
         if (device?.usb?.filters.length) return device.usb.filters
-        return PTP_DISCOVERY_VENDORS.map(vendor => ({ vendorId: vendor.vendorId, classCode: 0x06, subclassCode: 0x01 }))
+        return [PTP_STILL_IMAGE_FILTER]
     }
 
-    private async getUSB(filters: USBDeviceFilter[]): Promise<USB> {
+    /** Returns null when no attached device can match, so node-usb opens nothing. */
+    private async getUSB(filters: USBDeviceFilter[]): Promise<USB | null> {
         if (typeof navigator !== 'undefined' && 'usb' in navigator) return navigator.usb
         if (this.suppliedUsb) return this.suppliedUsb
 
-        const scope = JSON.stringify(filters)
+        const allowedDevices = narrowInterfaceFilters(filters, usb.getDeviceList())
+        if (!allowedDevices.length) return null
+        const scope = JSON.stringify(allowedDevices)
         if (this.usb && this.usbScope === scope) return this.usb
         const { WebUSB } = await import('usb')
-        this.usb = new WebUSB({ allowedDevices: filters, allowAllDevices: false, deviceTimeout: 1000 })
+        this.usb = new WebUSB({ allowedDevices, allowAllDevices: false, deviceTimeout: 1000 })
         this.usbScope = scope
         return this.usb
     }
 
+    /** Attached USB cameras the descriptor admits; with none, any vendor's PTP still-image body. */
     async discover(device?: DeviceDescriptor) {
         const filters = this.discoveryFilters(device)
         const usb = await this.getUSB(filters)
-        const devices = await usb.getDevices()
-        return devices.filter(device => filters.some(filter => this.matchesFilter(device, filter))).map(device => ({
-            device,
-            vendorId: device.vendorId,
-            productId: device.productId,
-            identification: identifyCamera({ vendorId: device.vendorId, productId: device.productId }),
-            manufacturer: device.manufacturerName ?? undefined,
-            model: device.productName ?? undefined,
-            serialNumber: device.serialNumber ?? undefined,
-            classCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceClass,
-            subclassCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceSubclass,
-            protocolCode: device.configuration?.interfaces?.[0]?.alternates?.[0]?.interfaceProtocol,
-        }))
+        const devices = usb ? await usb.getDevices() : []
+        return devices
+            .filter(device => filters.some(filter => this.matchesFilter(device, filter)))
+            .map(device => {
+                const alternate = device.configuration?.interfaces?.[0]?.alternates?.[0]
+                return {
+                    device,
+                    vendorId: device.vendorId,
+                    productId: device.productId,
+                    identification: identifyCamera({ vendorId: device.vendorId, productId: device.productId }),
+                    manufacturer: device.manufacturerName ?? undefined,
+                    model: device.productName ?? undefined,
+                    serialNumber: device.serialNumber ?? undefined,
+                    classCode: alternate?.interfaceClass,
+                    subclassCode: alternate?.interfaceSubclass,
+                    protocolCode: alternate?.interfaceProtocol,
+                }
+            })
+    }
+
+    /**
+     * Every attached PTP still-image body, for Camera.discover, read from USB descriptors rather than
+     * through node-usb's WebUSB: that drops any device it cannot open (and closes one it finds open),
+     * so a body this process already had open was never listed (darkgrade02, 2026-11-25). In a browser,
+     * or with a supplied WebUSB, it is `discover()`.
+     */
+    async listAttached(): Promise<
+        { vendorId: number; productId: number; manufacturer?: string; model?: string; serialNumber?: string }[]
+    > {
+        if ((typeof navigator !== 'undefined' && 'usb' in navigator) || this.suppliedUsb)
+            return (await this.discover()).map(({ vendorId, productId, manufacturer, model, serialNumber }) => ({
+                vendorId,
+                productId,
+                ...(manufacturer && { manufacturer }),
+                ...(model && { model }),
+                ...(serialNumber && { serialNumber }),
+            }))
+        const cameras = usb.getDeviceList().filter(device => hasMatchingInterface(device, PTP_STILL_IMAGE_FILTER))
+        const listed = []
+        for (const device of cameras)
+            listed.push({ vendorId: device.deviceDescriptor.idVendor, productId: device.deviceDescriptor.idProduct, ...(await deviceStrings(device)) })
+        return listed
     }
 
     private matchesFilter(device: USBDevice, filter: USBDeviceFilter): boolean {
@@ -170,9 +227,12 @@ export class USBTransport implements TransportInterface {
         if (filter.serialNumber !== undefined && device.serialNumber !== filter.serialNumber) return false
         if (filter.classCode === undefined) return true
         const alternates = device.configuration?.interfaces.flatMap(iface => iface.alternates) ?? []
-        return alternates.some(alternate => alternate.interfaceClass === filter.classCode
-            && (filter.subclassCode === undefined || alternate.interfaceSubclass === filter.subclassCode)
-            && (filter.protocolCode === undefined || alternate.interfaceProtocol === filter.protocolCode))
+        return alternates.some(
+            alternate =>
+                alternate.interfaceClass === filter.classCode &&
+                (filter.subclassCode === undefined || alternate.interfaceSubclass === filter.subclassCode) &&
+                (filter.protocolCode === undefined || alternate.interfaceProtocol === filter.protocolCode)
+        )
     }
 
     async connect(device?: DeviceDescriptor): Promise<void> {
@@ -181,30 +241,28 @@ export class USBTransport implements TransportInterface {
         const filters = this.discoveryFilters(device)
         const exclusions = device?.usb?.exclusionFilters ?? []
         let availableDevices = await this.discover(device)
-        const matches = (candidate: { device: USBDevice }) => filters.some(filter => this.matchesFilter(candidate.device, filter))
-            && !exclusions.some(filter => this.matchesFilter(candidate.device, filter))
+        const matches = (candidate: { device: USBDevice }) =>
+            filters.some(filter => this.matchesFilter(candidate.device, filter)) &&
+            !exclusions.some(filter => this.matchesFilter(candidate.device, filter))
         if (typeof navigator !== 'undefined' && 'usb' in navigator && !availableDevices.some(matches)) {
-            await navigator.usb.requestDevice({ filters, ...(exclusions.length ? { exclusionFilters: exclusions } : {}) })
+            await navigator.usb.requestDevice({
+                filters,
+                ...(exclusions.length ? { exclusionFilters: exclusions } : {}),
+            })
             availableDevices = await this.discover(device)
         }
 
-        if (availableDevices.length === 0) {
-            throw new Error('No USB devices available')
-        }
+        if (availableDevices.length === 0) throw new Error('No USB devices available')
 
         // Discovery is scoped by the descriptor's filters; a physical mapping must still select one body.
         const matching = availableDevices.filter(matches)
         if (matching.length > 1)
             throw new Error('Multiple USB cameras match; select a unique serialNumber before connecting')
         const matchingDevice = matching[0]
-        if (!matchingDevice?.device) {
-            throw new Error('No matching device found in discovered devices')
-        }
+        if (!matchingDevice?.device) throw new Error('No matching device found in discovered devices')
         this.device = matchingDevice.device as USBDevice
-        this.logger.addLog({
-            type: 'console', level: 'info', consoleLevel: 'info',
-            args: [`Selected USB camera 0x${matchingDevice.vendorId.toString(16)}:0x${matchingDevice.productId.toString(16)}`],
-        })
+        const { vendorId, productId } = matchingDevice
+        this.logInfo(`Selected USB camera 0x${vendorId.toString(16)}:0x${productId.toString(16)}`)
 
         try {
             await this.device.open()
@@ -244,8 +302,9 @@ export class USBTransport implements TransportInterface {
     }
 
     async resetPort(): Promise<void> {
-        const nodeUsbDevice = (this.device as unknown as { device?: { reset(callback: (error?: unknown) => void): void } })
-            ?.device
+        const nodeUsbDevice = (
+            this.device as unknown as { device?: { reset(callback: (error?: unknown) => void): void } }
+        )?.device
         if (!nodeUsbDevice) throw new Error('Not connected')
         await this.stopInterruptListener()
         await new Promise<void>((resolve, reject) =>
@@ -270,7 +329,7 @@ export class USBTransport implements TransportInterface {
             // A partial open never started event polling, and a removed device has no endpoint to clear.
             if (wasConnected && !this.deviceLost) {
                 await new Promise(resolve => setTimeout(resolve, 100))
-                await this.clearHalt(EndpointType.INTERRUPT)
+                await this.clearHalt('interrupt')
             }
         } catch (error) {
             if (!isUsbDeviceGone(error)) failures.push(error)
@@ -289,6 +348,25 @@ export class USBTransport implements TransportInterface {
         if (failures.length > 1) throw new AggregateError(failures, 'USB disconnect cleanup failed')
     }
 
+    /** The opened device, or PTPDisconnectedError once it is closed or unplugged. */
+    private requireDevice(): USBDevice {
+        if (!this.connected || !this.endpoints || !this.device)
+            throw new PTPDisconnectedError(
+                this.deviceLost ? 'the USB camera was unplugged' : 'the USB camera is not connected'
+            )
+        return this.device
+    }
+
+    /** Runs one USB transfer; a device that disappeared under it ends the connection as PTPDisconnectedError. */
+    private async whileAttached<Result>(transfer: () => Promise<Result>): Promise<Result> {
+        try {
+            return await transfer()
+        } catch (error) {
+            if (!this.handleDeviceLoss(error)) throw error
+            throw new PTPDisconnectedError('the USB camera was unplugged', { cause: error })
+        }
+    }
+
     private findPTPInterface(configuration: USBConfiguration): USBInterface | undefined {
         return configuration.interfaces.find(iface => {
             const alternate = iface.alternates[0] || iface.alternate
@@ -305,40 +383,18 @@ export class USBTransport implements TransportInterface {
     }
 
     async send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
-        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
+        const device = this.requireDevice()
+        const endpoint = this.endpoints!.bulkOut.endpointNumber
+        const result = await this.whileAttached(() => device.transferOut(endpoint, Uint8Array.from(data)))
 
-        const endpoint = this.endpoints.bulkOut.endpointNumber
-        const container = USBContainerBuilder.parseContainer(data)
+        this.logBulkTransfer('send', data, endpoint, sessionId, transactionId, result.status)
 
-        let result = await this.device.transferOut(endpoint, Uint8Array.from(data))
-
-        this.logger.addLog({
-            type: 'usb_transfer',
-            level: 'info',
-            direction: 'send',
-            bytes: data.length,
-            endpoint: 'bulkOut',
-            endpointAddress: `0x${endpoint.toString(16)}`,
-            sessionId: sessionId,
-            transactionId: transactionId,
-            phase:
-                container.type === USBContainerType.COMMAND
-                    ? 'request'
-                    : container.type === USBContainerType.DATA
-                      ? 'data'
-                      : 'response',
-            status: result.status,
-        })
-
-        if (result.status === 'stall') {
-            await this.clearHalt(EndpointType.BULK_OUT)
-        }
+        if (result.status === 'stall') await this.clearHalt('bulkOut')
     }
 
     async receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
-        if (!this.connected || !this.endpoints || !this.device) throw new Error('Not connected')
-
-        const endpoint = this.endpoints.bulkIn.endpointNumber
+        this.requireDevice()
+        const endpoint = this.endpoints!.bulkIn.endpointNumber
         const requested = Math.min(maxLength, this.maxBulkReadBytes)
         let received = await this.readBulkIn(endpoint, requested)
         // An exactly packet-aligned data phase can leave its terminating ZLP for the next read.
@@ -346,10 +402,7 @@ export class USBTransport implements TransportInterface {
             received = await this.readBulkIn(endpoint, requested)
         const { result } = received
 
-        if (result.status === 'stall') {
-            await this.clearHalt(EndpointType.BULK_IN)
-        }
-
+        if (result.status === 'stall') await this.clearHalt('bulkIn')
         if (result.status !== 'ok' || !result.data || result.data.byteLength === 0)
             throw new Error(`Bulk IN failed: ${result.status}`)
 
@@ -361,27 +414,37 @@ export class USBTransport implements TransportInterface {
         // The declared PTP length, rather than the USB short packet, ends the container.
         if (declared > data.byteLength && declared <= maxLength)
             data = await this.readRemainder(endpoint, data, declared)
-        const container = USBContainerBuilder.parseContainer(data)
 
+        this.logBulkTransfer('receive', data, endpoint, sessionId, transactionId, result.status)
+
+        return data
+    }
+
+    private logInfo(message: string): void {
+        this.logger.addLog({ type: 'console', level: 'info', consoleLevel: 'info', args: [message] })
+    }
+
+    private logBulkTransfer(
+        direction: 'send' | 'receive',
+        data: Uint8Array,
+        endpoint: number,
+        sessionId: number,
+        transactionId: number,
+        status: USBTransferStatus
+    ): void {
+        const { type } = USBContainerBuilder.parseContainer(data)
         this.logger.addLog({
             type: 'usb_transfer',
             level: 'info',
-            direction: 'receive',
+            direction,
             bytes: data.length,
-            endpoint: 'bulkIn',
+            endpoint: direction === 'send' ? 'bulkOut' : 'bulkIn',
             endpointAddress: `0x${endpoint.toString(16)}`,
-            sessionId: sessionId,
-            transactionId: transactionId,
-            phase:
-                container.type === USBContainerType.COMMAND
-                    ? 'request'
-                    : container.type === USBContainerType.DATA
-                      ? 'data'
-                      : 'response',
-            status: result.status,
+            sessionId,
+            transactionId,
+            phase: type === USBContainerType.COMMAND ? 'request' : type === USBContainerType.DATA ? 'data' : 'response',
+            status,
         })
-
-        return data
     }
 
     /** Takes over a pending bulk-IN transfer or submits one; leaves it queued if this reader is released. */
@@ -390,7 +453,8 @@ export class USBTransport implements TransportInterface {
         maxLength: number
     ): Promise<{ result: USBInTransferResult; length: number }> {
         if (!this.bulkInTransfer) {
-            const result = this.device!.transferIn(endpoint, maxLength)
+            const device = this.requireDevice()
+            const result = this.whileAttached(() => device.transferIn(endpoint, maxLength))
             result.catch(() => undefined)
             this.bulkInTransfer = { result, length: maxLength }
         }
@@ -406,7 +470,10 @@ export class USBTransport implements TransportInterface {
             return { result, length: transfer.length }
         } catch (error) {
             // A failed transfer is consumed; a released reader leaves the transfer for the next one.
-            if (error === RELEASED) throw new Error('Bulk IN read released by a Device Reset Request or disconnect')
+            if (error === RELEASED)
+                throw this.deviceLost
+                    ? new PTPDisconnectedError('the USB camera was unplugged during the read')
+                    : new Error('Bulk IN read released by a Device Reset Request or disconnect')
             if (this.bulkInTransfer === transfer) this.bulkInTransfer = null
             throw error
         } finally {
@@ -430,18 +497,19 @@ export class USBTransport implements TransportInterface {
         return data
     }
 
-    private async clearHalt(type: EndpointType): Promise<void> {
+    private async clearHalt(type: keyof EndpointConfiguration): Promise<void> {
         if (!this.device || !this.endpoints) throw new Error('Cannot clear stall')
-
-        const direction = type === EndpointType.BULK_OUT ? 'out' : 'in'
-        const endpoint = (type === EndpointType.BULK_IN ? this.endpoints.bulkIn :
-            type === EndpointType.BULK_OUT ? this.endpoints.bulkOut : this.endpoints.interrupt).endpointNumber
+        const direction = type === 'bulkOut' ? 'out' : 'in'
+        const endpoint = this.endpoints[type].endpointNumber
         try {
             await this.device.clearHalt(direction, endpoint)
         } catch (error) {
             // node-usb declares LibUSBException as a type, not a runtime constructor.
-            if (error instanceof Error &&
-                (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')) return
+            if (
+                error instanceof Error &&
+                (error.message === 'LIBUSB_TRANSFER_CANCELLED' || error.message === 'LIBUSB_TRANSFER_ERROR')
+            )
+                return
             throw error
         }
     }
@@ -464,7 +532,7 @@ export class USBTransport implements TransportInterface {
         const result = await this.device.controlTransferOut({
             requestType: 'class',
             recipient: 'interface',
-            request: USBClassRequest.DEVICE_RESET,
+            request: DEVICE_RESET_REQUEST,
             value: 0,
             index: this.interfaceNumber,
         })
@@ -472,39 +540,9 @@ export class USBTransport implements TransportInterface {
         for (const release of [...this.bulkInReaders]) release(RELEASED)
     }
 
-    async classRequestGetDeviceStatus(): Promise<DeviceStatus> {
-        if (!this.device) throw new Error('Not connected')
-
-        const result = await this.device.controlTransferIn(
-            {
-                requestType: 'class',
-                recipient: 'interface',
-                request: USBClassRequest.GET_DEVICE_STATUS,
-                value: 0,
-                index: this.interfaceNumber,
-            },
-            20
-        )
-
-        if (!result?.data || result.status !== 'ok') throw new Error('Failed to get status')
-
-        const view = new DataView(result.data.buffer)
-        const length = view.getUint16(0, true)
-        const code = view.getUint16(2, true)
-        const parameters: number[] = []
-        for (let i = 4; i + 4 <= length && i < result.data.byteLength; i += 4) {
-            parameters.push(view.getUint32(i, true))
-        }
-        return { code, parameters }
-    }
-
     private startInterruptListener(): void {
         const pollableEndpoint = this.findPollableInterruptEndpoint()
-
-        if (!pollableEndpoint) {
-            this.listenForInterrupt()
-            return
-        }
+        if (!pollableEndpoint) return void this.listenForInterrupt()
 
         this.pollingEndpoint = pollableEndpoint
         let recoveries = 0
@@ -521,10 +559,12 @@ export class USBTransport implements TransportInterface {
             if (++recoveries > 3) return
             pollableEndpoint.once('end', () => {
                 if (!this.connected || this.pollingEndpoint !== pollableEndpoint) return
-                void this.clearHalt(EndpointType.INTERRUPT).then(() => {
-                    if (this.connected && this.pollingEndpoint === pollableEndpoint)
-                        pollableEndpoint.startPoll(1, 64)
-                }).catch(recoveryError => console.error('USB event listener recovery failed:', recoveryError))
+                void this.clearHalt('interrupt')
+                    .then(() => {
+                        if (this.connected && this.pollingEndpoint === pollableEndpoint)
+                            pollableEndpoint.startPoll(1, 64)
+                    })
+                    .catch(recoveryError => console.error('USB event listener recovery failed:', recoveryError))
             })
         })
         pollableEndpoint.startPoll(1, 64)
@@ -560,26 +600,34 @@ export class USBTransport implements TransportInterface {
 
         if (!endpoint) return
 
-        if (endpoint.pollActive) {
-            await new Promise<void>(resolve => endpoint.stopPoll(() => resolve()))
-        }
+        if (endpoint.pollActive) await new Promise<void>(resolve => endpoint.stopPoll(() => resolve()))
 
         endpoint.removeAllListeners('data')
         endpoint.removeAllListeners('error')
     }
 
+    /**
+     * A removed device ends the connection once: event polling stops (it is never re-armed), and
+     * waiting bulk readers are released, so nothing keeps submitting transfers to a freed handle.
+     */
     private handleDeviceLoss(error: unknown): boolean {
         if (!isUsbDeviceGone(error)) return false
+        if (this.deviceLost) return true
         this.deviceLost = true
         this.connected = false
-        this.logger.addLog({ type: 'console', level: 'info', consoleLevel: 'info', args: ['USB device disconnected'] })
+        this.bulkInTransfer = null
+        for (const release of [...this.bulkInReaders]) release(RELEASED)
+        void this.stopInterruptListener().catch(() => undefined)
+        this.logInfo('USB device disconnected')
         return true
     }
 
     private async listenForInterrupt(): Promise<void> {
+        let failures = 0
         while (this.connected && this.device && this.endpoints) {
             try {
                 const result = await this.device.transferIn(this.endpoints.interrupt.endpointNumber, 64)
+                failures = 0
 
                 if (result.data) {
                     const data = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength)
@@ -593,6 +641,9 @@ export class USBTransport implements TransportInterface {
                 if (error instanceof Error && error.message === 'Cancelled') continue
 
                 console.error('Error listening for interrupt: ', error)
+                // A failing endpoint is retried a few times, spaced out; it never spins.
+                if (++failures > 3) return
+                await new Promise(resolve => setTimeout(resolve, 100 * failures))
             }
         }
     }
@@ -602,15 +653,10 @@ export class USBTransport implements TransportInterface {
 
         const container = USBContainerBuilder.parseEvent(data)
         const view = new DataView(container.payload.buffer, container.payload.byteOffset, container.payload.byteLength)
-        const event: PTPEvent = {
-            code: container.code,
-            transactionId: container.transactionId,
-            parameters: [],
-        }
+        const event: PTPEvent = { code: container.code, transactionId: container.transactionId, parameters: [] }
 
-        for (let i = 0; i + 4 <= container.payload.length && event.parameters.length < 5; i += 4) {
+        for (let i = 0; i + 4 <= container.payload.length && event.parameters.length < 5; i += 4)
             event.parameters.push(view.getUint32(i, true))
-        }
         this.logger.addLog({
             type: 'usb_transfer',
             level: 'info',
@@ -624,8 +670,6 @@ export class USBTransport implements TransportInterface {
             status,
         })
 
-        if (this.eventHandler) {
-            this.eventHandler(event)
-        }
+        this.eventHandler?.(event)
     }
 }

@@ -1,6 +1,7 @@
 import { Camera } from '@camera/index'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { expect, it } from 'vitest'
+import { protocolSession } from '@camera/protocol-session'
 
 function fixture() {
     let connected = true
@@ -9,7 +10,7 @@ function fixture() {
         connect: async () => { connected = true }, disconnect: async () => { connected = false },
         classRequestReset: async () => { resets.push('device') }, resetPort: async () => { resets.push('port') },
     } as unknown as TransportInterface
-    const camera = new Camera({ transport, vendorId: 0x04a9, logger: { renderInTerminal: false, captureConsole: false } }).getInstance()
+    const camera = protocolSession(new Camera({ transport, vendorId: 0x04a9, logger: { renderInTerminal: false, captureConsole: false } })).driver
     const operations: string[] = []
     let remoteCode = 0x2001
     camera.send = (async operation => {

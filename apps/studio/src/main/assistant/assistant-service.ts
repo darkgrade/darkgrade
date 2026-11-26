@@ -60,16 +60,16 @@ interface ToolCall {
     function: { name: string; arguments: string }
 }
 
-const AGENT_INSTRUCTIONS = `You are the assistant inside Darkgrade Studio, a camera control app on the user's Mac. You control the connected camera with tools. The tools work with any camera: check get_camera_status for what this one offers.
+const AGENT_INSTRUCTIONS = `You are the assistant inside Darkgrade Studio, a camera control app on the user's Mac. You control the connected camera with tools. The tools work with any camera: check camera_get_capabilities for what this one offers.
 
-- The camera's current state comes with each request. Act on it directly; call get_camera_status only when you need values after a change.
+- The camera's current state comes with each request. Act on it directly; call camera_get_capabilities only when you need values after a change.
 - Do what the user asks with the fewest tool calls.
-- Relative requests use the relative tools: brighter/darker → adjust_exposure ("a little"/"a touch" ≈ 0.33 stops, "a bit" ≈ 0.5, "a lot" ≈ 1–2); warmer/cooler/too blue/too orange → adjust_color_temperature; undo/go back → undo_last_change. Exact values ("f8", "ISO 6400") use set_setting.
-- Photos and videos on the card: list_card_files says which is which; "the photo" means a photo, never a video.
+- Relative requests use the relative tools: brighter/darker → adjust_exposure ("a little"/"a touch" ≈ 0.33 stops, "a bit" ≈ 0.5, "a lot" ≈ 1–2); warmer/cooler/too blue/too orange → adjust_color_temperature; undo/go back → undo_last_change. Exact values ("f8", "ISO 6400") use the setting's own tool, such as camera_set_aperture or camera_set_iso.
+- Photos and videos on the card: camera_list_media says which is which; "the photo" means a photo, never a video.
 - Scopes (histogram, waveform, vectorscope), zebras and focus peaking are Studio's own: use set_studio_view, never the camera display overlay.
 - When the user describes how the picture looks ("too bright", "a bit flat"), call analyze_frame first and decide from the numbers. Use get_frame when you need to see the picture itself.
 - A QUESTION ("am I clipping?", "how's my exposure?", "is it focused on my eyes?") is answered, not acted on: measure or look, then answer. Change nothing unless they asked you to fix something; at most one refocus for a focus question.
-- Focusing on a named thing ("focus on the couch", "focus on the background", "focus a bit more to the left"): call get_frame, find where that thing is in the picture, then focus_at its position. The centre is only right when the thing is there. You can always do this; never say you can't.
+- Focusing on a named thing ("focus on the couch", "focus on the background", "focus a bit more to the left"): call get_frame, find where that thing is in the picture, then camera_set_focus_point at its position. The centre is only right when the thing is there. You can always do this; never say you can't.
 - Only change what was asked or clearly implied. Never take photos, record or download unless asked.
 - Finish with one short sentence, at most 15 words, in plain words without raw measurements: what you changed, or what you found. After a fix, say what was wrong and what you changed: "It was very dark, so I raised ISO two stops." If no tool can do it, say so. Never claim to have done something you didn't.
 
@@ -77,40 +77,50 @@ ${SHOOTING_GUIDANCE}`
 
 const TOOL_NAMES = new Set(STUDIO_TOOLS.map(tool => tool.name))
 
-/** The tool input for a direct action, from the fields the finding step filled in. */
-function directInput(request: FoundRequest): Record<string, unknown> {
+/** The tool and its input for a direct action, from the fields the finding step filled in. */
+function directCall(request: FoundRequest): { tool: string; input: Record<string, unknown> } {
     switch (request.action) {
         case 'set_setting':
-            return { setting: request.setting, value: request.value }
+            return { tool: 'camera_set_control', input: { id: request.setting, value: request.value } }
         case 'adjust_exposure':
-            return { stops: request.stops, using: request.using ?? 'auto' }
+            return { tool: request.action, input: { stops: request.stops, using: request.using ?? 'auto' } }
         case 'adjust_color_temperature':
-            return { kelvin: request.kelvin }
+            return { tool: request.action, input: { kelvin: request.kelvin } }
         case 'set_recording':
-            return { recording: request.on }
+            return { tool: request.on ? 'camera_start_recording' : 'camera_stop_recording', input: {} }
+        case 'take_photo':
+            return { tool: 'camera_take_photo', input: {} }
+        case 'autofocus':
+            return { tool: 'camera_autofocus', input: {} }
         case 'zoom':
-            return { direction: request.direction }
+            return { tool: 'camera_start_zoom', input: { direction: request.direction === 'tele' ? 'in' : 'out', speed: 'medium' } }
         case 'set_live_view':
-            return { on: request.on }
+            return { tool: request.action, input: { on: request.on } }
         case 'set_studio_view':
-            return Object.fromEntries(
-                Object.entries({
-                    scope: request.scope,
-                    zebras: request.zebras,
-                    zebraLevelPercent: request.zebraLevelPercent,
-                    focusPeaking: request.focusPeaking,
-                }).filter(([, value]) => value !== undefined)
-            )
+            return {
+                tool: request.action,
+                input: Object.fromEntries(
+                    Object.entries({
+                        scope: request.scope,
+                        zebras: request.zebras,
+                        zebraLevelPercent: request.zebraLevelPercent,
+                        focusPeaking: request.focusPeaking,
+                    }).filter(([, value]) => value !== undefined)
+                ),
+            }
         default:
-            return {}
+            return { tool: request.action, input: {} }
     }
 }
 
+/** How long a spoken "zoom in" holds the zoom before stopping it. */
+const SPOKEN_ZOOM_MS = 500
+
 /** A short reply for a direct action, written from its result rather than by the model. */
-function describeResult(action: string, data: Record<string, unknown>): string {
-    switch (action) {
-        case 'set_setting':
-            return `${CAMERA_CONTROL_LABELS[data.setting as keyof typeof CAMERA_CONTROL_LABELS] ?? data.setting}: ${data.to}`
+function describeResult(tool: string, data: Record<string, unknown>): string {
+    switch (tool) {
+        case 'camera_set_control':
+            return `${CAMERA_CONTROL_LABELS[data.id as keyof typeof CAMERA_CONTROL_LABELS] ?? data.id}: ${data.value}`
         case 'adjust_exposure': {
             const switched = data.switchedFromAuto as { setting: string; nowManual: string } | undefined
             const change = `${data.changed} ${data.from} → ${data.to}`
@@ -123,13 +133,15 @@ function describeResult(action: string, data: Record<string, unknown>): string {
             const temperature = changes.find(change => change.colorTemperature)?.colorTemperature
             return temperature ? `${temperature.from} K → ${temperature.to} K` : 'Colour temperature changed'
         }
-        case 'set_recording':
-            return data.recording ? 'Recording' : 'Stopped recording'
-        case 'take_photo':
-            return `Photo saved: ${data.filename}`
-        case 'zoom':
-            return `Zoomed to ${(data.lens as { focalLengthMillimetres?: number } | null)?.focalLengthMillimetres ?? '?'} mm`
-        case 'autofocus':
+        case 'camera_start_recording':
+            return 'Recording'
+        case 'camera_stop_recording':
+            return 'Stopped recording'
+        case 'camera_take_photo':
+            return `Photo taken: ${data.name}`
+        case 'camera_start_zoom':
+            return 'Zoomed'
+        case 'camera_autofocus':
             return 'Focused'
         case 'set_live_view':
             return data.liveView ? 'Live view on' : 'Live view off'
@@ -170,14 +182,15 @@ const TEMPLATE_MARKER = '\u0000USER\u0000'
 function cameraSummary(): string {
     const state = cameraService.getState()
     if (!state.connected) return 'not connected'
-    const mode = /movie|s&q/i.test(state.controls?.exposureProgram?.value ?? '') ? 'movie mode' : 'photo mode'
+    const mode = state.controls?.photoVideoMode?.value === 'video' ? 'movie mode' : 'photo mode'
     const controls = state.controls
     const values = (
         [
-            'exposureProgram',
+            'exposureMode',
             'iso',
             'shutterSpeed',
             'aperture',
+            'exposureCompensation',
             'focusMode',
             'focusArea',
             'whiteBalance',
@@ -572,8 +585,9 @@ class AssistantService {
      * result. If its arguments don't fit the tool, the full agent takes it instead.
      */
     private async carryOutDirectly(intent: VoiceIntent, request: FoundRequest): Promise<void> {
-        const tool = findTool(request.action)
-        const parsed = tool?.inputSchema.safeParse(directInput(request))
+        const call = directCall(request)
+        const tool = findTool(call.tool)
+        const parsed = tool?.inputSchema.safeParse(call.input)
         if (!tool || !parsed?.success) {
             this.trace(
                 `intent ${intent.id} direct ${request.action} didn't fit (${parsed?.error?.message ?? 'no tool'}); asking the agent`
@@ -591,7 +605,12 @@ class AssistantService {
                 TOOL_TIMEOUT_MS,
                 `${tool.title} didn't answer in time`
             )
-            const reply = describeResult(tool.name, (result.data ?? {}) as Record<string, unknown>)
+            if (tool.name === 'camera_start_zoom') {
+                await new Promise(resolve => setTimeout(resolve, SPOKEN_ZOOM_MS))
+                await findTool('camera_stop_zoom')?.run({})
+            }
+            const data = typeof result.data === 'object' && result.data ? (result.data as Record<string, unknown>) : {}
+            const reply = describeResult(tool.name, data)
             if (request.action === 'undo_last_change') this.done.pop()
             else this.done = [...this.done, request].slice(-5)
             this.trace(

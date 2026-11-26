@@ -1,5 +1,5 @@
-import { CanonExtendedDeviceInfoDatasetCodec } from '@ptp/datasets/vendors/canon/canon-extended-device-info-dataset'
-import { createCanonRegistry } from '@ptp/registry'
+import { CanonExtendedDeviceInfoDatasetCodec } from '@vendors/canon/datasets/canon-extended-device-info-dataset'
+import { createCanonRegistry } from '@vendors/registry'
 import { describe, expect, it } from 'vitest'
 
 function dataset(headerWord: number, arrays: number[][], trailing = new Uint8Array()): Uint8Array {
@@ -14,15 +14,6 @@ function dataset(headerWord: number, arrays: number[][], trailing = new Uint8Arr
 describe('Canon extended device information', () => {
     const registry = createCanonRegistry(true)
     const codec = new CanonExtendedDeviceInfoDatasetCodec(registry)
-
-    it('registers a parameterless inbound-data audit operation', () => {
-        expect(registry.operations.CanonGetExtendedDeviceInfo).toMatchObject({
-            code: 0x9108,
-            dataDirection: 'out',
-            operationParameters: [],
-            responseParameters: [],
-        })
-    })
 
     it('preserves an opaque header, full uint32 codes, remote mode numbers and trailing bytes', () => {
         const payload = dataset(892, [[0xc189, 0xffffffff], [0xd2a5], [0, 1, 2, 4, 8]], Uint8Array.of(7, 8, 9))

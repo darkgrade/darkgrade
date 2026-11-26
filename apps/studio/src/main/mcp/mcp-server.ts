@@ -10,7 +10,7 @@ import { app } from 'electron'
 import { createServer, type Server } from 'node:http'
 import * as z from 'zod/v4'
 
-const INSTRUCTIONS = `Darkgrade Studio controls the camera connected to this Mac. Tools adapt to whatever camera is plugged in: read get_camera_status first to see what it offers.\n\n${SHOOTING_GUIDANCE}`
+const INSTRUCTIONS = `Darkgrade Studio controls the camera connected to this Mac. Tools adapt to whatever camera is plugged in: read camera_get_capabilities first to see what it offers.\n\n${SHOOTING_GUIDANCE}`
 
 function toContent(result: ToolResult) {
     const content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[] = [

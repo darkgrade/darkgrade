@@ -1,4 +1,13 @@
-import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
+import { DISCLOSURE, SCHEMA, type CameraContext, type Contribution, type DiagnosticEntry } from '@contribute/schema'
+
+export function newContribution(camera: CameraContext, entries: DiagnosticEntry[], droppedEntries = 0): Contribution {
+    return { schema: SCHEMA, disclosure: DISCLOSURE, id: crypto.randomUUID(), camera, entries, droppedEntries }
+}
+
+export function environmentDisabled() {
+    const environment = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    return environment?.DARKGRADE_CONTRIBUTIONS === '0' || environment?.DO_NOT_TRACK === '1'
+}
 
 export interface CameraEvent {
     code: number
@@ -67,24 +76,40 @@ function operationName(bytes: Uint8Array, manufacturer: string): string | undefi
     return STANDARD_OPERATION_NAMES[fields.code ?? 0]
 }
 
+/**
+ * The diagnostics session of each connection, so an observer replacing another on the same transport
+ * keeps it. `started` is false until the session's first entry: a connect, or the attach marker of
+ * observation that began on a connection already open.
+ */
+const connectionSessions = new WeakMap<object, { id: string; started: boolean }>()
+
 export function observeTransport<Device, Kind extends string>(
     source: CameraTransport<Device, Kind>,
     enabled: () => boolean,
     record: (entry: DiagnosticEntry) => void,
     generation: () => number,
-    camera: () => Pick<CameraContext, 'manufacturer'> = () => ({ manufacturer: 'Unknown' })
+    camera: () => Pick<CameraContext, 'manufacturer'> = () => ({ manufacturer: 'Unknown' }),
+    /** The public call this work is part of, if the host knows one (see `ApiCall`). */
+    callId: () => string | undefined = () => undefined
 ) {
     let detached = false
-    let sessionId = crypto.randomUUID()
+    let connection = connectionSessions.get(source) ?? { id: crypto.randomUUID(), started: !connected(source) }
+    connectionSessions.set(source, connection)
     const listeners = new Set<(event: CameraEvent) => void>()
-    const pending = new Map<number, { operation: string; generation: number }>()
+    /** Each command still waiting for its response, by transaction: its code and, when allowlisted, its name. */
+    const pending = new Map<number, { code: number; operation?: string; generation: number }>()
     const save = (entry: DiagnosticEntry) => {
-        if (!detached && enabled()) {
-            try {
-                record({ ...entry, occurredAt: new Date().toISOString(), sessionId })
-            } catch {
-                /* Diagnostics must not break camera cleanup. */
-            }
+        if (detached || !enabled()) return
+        // Observation that began on a connection no observer saw open says so before its first entry,
+        // rather than leaving a session that seems to start mid-connection.
+        const attached = !connection.started && entry.kind !== 'connect'
+        connection.started = true
+        if (attached) save({ kind: 'attach', direction: 'lifecycle', bytes: 0, durationMilliseconds: 0, failed: false })
+        try {
+            const call = entry.callId ?? callId()
+            record({ ...entry, ...(call && { callId: call }), occurredAt: new Date().toISOString(), sessionId: connection.id })
+        } catch {
+            /* Diagnostics must not break camera cleanup. */
         }
     }
     const operation = async <Result>(
@@ -98,26 +123,25 @@ export function observeTransport<Device, Kind extends string>(
         const epoch = generation()
         const collecting = !detached && enabled()
         const fields = collecting && bytes ? header(bytes) : { kind }
-        if (bytes && fields.kind === 'command' && fields.transactionId !== undefined)
-            pending.delete(fields.transactionId)
+        const command = bytes !== undefined && fields.kind === 'command' && fields.transactionId !== undefined
+        if (command) pending.delete(fields.transactionId!)
         try {
             const result = await run()
             if (collecting && epoch === generation()) {
                 const completed = result instanceof Uint8Array ? header(result) : fields
-                const label =
-                    bytes && fields.kind === 'command'
-                        ? operationName(bytes, camera().manufacturer)
-                        : pending.get(completed.transactionId ?? -1)?.generation === epoch
-                          ? pending.get(completed.transactionId ?? -1)?.operation
-                          : undefined
-                if (bytes && fields.kind === 'command' && fields.transactionId !== undefined && label) {
+                const answered = pending.get(completed.transactionId ?? -1)
+                const owner = answered?.generation === epoch ? answered : undefined
+                const label = command ? operationName(bytes!, camera().manufacturer) : owner?.operation
+                if (command) {
                     if (pending.size >= 128) pending.delete(pending.keys().next().value!)
-                    pending.set(fields.transactionId, { operation: label, generation: epoch })
+                    pending.set(fields.transactionId!, { code: fields.code!, ...(label && { operation: label }), generation: epoch })
                 }
+                const answers = !command && owner && (completed.kind === 'data' || completed.kind === 'response')
                 save({
                     ...fields,
                     ...((name ?? label) ? { operation: name ?? label } : {}),
                     ...(result instanceof Uint8Array && header(result)),
+                    ...(answers && { commandCode: owner.code }),
                     direction,
                     bytes: bytes?.byteLength ?? (result instanceof Uint8Array ? result.byteLength : 0),
                     durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
@@ -148,7 +172,8 @@ export function observeTransport<Device, Kind extends string>(
     const transport: CameraTransport<Device, Kind> = {
         connect: device =>
             operation('lifecycle', 'connect', () => {
-                sessionId = crypto.randomUUID()
+                connection = { id: crypto.randomUUID(), started: true }
+                connectionSessions.set(source, connection)
                 pending.clear()
                 source.on?.(onEvent)
                 return source.connect(device)
@@ -177,16 +202,12 @@ export function observeTransport<Device, Kind extends string>(
         isConnected: () => source.isConnected(),
         isLittleEndian: () => source.isLittleEndian(),
         getType: () => source.getType(),
-        on: listener => {
-            listeners.add(listener)
-        },
-        off: listener => {
-            listeners.delete(listener)
-        },
+        on: listener => void listeners.add(listener),
+        off: listener => void listeners.delete(listener),
     }
     return {
         transport,
-        session: () => sessionId,
+        session: () => connection.id,
         record: save,
         operation: <Result>(name: string, work: () => Promise<Result>) =>
             /^[a-z_]{1,40}$/.test(name) ? operation('lifecycle', 'command', work, undefined, name) : work(),
@@ -196,5 +217,13 @@ export function observeTransport<Device, Kind extends string>(
             listeners.clear()
             pending.clear()
         },
+    }
+}
+
+function connected(source: { isConnected?: () => boolean }) {
+    try {
+        return source.isConnected?.() === true
+    } catch {
+        return false
     }
 }

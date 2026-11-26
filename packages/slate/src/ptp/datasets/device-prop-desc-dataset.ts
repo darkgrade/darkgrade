@@ -1,8 +1,17 @@
-import { unrecognizedValueLabel, type UnrecognizedValues } from '@camera/controls'
-import { VariableValueCodec } from '@ptp/datasets/codecs/variable-value-codec'
+import type { UnrecognizedValues } from '@camera/controls'
+import { SequentialReader } from '@ptp/datasets/codecs/byte-sequence'
+import { VariableValueCodec, type VariableValue } from '@ptp/datasets/codecs/variable-value-codec'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
-import { CustomCodec, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
+import { CustomCodec, OpenEnumCodec, type CodecDefinition, type CodecInstance, type PTPRegistry } from '@ptp/types/codec'
 import { DatatypeCode } from '@ptp/types/datatype'
+
+type DescriptorValue = number | bigint | string
+
+/** Hexadecimal for integers (`0x1234`), verbatim for text. */
+export function unrecognizedValueLabel(raw: number | bigint | string): string {
+    if (typeof raw === 'string') return raw
+    return raw < 0 ? `-0x${(-raw).toString(16)}` : `0x${raw.toString(16)}`
+}
 
 export interface DevicePropDesc {
     devicePropertyCode: number
@@ -35,9 +44,12 @@ export interface DevicePropDesc {
  * entry darkgrade has not named yet). The descriptor stays usable with the raw value in that slot
  * instead of failing as a whole; `undefined` marks the value unrecognized.
  */
-function tryDecode(codec: CodecInstance<number | bigint | string>, bytes: Uint8Array): number | bigint | string | undefined {
+function tryDecode(codec: CodecInstance<DescriptorValue>, bytes: Uint8Array): DescriptorValue | undefined {
     try {
-        return codec.decode(bytes, 0).value
+        const value = codec.decode(bytes, 0).value
+        // An open enumeration reads an unnamed value as its raw number; a descriptor still marks it.
+        if (codec instanceof OpenEnumCodec && typeof value !== 'string' && codec.nameOf(value) === undefined) return undefined
+        return value
     } catch {
         return undefined
     }
@@ -57,18 +69,20 @@ export function recognizedDescriptorValues(descriptor: DevicePropDesc): {
         ...(rejected.size > 0 && { choices: [...rejected].map(unrecognizedValueLabel) }),
     }
     return {
-        ...(descriptor.supportedValuesDecoded && { allowedValues: descriptor.supportedValuesDecoded.filter(recognized) }),
+        ...(descriptor.supportedValuesDecoded && {
+            allowedValues: descriptor.supportedValuesDecoded.filter(recognized),
+        }),
         ...(descriptor.supportedValuesRaw && { allowedRawValues: descriptor.supportedValuesRaw.filter(recognized) }),
         ...(Object.keys(unrecognized).length > 0 && { unrecognized }),
     }
 }
 
 export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
-    private use4ByteCode: boolean
-
-    constructor(registry: PTPRegistry, use4ByteCode: boolean = false) {
+    constructor(
+        registry: PTPRegistry,
+        private use4ByteCode: boolean = false
+    ) {
         super(registry)
-        this.use4ByteCode = use4ByteCode
     }
 
     encode(_value: DevicePropDesc): Uint8Array {
@@ -76,151 +90,74 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
     }
 
     decode(buffer: Uint8Array, offset = 0): { value: DevicePropDesc; bytesRead: number } {
-        let currentOffset = offset
-
-        const headerSize = this.use4ByteCode ? 7 : 5
-        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < headerSize) {
+        if (!Number.isInteger(offset) || offset < 0 || buffer.length - offset < (this.use4ByteCode ? 7 : 5))
             throw new Error('Invalid or truncated property descriptor header')
-        }
-
-        const u8 = this.registry.codecs.uint8
-        const u16 = this.registry.codecs.uint16
-        const u32 = this.registry.codecs.uint32
-
-        // DevicePropCode (2 or 4 bytes)
-        let devicePropertyCode: number
-        if (this.use4ByteCode) {
-            const result = u32.decode(buffer, currentOffset)
-            devicePropertyCode = result.value
-            currentOffset += result.bytesRead
-        } else {
-            const result = u16.decode(buffer, currentOffset)
-            devicePropertyCode = result.value
-            currentOffset += result.bytesRead
-        }
-
-        // DataType (2 bytes)
-        const dataTypeResult = u16.decode(buffer, currentOffset)
-        const dataType: DatatypeCode = dataTypeResult.value
-        currentOffset += dataTypeResult.bytesRead
-
-        // GetSet (1 byte)
-        const getSetResult = u8.decode(buffer, currentOffset)
-        const getSet = getSetResult.value
+        const reader = new SequentialReader(buffer, offset)
+        const { uint8, uint16, uint32 } = this.registry.codecs
+        const devicePropertyCode = reader.read(this.use4ByteCode ? uint32 : uint16)
+        const dataType: DatatypeCode = reader.read(uint16)
+        const getSet = reader.read(uint8)
         if (getSet !== 0 && getSet !== 1) throw new Error(`Invalid property access flag: ${getSet}`)
-        currentOffset += getSetResult.bytesRead
-
         const valueCodec = new VariableValueCodec(this.registry, dataType)
-
-        // FactoryDefaultValue (variable size)
-        const factoryDefaultResult = valueCodec.decode(buffer, currentOffset)
-        const factoryDefaultValue = factoryDefaultResult.value.value
-        currentOffset += factoryDefaultResult.bytesRead
-
-        // CurrentValue (variable size)
-        const currentValueResult = valueCodec.decode(buffer, currentOffset)
-        const currentValueRaw = currentValueResult.value.value
-        const currentValueBytes = currentValueResult.value.rawBytes
-        currentOffset += currentValueResult.bytesRead
-
-        // FormFlag (1 byte)
-        const formFlagResult = u8.decode(buffer, currentOffset)
-        const formFlag = formFlagResult.value
+        const readVariableValue = () => reader.read<VariableValue>(valueCodec)
+        const readValue = () => readVariableValue().value
+        const factoryDefaultValue = readValue()
+        const { value: currentValueRaw, rawBytes: currentValueBytes } = readVariableValue()
+        const formFlag = reader.read(uint8)
         if (formFlag > 2) throw new Error(`Invalid property form flag: ${formFlag}`)
-        currentOffset += formFlagResult.bytesRead
 
         const propertyDef = Object.values(this.registry.properties).find((p: any) => p.code === devicePropertyCode)
         const devicePropertyName = propertyDef?.name || `Unknown_0x${devicePropertyCode.toString(16).padStart(4, '0')}`
         const devicePropertyDescription = propertyDef?.description || ''
+        const resolve = <Value>(codec: CodecDefinition<Value>) =>
+            typeof codec === 'function' ? codec(this.registry) : codec
+        const propertyCodec = propertyDef?.codec ? resolve<DescriptorValue>(propertyDef.codec) : undefined
+        const datatypeCodec = () => {
+            const codec = getDatatypeByCode(dataType)?.codec
+            return codec ? resolve(codec) : undefined
+        }
 
-        let currentValueDecoded: number | bigint | string = currentValueRaw
+        let currentValueDecoded: DescriptorValue = currentValueRaw
         let currentValueUnrecognized: true | undefined
-        if (propertyDef && propertyDef.codec) {
-            const codecInstance =
-                typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
-            const decoded = tryDecode(codecInstance, currentValueBytes)
+        if (propertyCodec) {
+            const decoded = tryDecode(propertyCodec, currentValueBytes)
             if (decoded === undefined) currentValueUnrecognized = true
             currentValueDecoded = decoded ?? currentValueRaw
         }
 
-        let minimumValue: number | bigint | string | undefined = undefined
-        let maximumValue: number | bigint | string | undefined = undefined
-        let stepSize: number | bigint | string | undefined = undefined
-        let numberOfValues: number | undefined = undefined
-        let supportedValuesRaw: (number | bigint | string)[] | undefined = undefined
-        let supportedValuesDecoded: (number | bigint | string)[] | undefined = undefined
-        const unrecognizedSupportedValues: (number | bigint | string)[] = []
+        let minimumValue: DescriptorValue | undefined
+        let maximumValue: DescriptorValue | undefined
+        let stepSize: DescriptorValue | undefined
+        let numberOfValues: number | undefined
+        let supportedValuesRaw: DescriptorValue[] | undefined
+        let supportedValuesDecoded: DescriptorValue[] | undefined
+        const unrecognizedSupportedValues: DescriptorValue[] = []
 
         if (formFlag === 0x01) {
-            const minResult = valueCodec.decode(buffer, currentOffset)
-            minimumValue = minResult.value.value
-            currentOffset += minResult.bytesRead
-
-            const maxResult = valueCodec.decode(buffer, currentOffset)
-            maximumValue = maxResult.value.value
-            currentOffset += maxResult.bytesRead
-
-            const stepResult = valueCodec.decode(buffer, currentOffset)
-            stepSize = stepResult.value.value
-            currentOffset += stepResult.bytesRead
-
-            if (
-                propertyDef &&
-                propertyDef.codec &&
-                minimumValue !== undefined &&
-                maximumValue !== undefined &&
-                stepSize !== undefined
-            ) {
-                const codecInstance =
-                    typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
-
-                const datatypeDefinition = getDatatypeByCode(dataType)
-                if (datatypeDefinition?.codec) {
-                    const datatypeCodec =
-                        typeof datatypeDefinition.codec === 'function'
-                            ? datatypeDefinition.codec(this.registry)
-                            : datatypeDefinition.codec
-
-                    const minBytes = datatypeCodec.encode(minimumValue)
-                    const maxBytes = datatypeCodec.encode(maximumValue)
-                    const stepBytes = datatypeCodec.encode(stepSize)
-
-                    minimumValue = tryDecode(codecInstance, minBytes) ?? minimumValue
-                    maximumValue = tryDecode(codecInstance, maxBytes) ?? maximumValue
-                    stepSize = tryDecode(codecInstance, stepBytes) ?? stepSize
-                }
+            minimumValue = readValue()
+            maximumValue = readValue()
+            stepSize = readValue()
+            const rangeCodec = propertyCodec && datatypeCodec()
+            if (propertyCodec && rangeCodec) {
+                const [minBytes, maxBytes, stepBytes] = [minimumValue, maximumValue, stepSize].map(value =>
+                    rangeCodec.encode(value)
+                )
+                minimumValue = tryDecode(propertyCodec, minBytes) ?? minimumValue
+                maximumValue = tryDecode(propertyCodec, maxBytes) ?? maximumValue
+                stepSize = tryDecode(propertyCodec, stepBytes) ?? stepSize
             }
         } else if (formFlag === 0x02) {
-            const numValuesResult = u16.decode(buffer, currentOffset)
-            numberOfValues = numValuesResult.value
-            currentOffset += numValuesResult.bytesRead
-
+            numberOfValues = reader.read(uint16)
             supportedValuesRaw = []
-            for (let i = 0; i < numberOfValues; i++) {
-                const enumValueResult = valueCodec.decode(buffer, currentOffset)
-                supportedValuesRaw.push(enumValueResult.value.value)
-                currentOffset += enumValueResult.bytesRead
-            }
-
+            for (let i = 0; i < numberOfValues; i++) supportedValuesRaw.push(readValue())
             supportedValuesDecoded = supportedValuesRaw
-            if (propertyDef && propertyDef.codec && supportedValuesRaw && supportedValuesRaw.length > 0) {
-                const codecInstance =
-                    typeof propertyDef.codec === 'function' ? propertyDef.codec(this.registry) : propertyDef.codec
-
-                const datatypeDefinition = getDatatypeByCode(dataType)
-                if (datatypeDefinition?.codec) {
-                    const datatypeCodec =
-                        typeof datatypeDefinition.codec === 'function'
-                            ? datatypeDefinition.codec(this.registry)
-                            : datatypeDefinition.codec
-
-                    supportedValuesDecoded = supportedValuesRaw.map(rawValue => {
-                        const decoded = tryDecode(codecInstance, datatypeCodec.encode(rawValue))
-                        if (decoded === undefined) unrecognizedSupportedValues.push(rawValue)
-                        return decoded ?? rawValue
-                    })
-                }
-            }
+            const enumerationCodec = propertyCodec && supportedValuesRaw.length > 0 && datatypeCodec()
+            if (propertyCodec && enumerationCodec)
+                supportedValuesDecoded = supportedValuesRaw.map(rawValue => {
+                    const decoded = tryDecode(propertyCodec, enumerationCodec.encode(rawValue))
+                    if (decoded === undefined) unrecognizedSupportedValues.push(rawValue)
+                    return decoded ?? rawValue
+                })
         }
 
         return {
@@ -244,7 +181,7 @@ export class DevicePropDescCodec extends CustomCodec<DevicePropDesc> {
                 ...(currentValueUnrecognized && { currentValueUnrecognized }),
                 ...(unrecognizedSupportedValues.length > 0 && { unrecognizedSupportedValues }),
             },
-            bytesRead: currentOffset - offset,
+            bytesRead: reader.bytesRead,
         }
     }
 }

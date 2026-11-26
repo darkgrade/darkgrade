@@ -1,17 +1,11 @@
-import { openRecordingBundle, type RecordingKeys } from '@transport/recording-storage'
-import { createHash } from 'node:crypto'
-import { lstat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { openRecordingBundle, recordingHash, type RecordingKeys } from '@transport/recording-storage'
 
-const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
 const integer = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) >= 0
 const code = (value: number) => `0x${value.toString(16).padStart(4, '0')}`
 
 /** Verifies private files and returns only protocol counts, timing and attribution. No media or identities. */
 export async function inspectRecording(directory: string, keys?: RecordingKeys) {
-    if (!(await lstat(directory)).isDirectory() || !(await lstat(join(directory, 'blobs'))).isDirectory())
-        throw new Error('Recording directories must not be links')
     const opened = await openRecordingBundle(directory, keys)
     const { manifestBytes, manifest } = opened
     if (
@@ -45,7 +39,7 @@ export async function inspectRecording(directory: string, keys?: RecordingKeys) 
         const file = files.get(filename)
         if (!file) throw new Error('Recording file is not in the manifest')
         const bytes = await opened.read(filename, file.bytes)
-        if (bytes.length !== file.bytes || hash(bytes) !== file.sha256) throw new Error('Recording integrity mismatch')
+        if (bytes.length !== file.bytes || recordingHash(bytes) !== file.sha256) throw new Error('Recording integrity mismatch')
         return bytes
     }
     const traceBytes = await verified('trace.json')
@@ -168,8 +162,8 @@ export async function inspectRecording(directory: string, keys?: RecordingKeys) 
     for (const filename of files.keys()) if (!used.has(filename)) await verified(filename)
     return {
         schema: 'darkgrade.recording-inspection/v1',
-        manifestSha256: hash(manifestBytes),
-        traceSha256: hash(traceBytes),
+        manifestSha256: recordingHash(manifestBytes),
+        traceSha256: recordingHash(traceBytes),
         complete: manifest.complete && trace.complete && trace.droppedEntries === 0,
         camera: manifest.camera,
         firmware: manifest.firmware,

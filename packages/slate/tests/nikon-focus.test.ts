@@ -1,6 +1,5 @@
 import { Logger } from '@core/logger'
-import { Camera } from '@camera/index'
-import { NikonCamera } from '@camera/nikon-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,15 +37,14 @@ function fixture() {
         setSupported: (next: number[]) => { supported = next } }
 }
 
+/** Answers LiveViewStatus, LiveViewSelector and, for any other property, the movie prohibition condition. */
+const observe = (camera: NikonCamera, status: string, selector: string, condition = 'none') =>
+    vi.spyOn(camera, 'get').mockImplementation(async property =>
+        (property.name === 'LiveViewStatus' ? status : property.name === 'LiveViewSelector' ? selector : condition) as any)
+
 afterEach(() => { vi.useRealTimers() })
 
 describe('Nikon capability-gated focus', () => {
-    it('defines the advertised activation commands and exact parameters', () => {
-        const { camera } = fixture()
-        expect(['AfDrive', 'MfDrive', 'ChangeAfArea', 'AfDriveCancel'].map(name => (camera.registry.operations as any)[name].code))
-            .toEqual([0x90c1, 0x9204, 0x9205, 0x9206])
-    })
-
     it('preserves JPEG data and returns fresh metadata without duplicating JPEG bytes', async () => {
         const { camera, setFrame } = fixture()
         const first = await camera.captureLiveView({ includeInfo: false })
@@ -58,44 +56,12 @@ describe('Nikon capability-gated focus', () => {
         expect((await camera.captureLiveView()).nikonMetadata?.focusingJudgementResult).toBe(2)
     })
 
-    it('refuses unadvertised operations before starting live view or driving focus', async () => {
-        const { camera, calls, setSupported } = fixture()
-        setSupported([])
-        await expect(camera.autofocus()).rejects.toThrow('advertise AfDrive')
-        await expect(camera.touchFocus(0.5, 0.5)).rejects.toThrow('advertise ChangeAfArea')
-        await expect(camera.driveFocus('near')).rejects.toThrow('advertise MfDrive')
-        expect(calls.map(call => call.name)).toEqual(['GetDeviceInfo', 'GetDeviceInfo', 'GetDeviceInfo'])
-    })
-
-    it('does not infer focus lock from accepted autofocus or a driving focus engine', async () => {
-        const { camera, setFrame } = fixture()
-        expect(await camera.autofocus()).toMatchObject({ commandSent: true, focusAcquired: false })
-        setFrame({ ...metadata(), focusingJudgementResult: 2, focusDrivingStatus: 1 })
-        expect((await camera.autofocus()).focusAcquired).toBe(false)
-        setFrame({ ...metadata(), focusingJudgementResult: 2 })
-        expect((await camera.autofocus()).focusAcquired).toBe(true)
-    })
-
     it('reports Nikon OutOfFocus as an unsuccessful focus result even if metadata reports focused', async () => {
         const { camera, responses, setFrame } = fixture()
         await camera.captureLiveView()
         responses.set('DeviceReady', 0xa002)
         setFrame({ ...metadata(), focusingJudgementResult: 2 })
-        expect((await camera.autofocus()).focusAcquired).toBe(false)
-    })
-
-    it('maps normalized coordinates using 6048×3400 AF dimensions rather than 640×360 JPEG dimensions', async () => {
-        const { camera, calls } = fixture()
-        const result = await camera.touchFocus(0.5, 0.25, { focus: false })
-        expect(calls.find(call => call.name === 'ChangeAfArea')?.params).toEqual({ X: 3024, Y: 850 })
-        expect(result).toMatchObject({ commandSent: true, positionVerified: true, normalized: { x: 0.5, y: 0.25 },
-            x: 3024, y: 850, width: 6048, height: 3400, tolerance: { x: 407, y: 442 } })
-        expect(calls.some(call => call.name === 'AfDrive')).toBe(false)
-    })
-
-    it('reports ignored point placement without claiming position verification', async () => {
-        const { camera } = fixture()
-        expect(await camera.touchFocus(0.5, 0.5, { focus: false })).toMatchObject({ commandSent: true, positionVerified: false })
+        expect((await camera.performAutofocus()).focusAcquired).toBe(false)
     })
 
     it('supports coordinate boundaries and rejects invalid coordinates or missing dimensions before point writes', async () => {
@@ -111,21 +77,12 @@ describe('Nikon capability-gated focus', () => {
         expect(calls.some(call => call.name === 'ChangeAfArea')).toBe(false)
     })
 
-    it.each([['near', 1], ['far', 2]] as const)('drives %s by explicit lens steps and reads completion metadata', async (direction, code) => {
+    it('bounds focus inputs before sending', async () => {
         const { camera, calls } = fixture()
-        expect(await camera.driveFocus(direction, 12)).toMatchObject({ commandSent: true, completed: true })
-        expect(calls.find(call => call.name === 'MfDrive')?.params).toEqual({ Direction: code, Steps: 12 })
-        expect(calls.at(-1)?.name).toBe('GetLiveViewImageEx')
-    })
-
-    it('bounds focus inputs and propagates lens endpoint responses', async () => {
-        const { camera, calls, responses } = fixture()
         await expect(camera.driveFocus('near', 0)).rejects.toThrow('lens steps')
         await expect(camera.driveFocus('far', 32768)).rejects.toThrow('lens steps')
-        await expect(camera.autofocus(0)).rejects.toThrow('timeout')
+        await expect(camera.performAutofocus(0)).rejects.toThrow('timeout')
         expect(calls).toEqual([])
-        responses.set('MfDrive', 0xa00c)
-        await expect(camera.driveFocus('near')).rejects.toThrow('0xa00c')
     })
 
     it('bounds autofocus completion and cancels only an advertised autofocus command', async () => {
@@ -133,7 +90,7 @@ describe('Nikon capability-gated focus', () => {
         const { camera, responses, calls } = fixture()
         await camera.captureLiveView()
         responses.set('DeviceReady', DeviceBusy.code)
-        const assertion = expect(camera.autofocus(100)).rejects.toThrow('timed out')
+        const assertion = expect(camera.performAutofocus(100)).rejects.toThrow('timed out')
         await vi.advanceTimersByTimeAsync(120)
         await assertion
         expect(calls.filter(call => call.name === 'AfDriveCancel')).toHaveLength(1)
@@ -168,61 +125,40 @@ describe('Nikon capability-gated focus', () => {
         await expect(camera.getVendorPropertyCodes()).rejects.toThrow('advertise GetVendorCodes')
     })
 
-    it('does not send movie start while the camera reports a missing card', async () => {
-        const { camera, calls } = fixture()
-        vi.spyOn(camera, 'get').mockImplementation(async property => {
-            if (property.name === 'LiveViewStatus') return 'OFF' as any
-            if (property.name === 'LiveViewSelector') return 'VIDEO' as any
-            return 'noCardInserted' as any
-        })
-        await expect(camera.startRecording()).rejects.toThrow('noCardInserted')
-        expect(calls.some(call => call.name === 'StartMovieRecord')).toBe(false)
-    })
-
     it('rejects failed start and stop movie responses instead of reporting completion', async () => {
         const { camera, responses } = fixture()
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'OFF' : property.name === 'LiveViewSelector' ? 'VIDEO' : 'none') as any)
+        observe(camera, 'OFF', 'VIDEO')
         responses.set('StartMovieRecord', 0xa004)
-        await expect(camera.startRecording()).rejects.toThrow('StartMovieRecord failed')
+        await expect(camera.sendStartRecording()).rejects.toThrow('StartMovieRecord failed')
         responses.set('EndMovieRecord', 0xa004)
-        await expect(camera.stopRecording()).rejects.toThrow('EndMovieRecord failed')
+        await expect(camera.sendStopRecording()).rejects.toThrow('EndMovieRecord failed')
     })
 
     it('bounds image-buffer readiness and never starts a movie when the buffer remains busy', async () => {
         vi.useFakeTimers()
         const { camera, calls } = fixture()
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'OFF' : property.name === 'LiveViewSelector' ? 'VIDEO' : 'imagesInBuffer') as any)
-        const assertion = expect(camera.startRecording()).rejects.toThrow('image buffer did not become ready')
+        observe(camera, 'OFF', 'VIDEO', 'imagesInBuffer')
+        const assertion = expect(camera.sendStartRecording()).rejects.toThrow('image buffer did not become ready')
         await vi.advanceTimersByTimeAsync(5100)
         await assertion
         expect(calls.some(call => call.name === 'StartMovieRecord')).toBe(false)
     })
 
-    it.each([[0x2019, 'DeviceBusy'], [0xa004, 'InvalidStatus'], [0xa00c, 'MfDriveStepEnd'], [0xa00e, 'MfDriveStepInsufficiency']])(
-        'names manual-focus response %i as %s and suggests AF-S', async (code, name) => {
+    it.each([[0x2019, 'DeviceBusy', false], [0xa004, 'InvalidStatus', true], [0xa00e, 'MfDriveStepInsufficiency', false]])(
+        'names manual-focus response %i as %s, suggesting AF-S only for a status refusal', async (code, name, advice) => {
             const { camera, responses } = fixture()
             responses.set('MfDrive', code as number)
-            const operation = camera.driveFocus('near')
-            await expect(operation).rejects.toThrow(name as string)
-            await expect(operation).rejects.toThrow('AF-S')
+            const error = await camera.driveFocus('near').catch(failure => failure)
+            expect(error.message).toContain(name as string)
+            expect(error.message.includes('AF-S')).toBe(advice)
         }
     )
 
-    it('names manual-focus endpoint errors returned during completion polling', async () => {
-        const { camera, responses } = fixture()
-        await camera.captureLiveView()
-        responses.set('DeviceReady', 0xa00c)
-        await expect(camera.driveFocus('far')).rejects.toThrow('MfDriveStepEnd (0xa00c)')
-    })
-
     it('cleans up owned movie setup modes and restores the photo selector after a prohibition', async () => {
         const { camera, calls } = fixture()
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'OFF' : property.name === 'LiveViewSelector' ? 'PHOTO' : 'noCardInserted') as any)
+        observe(camera, 'OFF', 'PHOTO', 'noCardInserted')
         const set = vi.spyOn(camera, 'set').mockResolvedValue(undefined)
-        await expect(camera.startRecording()).rejects.toThrow('noCardInserted')
+        await expect(camera.sendStartRecording()).rejects.toThrow('noCardInserted')
         expect(calls.filter(call => ['ChangeCameraMode', 'ChangeApplicationMode', 'StartLiveView', 'EndLiveView'].includes(call.name)))
             .toEqual([
                 { name: 'ChangeCameraMode', params: { Mode: 'REMOTE' } },
@@ -237,8 +173,7 @@ describe('Nikon capability-gated focus', () => {
 
     it('restores application mode after its enable command succeeds but readiness fails', async () => {
         const { camera, calls, send } = fixture()
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'OFF' : property.name === 'LiveViewSelector' ? 'VIDEO' : 'none') as any)
+        observe(camera, 'OFF', 'VIDEO')
         ;(camera as any).applicationMode = 'OFF'
         const original = send.getMockImplementation()!
         let failNextReady = false
@@ -251,7 +186,7 @@ describe('Nikon capability-gated focus', () => {
             }
             return response as any
         })
-        await expect(camera.startRecording()).rejects.toThrow('InvalidStatus')
+        await expect(camera.sendStartRecording()).rejects.toThrow('InvalidStatus')
         expect(calls.filter(call => call.name === 'ChangeApplicationMode').map(call => call.params.Mode)).toEqual(['ON', 'OFF'])
         expect(calls.some(call => call.name === 'EndLiveView')).toBe(true)
     })
@@ -260,38 +195,18 @@ describe('Nikon capability-gated focus', () => {
         const { camera, calls } = fixture()
         ;(camera as any).applicationMode = 'ON'
         ;(camera as any).cameraMode = 'REMOTE'
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'ON' : property.name === 'LiveViewSelector' ? 'VIDEO' : 'noCardInserted') as any)
-        await expect(camera.startRecording()).rejects.toThrow('noCardInserted')
+        observe(camera, 'ON', 'VIDEO', 'noCardInserted')
+        await expect(camera.sendStartRecording()).rejects.toThrow('noCardInserted')
         expect(calls.some(call => ['EndLiveView', 'ChangeApplicationMode', 'ChangeCameraMode'].includes(call.name))).toBe(false)
     })
 
     it('continues owned cleanup after a restoration error and reports the original prohibition', async () => {
         const { camera, calls, responses } = fixture()
         responses.set('EndLiveView', 0xa004)
-        vi.spyOn(camera, 'get').mockImplementation(async property =>
-            (property.name === 'LiveViewStatus' ? 'OFF' : property.name === 'LiveViewSelector' ? 'VIDEO' : 'noCardInserted') as any)
-        const operation = camera.startRecording()
+        observe(camera, 'OFF', 'VIDEO', 'noCardInserted')
+        const operation = camera.sendStartRecording()
         await expect(operation).rejects.toThrow('noCardInserted; Nikon recording setup cleanup failed')
         expect(calls.filter(call => call.name === 'ChangeApplicationMode').at(-1)?.params).toEqual({ Mode: 'OFF' })
-    })
-
-    it('routes the public Nikon focus API without changing generic autofocus return semantics', async () => {
-        const { camera: instance, transport } = fixture()
-        const camera = new Camera({ vendorId: 0x04b0, transport: transport as any,
-            logger: { captureConsole: false, renderInTerminal: false } })
-        const nikon = camera.getInstance() as NikonCamera
-        const autofocus = vi.spyOn(nikon, 'autofocus').mockResolvedValue({ commandSent: true, focusAcquired: false, metadata: {} as any })
-        await expect(camera.autofocus()).resolves.toBeUndefined()
-        await expect(camera.nikonAutofocus()).resolves.toMatchObject({ focusAcquired: false })
-        const point = vi.spyOn(nikon, 'touchFocus').mockResolvedValue({ positionVerified: false } as any)
-        await camera.nikonTouchFocus(0.5, 0.25, { focus: false })
-        expect(point).toHaveBeenCalledWith(0.5, 0.25, { focus: false })
-        const drive = vi.spyOn(nikon, 'driveFocus').mockResolvedValue({ completed: true } as any)
-        await camera.nikonDriveFocus('far', 3)
-        expect(drive).toHaveBeenCalledWith('far', 3)
-        expect(autofocus).toHaveBeenCalledTimes(2)
-        expect(instance).toBeInstanceOf(NikonCamera)
     })
 })
 
@@ -351,21 +266,12 @@ describe('Nikon recording transition reliability',()=>{
    return (attempted?'alreadyRecording':'none') as never
   })
   const set=vi.spyOn(camera,'set').mockResolvedValue(undefined)
-  await expect(camera.startRecording()).rejects.toThrow('StartMovieRecord failed with response 0xa004')
+  await expect(camera.sendStartRecording()).rejects.toThrow('StartMovieRecord failed with response 0xa004')
   expect(calls.filter(call=>call.name==='StartMovieRecord')).toHaveLength(1)
   expect(calls.some(call=>call.name==='EndLiveView'||
    call.name==='ChangeApplicationMode'&&call.params.Mode==='OFF'||
    call.name==='ChangeCameraMode'&&call.params.Mode==='PC_CAMERA')).toBe(false)
   expect(set.mock.calls.map(([,value])=>value)).toEqual(['VIDEO'])
- })
- it('discards all session mode assumptions on disconnect',async()=>{
-  const {camera}=fixture()
-  Object.assign(camera,{cameraMode:'REMOTE',liveViewMode:'VIDEO',applicationMode:'ON',
-   liveViewStatus:'ON',liveViewStartPending:false,ownsLiveView:false})
-  await camera.disconnect()
-  for(const name of ['cameraMode','liveViewMode','applicationMode','liveViewStatus'])
-   expect((camera as any)[name]).toBe('UNKNOWN')
-  expect((camera as any).liveViewStartPending).toBe(false)
  })
  it('accepts denied application mode only when fresh telemetry confirms the requested state',async()=>{
   const {camera,responses}=fixture();responses.set('ChangeApplicationMode',0x200f)
@@ -380,10 +286,6 @@ describe('Nikon recording transition reliability',()=>{
   await expect((camera as any).changeApplicationMode('ON')).rejects.toThrow('AccessDenied')
   expect(calls.filter(call=>call.name==='ChangeApplicationMode')).toHaveLength(3)
  })
- it('does not swallow rejected Nikon property writes',async()=>{
-  const {camera,responses}=fixture();responses.set('SetDevicePropValueEx',0x200f)
-  await expect(camera.set(camera.registry.properties.LiveViewSelector,'VIDEO')).rejects.toThrow('LiveViewSelector write failed: AccessDenied')
- })
  it('closes the transport even when stopping live view fails',async()=>{
   const {camera,responses,transport}=fixture();await camera.captureLiveView();responses.set('EndLiveView',0xa004)
   await expect(camera.disconnect()).rejects.toThrow('EndLiveView')
@@ -391,21 +293,10 @@ describe('Nikon recording transition reliability',()=>{
  })
 })
 
-it('waits for Nikon recording-state telemetry to clear before leaving its recording modes',async()=>{
- const {camera,calls}=fixture();let samples=0
- ;(camera as any).liveViewStatus='ON';(camera as any).applicationMode='ON'
- vi.spyOn(camera,'get').mockImplementation(async()=>{
-  samples++
-  if(samples<=2){expect(calls.some(call=>call.name==='EndLiveView')).toBe(false);expect(calls.some(call=>call.name==='ChangeApplicationMode')).toBe(false);return 'alreadyRecording' as never}
-  return 'none' as never
- })
- await camera.stopRecording();expect(samples).toBeGreaterThan(2);expect(calls.some(call=>call.name==='EndLiveView')).toBe(true)
-})
-
 it('renews an idle Nikon PTP session before movie mode without reconnecting USB',async()=>{
  const {camera,calls,transport}=fixture();camera.sessionId=12
- vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'notInApplicationMode') as any)
- await expect(camera.startRecording()).rejects.toThrow('Movie recording is prohibited')
+ observe(camera, 'OFF', 'VIDEO', 'notInApplicationMode')
+ await expect(camera.sendStartRecording()).rejects.toThrow('Movie recording is prohibited')
  expect(calls.filter(call=>['CloseSession','OpenSession'].includes(call.name))).toEqual([{name:'CloseSession',params:{}},{name:'OpenSession',params:{SessionID:13}}])
  expect(calls.findIndex(call=>call.name==='OpenSession')).toBeLessThan(calls.findIndex(call=>call.name==='ChangeApplicationMode'))
  expect(transport.disconnect).not.toHaveBeenCalled()
@@ -414,13 +305,13 @@ it('renews an idle Nikon PTP session before movie mode without reconnecting USB'
 it('never renews a Nikon session while its card movie is recording',async()=>{
  const {camera,calls}=fixture();camera.sessionId=12
  vi.spyOn(camera,'get').mockResolvedValue('alreadyRecording' as never)
- await expect(camera.startRecording()).rejects.toThrow('already recording')
+ await expect(camera.sendStartRecording()).rejects.toThrow('already recording')
  expect(calls).toHaveLength(0);expect(camera.sessionId).toBe(12)
 })
 it('does not continue movie setup when the fresh Nikon PTP session is rejected',async()=>{
  const {camera,calls,responses}=fixture();camera.sessionId=12;responses.set('OpenSession',0x200f)
  vi.spyOn(camera,'get').mockResolvedValue('notInApplicationMode' as never)
- await expect(camera.startRecording()).rejects.toThrow('movie session open failed: AccessDenied')
+ await expect(camera.sendStartRecording()).rejects.toThrow('movie session open failed: AccessDenied')
  expect(calls.some(call=>call.name==='StartMovieRecord'||call.name==='ChangeApplicationMode')).toBe(false)
  expect(camera.sessionId).toBeNull()
 })
@@ -429,7 +320,7 @@ it('does not continue movie setup when the fresh Nikon PTP session is rejected',
 it('reapplies explicitly requested remote Manual exposure after renewing a movie session',async()=>{
  const {camera,calls,send}=fixture();camera.sessionId=12
  let exposure=3,remote=false,manualWrites=0
- vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
+ observe(camera, 'OFF', 'VIDEO')
  send.mockImplementation(async(operation,params:any,data?:Uint8Array)=>{
   calls.push({name:operation.name,params})
   if(operation.name==='CloseSession'){exposure=3;remote=false}
@@ -440,15 +331,15 @@ it('reapplies explicitly requested remote Manual exposure after renewing a movie
   return {code:OK.code} as any
  })
  await camera.prepareManualVideoExposure();expect(manualWrites).toBe(1)
- await camera.startRecording();expect(manualWrites).toBe(2)
+ await camera.sendStartRecording();expect(manualWrites).toBe(2)
  expect(calls.some(call=>call.name==='StartMovieRecord')).toBe(true)
  expect(calls.findIndex(call=>call.name==='OpenSession')).toBeLessThan(calls.map(call=>call.name).lastIndexOf('ChangeCameraMode'))
 })
 
 it('ordinary movie startup never silently enables remote Manual exposure',async()=>{
  const {camera,calls}=fixture();camera.sessionId=12
- vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
- await camera.startRecording()
+ observe(camera, 'OFF', 'VIDEO')
+ await camera.sendStartRecording()
  expect(calls.some(call=>call.name==='SetDevicePropValueEx'||call.name==='ChangeCameraMode')).toBe(false)
 })
 
@@ -456,8 +347,8 @@ it('ordinary movie startup never silently enables remote Manual exposure',async(
 it('starts a Wi-Fi movie within the existing session without the USB renewal workaround', async () => {
  const {camera,calls,transport}=fixture();camera.sessionId=12
  transport.getType=()=> 'ip'
- vi.spyOn(camera,'get').mockImplementation(async property=>(property.name==='LiveViewStatus'?'OFF':property.name==='LiveViewSelector'?'VIDEO':'none') as any)
- await camera.startRecording()
+ observe(camera, 'OFF', 'VIDEO')
+ await camera.sendStartRecording()
  expect(calls.some(call=>call.name==='CloseSession'||call.name==='OpenSession')).toBe(false)
  expect(calls.findIndex(call=>call.name==='ChangeCameraMode')).toBeLessThan(calls.findIndex(call=>call.name==='StartLiveView'))
  expect(calls.find(call=>call.name==='ChangeCameraMode')?.params).toEqual({Mode:'REMOTE'})

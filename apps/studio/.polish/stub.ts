@@ -18,19 +18,21 @@ const controls: CameraControls = {
     whiteBalance: control('Auto', ['Auto', 'Daylight', 'Shade', 'Cloudy', 'Tungsten', 'Fluorescent', 'Color Temp.']),
     colorTemperature: control('5600', ['3200', '4300', '5600', '6500'], false),
     focusMode: control('AF-C', ['AF-S', 'AF-C', 'DMF', 'MF']),
-    focusArea: control('Wide', ['Wide', 'Zone', 'Center', 'Flexible Spot S', 'Flexible Spot M', 'Flexible Spot L']),
-    subjectRecognition: control('On', ['On', 'Off']),
-    recognitionTarget: control('Human', ['Human', 'Animal', 'Bird', 'Vehicle']),
-    eyeSelect: control('Auto', ['Auto', 'Right Eye', 'Left Eye']),
-    stillFormat: control('RAW + JPEG', ['RAW', 'RAW + JPEG', 'JPEG', 'HEIF']),
-    imageSize: control('L: 33M', ['L: 33M', 'M: 14M', 'S: 8.2M']),
+    focusArea: control('Wide', ['Wide', 'Zone', 'Center', 'Spot S', 'Spot M', 'Spot L']),
+    subjectDetection: control('On', ['On', 'Off']),
+    detectionSubject: control('People', ['People', 'Animals', 'Birds', 'Cars and trains']),
+    eyeSelection: control('Auto', ['Auto', 'Right', 'Left']),
+    photoFormat: control('RAW+JPEG', ['RAW', 'RAW+JPEG', 'JPEG', 'HEIF']),
+    photoSize: control('Large', ['Large', 'Medium', 'Small']),
     aspectRatio: control('3:2', ['3:2', '4:3', '16:9', '1:1']),
-    jpegQuality: control('Fine', ['Extra fine', 'Fine', 'Standard']),
-    movieFormat: control('XAVC S 4K', ['XAVC HS 4K', 'XAVC S 4K', 'XAVC S HD']),
-    movieSetting: control('100M 4:2:0 8bit', ['100M 4:2:0 8bit', '140M 4:2:2 10bit', '200M 4:2:2 10bit']),
-    movieFrameRate: control('24p', ['24p', '25p', '30p', '50p', '60p', '120p']),
-    zoomMode: control('Optical Zoom Only', ['Optical Zoom Only', 'Clear Image Zoom', 'Digital Zoom'], false),
-    liveViewQuality: control('HIGH', ['LOW', 'HIGH']),
+    jpegQuality: control('Fine', ['Extra Fine', 'Fine', 'Standard']),
+    videoFormat: control('XAVC S 4K', ['XAVC HS 4K', 'XAVC S 4K', 'XAVC S HD']),
+    videoQuality: control('100M 4:2:0 8-bit', ['100M 4:2:0 8-bit', '140M 4:2:2 10-bit', '200M 4:2:2 10-bit']),
+    frameRate: control('24p', ['24p', '25p', '30p', '50p', '60p', '120p']),
+    // Slate does not map Sony's AudioRecording yet, so a Sony body shows no audio choice.
+    audioRecording: null,
+    digitalZoom: control('Off', ['Off', 'Clear Image Zoom', 'Digital Zoom'], false),
+    liveViewQuality: control('High', ['Low', 'High']),
     exposureProgram: control('Manual', ['Program Auto', 'Aperture Priority', 'Shutter Priority', 'Manual']),
     aperture: control('F2.8', ['F2.8', 'F3.2', 'F3.5', 'F4.0', 'F5.6', 'F8.0', 'F11', 'F16', 'F22']),
     shutterSpeed: control('1/50', ['1/25', '1/30', '1/50', '1/60', '1/100', '1/125', '1/250', '1/500', '1/1000']),
@@ -44,12 +46,14 @@ const connected: CameraState = {
     model: 'ILCE-7M5',
     battery: { percent: 91, level: 'full', powerSource: 'battery', remainingMinutes: 140 },
     card: { freeBytes: null, remainingPhotos: 2184, remainingVideoSeconds: 7260 },
-    lens: { name: 'FE 24-70mm F2.8 GM II', focalLengthMillimetres: 35 },
+    lens: { name: 'FE 24-70mm F2.8 GM II', focalLengthMillimetres: 35, zoom: { supported: true, reason: null } },
     clock: { syncedAtMs: Date.now() - 60_000, error: null },
     controls,
     osdOverlay: false,
+    clickToFocus: true,
     liveView: scenario !== 'nolive',
     recording: scenario === 'rec',
+    recordingState: scenario === 'rec' ? 'recording' : 'idle',
     settings: { iso: '400', shutterSpeed: '1/50', aperture: 'F2.8' },
     downloadDir: '/Users/you/Pictures/Darkgrade Studio',
     platform: 'darwin',
@@ -66,8 +70,10 @@ const disconnected: CameraState = {
     clock: null,
     controls: null,
     osdOverlay: null,
+    clickToFocus: false,
     liveView: false,
     recording: false,
+    recordingState: 'idle',
     settings: { iso: null, shutterSpeed: null, aperture: null },
 }
 let state: CameraState = ['off', 'connecting'].includes(scenario) ? disconnected : connected
@@ -158,12 +164,12 @@ const api: StudioApi = {
     liveViewStart: () => ok((state = { ...state, liveView: true })),
     liveViewStop: () => ok((state = { ...state, liveView: false })),
     recordStart: () => {
-        state = { ...state, recording: true }
+        state = { ...state, recording: true, recordingState: 'recording' }
         emit('state', state)
         return ok(state)
     },
     recordStop: () => {
-        state = { ...state, recording: false }
+        state = { ...state, recording: false, recordingState: 'idle' }
         emit('state', state)
         return ok(state)
     },

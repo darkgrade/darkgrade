@@ -1,4 +1,4 @@
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Logger } from '@core/logger'
 import { GetDeviceInfo, OpenSession } from '@ptp/definitions/operation-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
@@ -49,7 +49,8 @@ const watchdog = setTimeout(() => {
 
 let result: ProbeOutput
 try {
-    await transport.connect({ usb: { filters: [{ ...identifier, classCode: 0x06, subclassCode: 0x01 }] } })
+    // Through the driver's lifecycle, so its diagnostics session starts with this connection.
+    await camera.connectTransport({ usb: { filters: [{ ...identifier, classCode: 0x06, subclassCode: 0x01 }] } })
     camera.sessionId = 1
     let openSession = await camera.send(OpenSession, { SessionID: 1 })
     if (openSession.code === SessionAlreadyOpen.code) {

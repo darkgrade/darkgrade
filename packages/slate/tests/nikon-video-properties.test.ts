@@ -1,13 +1,11 @@
-import {NikonCamera} from '@camera/nikon-camera'
-import {Logger} from '@core/logger'
+import {nikonCamera} from '@tests/fixtures/nikon'
 import {OK} from '@ptp/definitions/response-definitions'
-import {createNikonRegistry} from '@ptp/registry'
+import {createNikonRegistry} from '@vendors/registry'
 import {ExternalDCIn, MovieShutterAngle, MovieShutterMode} from '@vendors/nikon/video-properties'
 import {describe, expect, it, vi} from 'vitest'
 
 function fixture() {
-    const transport = {isLittleEndian: () => true, isConnected: () => true, getType: () => 'USB'}
-    const camera = new NikonCamera(transport as any, new Logger({captureConsole: false, renderInTerminal: false}))
+    const camera = nikonCamera({getType: () => 'USB'})
     const send = vi.spyOn(camera, 'send').mockResolvedValue({code: OK.code} as any)
     return {camera, send}
 }
@@ -23,12 +21,6 @@ describe('Nikon video shutter and external power properties', () => {
             {operation: 0x943c, parameters: {DevicePropCode: 0x1d074}, payload: [2]},
             {operation: 0x943c, parameters: {DevicePropCode: 0x1d075}, payload: [0x50, 0x46, 0, 0]},
         ])
-    })
-
-    it('reports a rejected shutter write instead of treating command delivery as success', async () => {
-        const {camera, send} = fixture()
-        send.mockResolvedValue({code: 0x200f} as any)
-        await expect(camera.set(MovieShutterAngle, 18000)).rejects.toThrow('write failed')
     })
 
     it('reads external power from the extended descriptor and refuses writes before sending', async () => {

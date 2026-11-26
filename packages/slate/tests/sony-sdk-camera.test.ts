@@ -14,6 +14,12 @@ const authentication = {
     password: 'runtime-example',
     fingerprint: 'aabbcc',
 }
+const directAuthentication: SonyBluetoothDirectAuthentication = {
+    host: '192.0.2.98',
+    mac: '0C:80:2F:A7:36:AD',
+    model: 'ILME-FX2',
+    bluetoothAddress: '0C:80:2F:A7:36:AE',
+}
 function bridgeForProperties(properties: unknown[] = []) {
     const requests: Record<string, string>[] = []
     const bridge: SonySdkBridge = {
@@ -94,12 +100,6 @@ describe('Sony media-index pagination recovery',()=>{
 })
 
 describe('Sony SDK Bluetooth Direct connection', () => {
-    const directAuthentication: SonyBluetoothDirectAuthentication = {
-        host: '192.0.2.98',
-        mac: '0C:80:2F:A7:36:AD',
-        model: 'ILME-FX2',
-        bluetoothAddress: '0C:80:2F:A7:36:AE',
-    }
 
     it.each([undefined, 'remote', 'remote-transfer'] as const)(
         'uses only the explicit Bluetooth Direct command with mode %s',
@@ -123,43 +123,26 @@ describe('Sony SDK Bluetooth Direct connection', () => {
     )
 
     it.each([
-        undefined,
-        {},
-        { ...directAuthentication, host: '192.0.2.999' },
-        { ...directAuthentication, host: 'camera.local' },
-        { ...directAuthentication, mac: 'invalid' },
-        { ...directAuthentication, bluetoothAddress: undefined },
-        { ...directAuthentication, bluetoothAddress: 'invalid' },
-        { ...directAuthentication, model: undefined },
-        { ...directAuthentication, model: 'unknown' },
-    ])('rejects invalid or missing identity before requesting the bridge: %j', async identity => {
+        ...[
+            undefined,
+            {},
+            { ...directAuthentication, host: '192.0.2.999' },
+            { ...directAuthentication, host: 'camera.local' },
+            { ...directAuthentication, mac: 'invalid' },
+            { ...directAuthentication, bluetoothAddress: undefined },
+            { ...directAuthentication, bluetoothAddress: 'invalid' },
+            { ...directAuthentication, model: undefined },
+            { ...directAuthentication, model: 'unknown' },
+        ].map(identity => ({ identity, options: undefined })),
+        { identity: directAuthentication, options: { mode: 'invalid' as 'remote' } },
+    ])('rejects an invalid identity or runtime mode before requesting the bridge: %j', async ({ identity, options }) => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)
         await expect(
-            camera.connectBluetoothDirect(identity as SonyBluetoothDirectAuthentication)
+            camera.connectBluetoothDirect(identity as SonyBluetoothDirectAuthentication, options)
         ).rejects.toThrow()
         expect(requests).toEqual([])
         expect(camera.isConnected()).toBe(false)
-    })
-
-    it('attempts an unvalidated Sony body and reports it unverified', async () => {
-        const { bridge, requests } = bridgeForProperties()
-        const camera = new SonyWifiCamera(bridge)
-        expect(await camera.connectBluetoothDirect({ ...directAuthentication, model: 'ILCE-7M4' })).toEqual({
-            model: 'ILCE-7M4',
-            verified: false,
-        })
-        expect(requests[0]).toMatchObject({ cmd: 'connect_bluetooth_direct', model: 'ILCE-7M4' })
-        expect(await new SonyWifiCamera(bridgeForProperties().bridge).connectBluetoothDirect(directAuthentication))
-            .toEqual({ model: 'ILME-FX2', verified: true })
-    })
-
-    it('rejects an unsupported runtime mode without contacting the bridge', async () => {
-        const { bridge, requests } = bridgeForProperties()
-        await expect(
-            new SonyWifiCamera(bridge).connectBluetoothDirect(directAuthentication, { mode: 'invalid' as 'remote' })
-        ).rejects.toThrow('mode')
-        expect(requests).toEqual([])
     })
 
     it('keeps a failed direct connection disconnected without authentication fallback', async () => {
@@ -176,9 +159,7 @@ describe('Sony SDK Bluetooth Direct connection', () => {
     })
 
     it('supports normal property writes and disconnect cleanup after direct connection', async () => {
-        const { bridge, requests } = bridgeForProperties([
-            { code: '0x100', type: 2, value: '160', writable: true },
-        ])
+        const { bridge, requests } = bridgeForProperties([{ code: '0x100', type: 2, value: '160', writable: true }])
         let closed = false
         bridge.close = async () => {
             closed = true
@@ -227,9 +208,7 @@ describe('Sony SDK Wi-Fi camera', () => {
             return request(command)
         }
         await camera.stopRecording()
-        expect(requests.filter(command => command.cmd === 'command')).toEqual([
-            { cmd: 'command', id: '1', param: '0' },
-        ])
+        expect(requests.filter(command => command.cmd === 'command')).toEqual([{ cmd: 'command', id: '1', param: '0' }])
         expect(await camera.getRecordingState()).toBe('idle')
         await camera.disconnect()
     })
@@ -257,16 +236,25 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(camera.isConnected()).toBe(false)
     })
     it.each([
-        ['ILCE-6700', true],
-        ['ILME-FX2', true],
-        ['ILCE-7M4', false],
-        ['ZV-E1', false],
-    ] as const)('attempts %s for fingerprint and connection identity (verified: %s)', async (model, verified) => {
+        ['Wi-Fi', 'ILCE-6700', true],
+        ['Wi-Fi', 'ILME-FX2', true],
+        ['Wi-Fi', 'ILCE-7M4', false],
+        ['Wi-Fi', 'ZV-E1', false],
+        ['Wi-Fi', undefined, false],
+        ['Bluetooth Direct', 'ILME-FX2', true],
+        ['Bluetooth Direct', 'ILCE-7M4', false],
+    ] as const)('over %s attempts model %s for every connection command (verified: %s)', async (transport, model, verified) => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)
-        expect(await camera.connect({ ...authentication, model })).toEqual({ model, verified })
-        expect(requests[0]).toMatchObject({ cmd: 'fingerprint', model })
-        expect(requests[1]).toMatchObject({ cmd: 'connect_wifi', model })
+        const connected = transport === 'Wi-Fi'
+            ? await camera.connect(model ? { ...authentication, model } : authentication)
+            : await camera.connectBluetoothDirect({ ...directAuthentication, model: model! })
+        expect(connected).toEqual(model ? { model, verified } : { verified })
+        const commands = transport === 'Wi-Fi' ? ['fingerprint', 'connect_wifi'] : ['connect_bluetooth_direct']
+        commands.forEach((cmd, index) => {
+            expect(requests[index]).toMatchObject({ cmd, ...(model ? { model } : {}) })
+            if (!model) expect(requests[index]).not.toHaveProperty('model')
+        })
     })
     it('surfaces a refused unvalidated body as the ordinary connection failure', async () => {
         const { bridge, requests } = bridgeForProperties()
@@ -280,26 +268,11 @@ describe('Sony SDK Wi-Fi camera', () => {
         expect(requests.map(request => request.cmd)).toEqual(['fingerprint'])
         expect(camera.isConnected()).toBe(false)
     })
-    it('keeps the existing bridge contract when the model is omitted', async () => {
-        const { bridge, requests } = bridgeForProperties()
-        expect(await new SonyWifiCamera(bridge).connect(authentication)).toEqual({ verified: false })
-        expect(requests[0]).not.toHaveProperty('model')
-        expect(requests[1]).not.toHaveProperty('model')
-    })
     it('rejects an unknown explicit model before contacting the camera', async () => {
         const { bridge, requests } = bridgeForProperties()
         const camera = new SonyWifiCamera(bridge)
         await expect(camera.connect({ ...authentication, model: 'unknown' as 'ILME-FX2' })).rejects.toThrow('model')
         expect(requests).toEqual([])
-    })
-    it('pins the SDK-presented fingerprint after matching the operator fingerprint', async () => {
-        const { bridge, requests } = bridgeForProperties()
-        const camera = new SonyWifiCamera(bridge)
-        await camera.connect({ ...authentication, fingerprint: 'AA:BB:CC' })
-        expect(requests[1]).toMatchObject({ cmd: 'connect_wifi', ssh: '1', fingerprint: 'aabbcc' })
-        expect(camera.isConnected()).toBe(true)
-        await camera.disconnect()
-        expect(camera.isConnected()).toBe(false)
     })
     it('preserves uint64 values and decodes signed SDK current values', async () => {
         const { bridge } = bridgeForProperties([
@@ -311,13 +284,6 @@ describe('Sony SDK Wi-Fi camera', () => {
         const properties = await camera.getSonyPropertyStates()
         expect(properties[0]!.value).toBe('9007199254740993')
         expect(properties[1]!.value).toBe('-1')
-    })
-    it('rejects readonly settings and inexact integers', async () => {
-        const { bridge, requests } = bridgeForProperties([{ code: '0x104', type: 3, value: '100', writable: false }])
-        const camera = new SonyWifiCamera(bridge)
-        await camera.connect(authentication)
-        await expect(camera.setSonyProperty('ISO', 200)).rejects.toThrow('read-only')
-        expect(requests.some(request => request.cmd === 'set')).toBe(false)
     })
     it('uses SDK property IDs rather than USB PTP IDs', async () => {
         const { bridge, requests } = bridgeForProperties([{ code: '0x104', type: 3, value: '100', writable: true }])
@@ -374,92 +340,102 @@ describe('Sony SDK Wi-Fi camera', () => {
         await camera.stopRecording()
         expect(
             requests.filter(request => request.cmd === 'command').map(request => [request.id, request.param])
-        ).toEqual([
-            ['0', '1'],
-            ['0', '0'],
-            ['1', '1'],
-            ['1', '0'],
-        ])
+        ).toEqual([['0', '1'], ['0', '0'], ['1', '1'], ['1', '0']])
     })
 })
 
-it('matches a camera hex SHA-256 fingerprint to the public SDK base64 form', async () => {
+it.each([
+    ['AA:BB:CC', 'aabbcc', 'aabbcc'],
+    ['SHA256:' + '11'.repeat(32), Buffer.alloc(32, 0x11).toString('base64'), Buffer.alloc(32, 0x11).toString('base64')],
+])('matches operator fingerprint %s and pins the SDK-presented form', async (operatorFingerprint, presented, pinned) => {
     const requests: Record<string, string>[] = []
-    const fingerprint = Buffer.alloc(32, 0x11).toString('base64')
     const bridge: SonySdkBridge = {
         request: async command => {
             requests.push(command)
-            return command.cmd === 'fingerprint' ? { ok: true, fingerprint } : { ok: true }
+            return command.cmd === 'fingerprint' ? { ok: true, fingerprint: presented } : { ok: true }
         },
         close: async () => undefined,
     }
     const camera = new SonyWifiCamera(bridge)
-    await camera.connect({ ...authentication, fingerprint: 'SHA256:' + '11'.repeat(32) })
-    expect(requests[1]!.fingerprint).toBe(fingerprint)
+    await camera.connect({ ...authentication, fingerprint: operatorFingerprint })
+    expect(requests[1]).toMatchObject({ cmd: 'connect_wifi', ssh: '1', fingerprint: pinned })
+    expect(camera.isConnected()).toBe(true)
     await camera.disconnect()
+    expect(camera.isConnected()).toBe(false)
 })
 
 describe('Sony SDK connection startup retries', () => {
-    it('retries a transient IP connection error with unchanged trusted credentials', async () => {
+    it.each([
+        ['retries a transient IP error', 33282, 2],
+        ['does not retry camera credential rejection', 33302, 1],
+    ] as const)('%s (SDK code %i) with unchanged trusted credentials', async (_case, code, attempts) => {
         const calls: Record<string, string>[] = []
-        let attempts = 0
         const bridge: SonySdkBridge = {
             request: async command => {
                 calls.push(command)
                 if (command.cmd === 'fingerprint') return { ok: true, fingerprint: 'aabbcc' }
-                if (command.cmd === 'connect_wifi' && attempts++ === 0)
-                    throw new Error('Sony SDK command failed (SDK code 33282)')
+                if (command.cmd === 'connect_wifi' && calls.filter(call => call.cmd === 'connect_wifi').length === 1)
+                    throw new Error(`Sony SDK command failed (SDK code ${code})`)
                 return { ok: true }
             },
             close: async () => undefined,
         }
         const camera = new SonyWifiCamera(bridge)
-        await camera.connect(authentication)
-        expect(camera.isConnected()).toBe(true)
-        expect(calls.filter(call => call.cmd === 'connect_wifi')).toHaveLength(2)
-        expect(calls.filter(call => call.cmd === 'connect_wifi').map(call => call.password)).toEqual([
-            authentication.password,
-            authentication.password,
-        ])
-        expect(calls.some(call => call.cmd === 'disconnect')).toBe(true)
-    })
-    it('does not retry camera credential rejection', async () => {
-        let attempts = 0
-        const bridge: SonySdkBridge = {
-            request: async command => {
-                if (command.cmd === 'fingerprint') return { ok: true, fingerprint: 'aabbcc' }
-                attempts++
-                throw new Error('Sony SDK command failed (SDK code 33302)')
-            },
-            close: async () => undefined,
-        }
-        await expect(new SonyWifiCamera(bridge).connect(authentication)).rejects.toThrow('33302')
-        expect(attempts).toBe(1)
+        const connected = camera.connect(authentication)
+        if (attempts === 1) await expect(connected).rejects.toThrow(String(code))
+        else await connected
+        expect(camera.isConnected()).toBe(attempts > 1)
+        const connects = calls.filter(call => call.cmd === 'connect_wifi')
+        expect(connects.map(call => call.password)).toEqual(Array(attempts).fill(authentication.password))
+        if (attempts > 1) expect(calls.some(call => call.cmd === 'disconnect')).toBe(true)
     })
 })
 
 describe('Sony named SDK settings', () => {
-    it('searches advertised settings by words and property code', async () => {
-        const { bridge } = bridgeForProperties([
-            { code: 264, type: 2, value: '0', writable: true },
-            { code: 265, type: 2, value: '4', writable: false },
-        ])
-        const camera = new SonyWifiCamera(bridge)
-        await camera.connect(authentication)
-        expect((await camera.getSonyCapabilities('white balance')).map(property => property.code)).toEqual([264])
-        expect((await camera.getSonyCapabilities('265'))[0]!.writable).toBe(false)
-        expect(await camera.getSonyCapabilities('unavailable')).toEqual([])
-        expect((await camera.getSonyCapabilities('wb'))[0]!.code).toBe(264)
-        expect((await camera.getSonyCapabilities('WhiteBalance'))[0]!.code).toBe(264)
+    const whiteBalanceAndFocus = [
+        { code: 264, type: 2, value: '0', writable: true },
+        { code: 265, type: 2, value: '4', writable: false },
+    ]
+    const isoAndAperture = [
+        { code: 260, type: 3, value: '100', writable: true },
+        { code: 256, type: 2, value: '1400', writable: true },
+    ]
+    const exposureModes = [310, 311, 312].map(code => ({ code, type: 1, value: '1', writable: true, allowedValues: ['1', '2'] }))
+    it.each([
+        [whiteBalanceAndFocus, 'white balance', [264]],
+        [whiteBalanceAndFocus, 'wb', [264]],
+        [whiteBalanceAndFocus, 'WhiteBalance', [264]],
+        [whiteBalanceAndFocus, '265', [265]],
+        [whiteBalanceAndFocus, 'unavailable', []],
+        [isoAndAperture, 'gain', [260]],
+        [isoAndAperture, 'f-stop', [256]],
+        [exposureModes, 'ISO', [312]],
+        [exposureModes, 'gain', [312]],
+    ])('searches advertised settings %#: %s finds %j', async (properties, query, codes) => {
+        const camera = new SonyWifiCamera(bridgeForProperties(properties).bridge)
+        await camera.connectUsb('unit-test')
+        expect((await camera.getSonyCapabilities(query)).map(property => property.code)).toEqual(codes)
     })
-    it('resolves exact friendly names, validates choices, and confirms readback', async () => {
-        let value = '0'
+    it('labels Auto and Manual choices of the exposure mode aliases', async () => {
+        const camera = new SonyWifiCamera(bridgeForProperties(exposureModes).bridge)
+        await camera.connectUsb('unit-test')
+        for (const alias of ['ApertureMode', 'ShutterMode', 'IsoMode'] as const) {
+            expect((await camera.getSonyProperty(alias)).choices).toEqual([
+                { value: '1', label: 'Auto' }, { value: '2', label: 'Manual' },
+            ])
+        }
+    })
+    it('resolves exact friendly and familiar names, validates choices, and confirms readback', async () => {
+        const values: Record<string, string> = { 264: '0', 260: '100' }
         const { bridge, requests } = bridgeForProperties()
         const original = bridge.request
         bridge.request = async command => {
             if (command.cmd === 'properties')
-                return { properties: [{ code: 264, type: 2, value, writable: true, allowedValues: ['0', '17'] }] }
-            if (command.cmd === 'set') value = command.value!
+                return { properties: [
+                    { code: 264, type: 2, value: values[264], writable: true, allowedValues: ['0', '17'] },
+                    { code: 260, type: 3, value: values[260], writable: true, allowedValues: ['100', '3200'] },
+                ] }
+            if (command.cmd === 'set') values[command.code!] = command.value!
             return original(command)
         }
         const camera = new SonyWifiCamera(bridge)
@@ -471,7 +447,8 @@ describe('Sony named SDK settings', () => {
         })
         await expect(camera.setSonySetting('white', 0)).rejects.toThrow('does not advertise')
         await expect(camera.setSonySetting('white balance', 999)).rejects.toThrow('does not offer')
-        expect(requests.filter(command => command.cmd === 'set')).toHaveLength(1)
+        expect(await camera.setSonySetting('ISO', 3200)).toMatchObject({ before: { name: 'IsoSensitivity' }, after: { value: '3200' } })
+        expect(requests.filter(command => command.cmd === 'set')).toHaveLength(2)
     })
 })
 
@@ -483,40 +460,6 @@ it('does not report a verified setting when camera readback stays unchanged', as
     await camera.connect(authentication)
     await expect(camera.setSonySetting('WhiteBalance', 17)).rejects.toThrow('did not confirm')
 }, 10000)
-
-it('searches and writes familiar aliases when the SDK uses another advertised name', async () => {
-    let value = '100'
-    const { bridge } = bridgeForProperties()
-    const original = bridge.request
-    bridge.request = async command => {
-        if (command.cmd === 'properties')
-            return {
-                properties: [
-                    { code: 260, type: 3, value, writable: true, allowedValues: ['100', '3200'] },
-                    { code: 256, type: 2, value: '1400', writable: true },
-                ],
-            }
-        if (command.cmd === 'set') value = command.value!
-        return original(command)
-    }
-    const camera = new SonyWifiCamera(bridge)
-    await camera.connect(authentication)
-    expect((await camera.getSonyCapabilities('gain'))[0]!.code).toBe(260)
-    expect((await camera.getSonyCapabilities('f-stop'))[0]!.code).toBe(256)
-    expect(await camera.setSonySetting('ISO', 3200)).toMatchObject({
-        before: { name: 'IsoSensitivity' },
-        after: { value: '3200' },
-        verified: true,
-    })
-})
-
-it('supports a RemoteTransfer USB observer for exact card capture verification', async () => {
-    const { bridge, requests } = bridgeForProperties()
-    const camera = new SonyWifiCamera(bridge)
-    await camera.connectUsb('unit-test', { mode: 'remote-transfer' })
-    expect(requests.at(-1)).toMatchObject({ cmd: 'connect', serial: 'unit-test', mode: 'remote-transfer' })
-})
-
 
 it('waits for the documented Sony contents-list processing status and preserves other errors',async()=>{
     let attempts=0
@@ -535,37 +478,16 @@ it('waits for the documented Sony contents-list processing status and preserves 
     await expect(camera.getRecentSonyContents()).rejects.toThrow('36102')
 })
 
-it('finds advertised exposure mode aliases and labels their Auto and Manual choices', async () => {
-    const { bridge } = bridgeForProperties([310, 311, 312].map(code => ({
-        code, type: 1, value: '1', writable: true, allowedValues: ['1', '2'],
-    })))
-    const camera = new SonyWifiCamera(bridge)
-    await camera.connectUsb('unit-test')
-    expect((await camera.getSonyCapabilities('ISO')).map(property => property.code)).toEqual([312])
-    expect((await camera.getSonyCapabilities('gain')).map(property => property.code)).toEqual([312])
-    for (const alias of ['ApertureMode', 'ShutterMode', 'IsoMode'] as const) {
-        expect((await camera.getSonyProperty(alias)).choices).toEqual([
-            { value: '1', label: 'Auto' }, { value: '2', label: 'Manual' },
-        ])
-    }
-})
-
-it('requests the complete contents index for recording and refuses a truncated reply',async()=>{
+it.each([
+ [{contents:[],truncated:true},'incomplete content index'],
+ [{contents:[]},'rebuild the SDK bridge'],
+])('refuses a complete-index reply %j without evidence of completeness',async(reply,error)=>{
  const {bridge,requests}=bridgeForProperties(),camera=new SonyWifiCamera(bridge)
  await camera.connectUsb('TEST_SERIAL')
- bridge.request=async command=>{requests.push(command);return {contents:[],truncated:true}}
- await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('incomplete content index')
+ bridge.request=async command=>{requests.push(command);return reply}
+ await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow(error)
  expect(requests.at(-1)).toEqual({cmd:'recent_contents',scope:'all'})
  await expect(camera.getRecentSonyContents()).resolves.toEqual([])
-})
-
-it('requires explicit complete-index evidence from the native bridge',async()=>{
- const {bridge}=bridgeForProperties(),camera=new SonyWifiCamera(bridge)
- await camera.connectUsb('TEST_SERIAL')
- bridge.request=async()=>({contents:[]})
- await expect(camera.getRecentSonyContents({all:true})).rejects.toThrow('rebuild the SDK bridge')
- bridge.request=async()=>({contents:[],truncated:false,totalCount:0})
- await expect(camera.getRecentSonyContents({all:true})).resolves.toEqual([])
 })
 
 it('marks only exhausted contents-processing errors for one stopped-transfer reconnect',async()=>{

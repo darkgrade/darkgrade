@@ -6,7 +6,7 @@ import {
 } from '@contribute/application'
 import { NOTICE_VERSION } from '@contribute/batch'
 import type { CameraContext, DiagnosticEntry } from '@contribute/schema'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
     appendFileSync,
     closeSync,
@@ -21,7 +21,6 @@ import {
     unlinkSync,
     writeFileSync,
 } from 'node:fs'
-import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 

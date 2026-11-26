@@ -8,6 +8,9 @@ default_tools_approval_mode = "auto"
 [mcp_servers.darkgrade_testbench.tools.camera_recover]
 approval_mode = "approve"
 
+[mcp_servers.darkgrade_testbench.tools.bench_recover_camera]
+approval_mode = "approve"
+
 [mcp_servers.darkgrade_testbench.tools.camera_usb_reconnect]
 approval_mode = "approve"
 

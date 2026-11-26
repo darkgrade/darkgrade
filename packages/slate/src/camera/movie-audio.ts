@@ -1,10 +1,21 @@
+import { protocolAccess } from '@camera/protocol-session'
 export interface CameraMovieAudio {status:'present'|'absent'|'unverified';detail:string}
+/**
+ * One ISO BMFF atom. Size 1 means a 64-bit largesize follows the type; size 0 means the atom runs to
+ * the end of its container (ISO/IEC 14496-12 §4.2). Both are legal: the EOS R8 Mark II writes them.
+ */
 function atom(bytes:Uint8Array,offset:number,end:number){
     if(offset+8>end)throw new Error('Incomplete movie atom header')
     const view=new DataView(bytes.buffer,bytes.byteOffset+offset,end-offset)
-    const size=view.getUint32(0),type=String.fromCharCode(...bytes.subarray(offset+4,offset+8))
-    if(size<8||offset+size>end)throw new Error('Invalid movie atom size')
-    return {size,type,payload:offset+8,end:offset+size}
+    const type=String.fromCharCode(...bytes.subarray(offset+4,offset+8))
+    let size=view.getUint32(0),header=8
+    if(size===1){
+        if(offset+16>end)throw new Error('Incomplete movie atom header')
+        size=Number(view.getBigUint64(8));header=16
+    }
+    if(size===0)size=end-offset
+    if(!Number.isSafeInteger(size)||size<header||offset+size>end)throw new Error('Invalid movie atom size')
+    return {size,type,payload:offset+header,end:offset+size}
 }
 /** Inspect track handlers structurally; a substring inside compressed video is not audio proof. */
 export function inspectMovieTrackHandlers(bytes:Uint8Array):CameraMovieAudio{
@@ -36,9 +47,9 @@ export async function readCameraMovieAudio(camera:any,file:{handle:number;filena
         if(!/\.(mp4|mov)$/i.test(file.filename))throw new Error('Audio inspection is available for MP4 and MOV originals')
         const length=file.objectCompressedSize
         if(!Number.isSafeInteger(length)||length<8||length>0xffffffff)throw new Error('Movie size exceeds the bounded audio inspection range')
-        const operation=camera.getInstance().registry.operations.GetPartialObject
+        const operation=protocolAccess(camera).driver.registry.operations.GetPartialObject
         const read=async(offset:number,count:number)=>{
-            const reply=await camera.send(operation,{ObjectHandle:file.handle,Offset:offset,MaxBytes:count},undefined,count+12)
+            const reply=await protocolAccess(camera).send(operation,{ObjectHandle:file.handle,Offset:offset,MaxBytes:count},undefined,count+12)
             if(reply.code!==0x2001||!(reply.data instanceof Uint8Array)||reply.data.length!==count)throw new Error('Camera did not return complete movie metadata')
             return reply.data
         }
@@ -51,7 +62,7 @@ export async function readCameraMovieAudio(camera:any,file:{handle:number;filena
             if(size===0)size=length-offset
             if(!Number.isSafeInteger(size)||size<headerBytes||offset+size>length)throw new Error('Invalid original movie atom bounds')
             if(type==='moov'){
-                if(headerBytes!==8||size>4*1024*1024)throw new Error('Movie metadata exceeds the bounded inspection limit')
+                if(size>4*1024*1024)throw new Error('Movie metadata exceeds the bounded inspection limit')
                 return inspectMovieTrackHandlers(await read(offset,size))
             }
             offset+=size

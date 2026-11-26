@@ -1,15 +1,17 @@
-import { GenericCamera } from '@camera/generic-camera'
-import { NikonCamera } from '@camera/nikon-camera'
-import { SonyCamera } from '@camera/sony-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
 import { describe, expect, it } from 'vitest'
+import { ptpContainer } from '@tests/fixtures/ptp-wire'
 
+/** Each driver's partial-object operation and the parameters it sends for chunks at offsets 0 (4 bytes) and 2 (3 bytes). */
 const drivers = [
-    { name: 'standard', driver: GenericCamera, operation: 0x101b },
-    { name: 'Nikon', driver: NikonCamera, operation: 0x9431 },
-    { name: 'Sony', driver: SonyCamera, operation: 0x9211 },
+    { name: 'standard', driver: GenericCamera, operation: 0x101b, chunkRequests: [[7, 0, 4], [7, 2, 3]] },
+    { name: 'Nikon', driver: NikonCamera, operation: 0x9431, chunkRequests: [[7, 0, 0, 4, 0], [7, 2, 0, 3, 0]] },
+    { name: 'Sony', driver: SonyCamera, operation: 0x9211, chunkRequests: [[7, 0, 0, 4], [7, 2, 0, 3]] },
 ] as const
 
 function fixture(driver: (typeof drivers)[number], chunks: Uint8Array[], responseCode = 0x2001) {
@@ -26,13 +28,7 @@ function fixture(driver: (typeof drivers)[number], chunks: Uint8Array[], respons
             requests.push(Array.from({ length: view.byteLength / 4 }, (_, index) => view.getUint32(index * 4, true)))
             const chunk = chunks.shift()
             if (chunk) replies.push(USBContainerBuilder.buildData(driver.operation, request.transactionId, chunk))
-            const response = new Uint8Array(12)
-            const header = new DataView(response.buffer)
-            header.setUint32(0, 12, true)
-            header.setUint16(4, USBContainerType.RESPONSE, true)
-            header.setUint16(6, responseCode, true)
-            header.setUint32(8, request.transactionId, true)
-            replies.push(response)
+            replies.push(ptpContainer(USBContainerType.RESPONSE, responseCode, request.transactionId))
         },
         async receive() {
             const response = replies.shift()
@@ -54,26 +50,8 @@ describe.each(drivers)('$name object download', driver => {
         expect(await camera.getObject(7, 5, (received, total) => progress.push([received, total]))).toEqual(
             Uint8Array.of(1, 2, 3, 4, 5)
         )
-        expect(progress).toEqual([
-            [2, 5],
-            [5, 5],
-        ])
-        const parameters =
-            driver.name === 'standard'
-                ? [
-                      [7, 0, 4],
-                      [7, 2, 3],
-                  ]
-                : driver.name === 'Nikon'
-                  ? [
-                        [7, 0, 0, 4, 0],
-                        [7, 2, 0, 3, 0],
-                    ]
-                  : [
-                        [7, 0, 0, 4],
-                        [7, 2, 0, 3],
-                    ]
-        expect(requests).toEqual(parameters)
+        expect(progress).toEqual([[2, 5], [5, 5]])
+        expect(requests).toEqual(driver.chunkRequests)
         expect(logger.getActiveTransfer(7)).toBeUndefined()
     })
     it('rejects invalid sizes before sending any camera command', async () => {
@@ -83,7 +61,7 @@ describe.each(drivers)('$name object download', driver => {
         expect(requests).toEqual([])
         expect(await camera.getObject(7, 0)).toEqual(new Uint8Array())
     })
-    it('stops on cancellation between chunks and allows a later download', async () => {
+    it('stops on cancellation between chunks, sends nothing once cancelled and allows a later download', async () => {
         const { camera, requests, logger } = fixture(driver, [Uint8Array.of(1, 2), Uint8Array.of(3)])
         const controller = new AbortController()
         await expect(camera.getObject(7, 5, () => controller.abort('cancelled'), controller.signal)).rejects.toBe(
@@ -91,20 +69,14 @@ describe.each(drivers)('$name object download', driver => {
         )
         expect(requests).toHaveLength(1)
         expect(logger.getActiveTransfer(7)).toBeUndefined()
-        const transfer = logger
-            .getOrderedTransactions()
-            .flatMap(group => group.logs)
-            .find(log => log.type === 'ptp_transfer')
+        const transfer = logger.getOrderedTransactions().flatMap(group => group.logs).find(log => log.type === 'ptp_transfer')
         expect(transfer).toMatchObject({ level: 'error', responsePhase: { code: 0x2007 } })
+        const cancelled = new AbortController()
+        cancelled.abort('cancelled')
+        await expect(camera.getObject(9, 5, undefined, cancelled.signal)).rejects.toBe('cancelled')
+        expect(requests).toHaveLength(1)
         expect(await camera.getObject(8, 1)).toEqual(Uint8Array.of(3))
         expect(requests).toHaveLength(2)
-    })
-    it('does not send a chunk for a previously cancelled download', async () => {
-        const { camera, requests } = fixture(driver, [])
-        const controller = new AbortController()
-        controller.abort('cancelled')
-        await expect(camera.getObject(7, 5, undefined, controller.signal)).rejects.toBe('cancelled')
-        expect(requests).toEqual([])
     })
     it('rejects empty replies and camera refusals without inventing successful progress', async () => {
         const { camera, requests } = fixture(driver, [new Uint8Array()])

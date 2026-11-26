@@ -1,21 +1,16 @@
 import { cameraControlDefinitions, type CameraControlId } from '@camera/controls'
+import { CameraOutcomeUnknownError } from '@camera/errors'
 
 /** An acknowledged request whose fresh camera observation did not confirm the requested state. */
-export class CameraConfirmationError extends Error {
+export class CameraConfirmationError extends CameraOutcomeUnknownError {
     constructor(
         readonly operation: string,
         readonly expected: string,
         readonly observed: string | null
     ) {
-        const label =
-            operation === 'record_start'
-                ? 'Recording start'
-                : operation === 'record_stop'
-                  ? 'Recording stop'
-                  : (cameraControlDefinitions[operation as CameraControlId]?.label ?? operation)
-        super(
-            `${label}: camera did not confirm ${expected}; observed ${observed ?? 'unknown'}. Refresh before another write.`
-        )
+        const recording: Record<string, string> = { record_start: 'Recording start', record_stop: 'Recording stop' }
+        const label = recording[operation] ?? cameraControlDefinitions[operation as CameraControlId]?.label ?? operation
+        super(operation, `${label}: camera did not confirm ${expected}; observed ${observed ?? 'unknown'}. Refresh before another write.`)
         this.name = 'CameraConfirmationError'
     }
 }

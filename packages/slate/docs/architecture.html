@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slate's generic camera API — what changed</title>
+<style>
+  :root {
+    --obsidian: #0a0a0b; --panel: #121214; --panel-2: #18181b; --hair: #2a2a2e;
+    --bone: #eae6dc; --ink-62: #a8a49b; --ink-45: #7b7870; --gold: #f5cd8a; --red: #e0483e;
+    --sans: "Public Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Fragment Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--obsidian); }
+  body { margin: 0; color: var(--bone); font: 15.5px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  main { max-width: 1080px; margin: 0 auto; padding: 56px 28px 90px; }
+  .eyebrow { font: 11.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+  h1 { font-weight: 600; font-size: clamp(28px, 4vw, 38px); line-height: 1.15; margin: 14px 0 10px; }
+  .lede { font-size: 17px; color: var(--ink-62); max-width: 46em; margin: 0; }
+  h2 { font-weight: 600; font-size: 21px; margin: 44px 0 8px; }
+  code { font: 13px/1.5 var(--mono); background: var(--panel-2); border: 1px solid var(--hair); padding: 1px 5px; border-radius: 5px; }
+  .figure { background: var(--panel); border: 1px solid var(--hair); border-radius: 16px; padding: 22px 18px; margin: 20px 0 8px; overflow-x: auto; }
+  svg { display: block; width: 100%; height: auto; min-width: 720px; }
+  svg text { font-family: var(--sans); fill: var(--bone); }
+  svg .mono { font-family: var(--mono); }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 4px 0; font-size: 13px; color: var(--ink-62); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  .legend .public::before { background: rgba(245,205,138,.16); border: 1px solid var(--gold); }
+  .legend .internal::before { background: var(--panel-2); border: 1px solid #4a4a50; }
+  .legend .generated::before { border: 1px dashed var(--gold); }
+  .legend .bench::before { border: 1px dashed #6a6a70; }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin: 5px 0; }
+  li b { font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14.5px; }
+  th { text-align: left; font: 10.5px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-45); font-weight: 400; padding: 8px 12px 7px 0; border-bottom: 1px solid var(--hair); }
+  td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  td.n { font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--hair); color: var(--ink-45); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+
+<div class="eyebrow">Slate · darkgrade/darkgrade#125</div>
+<h1>One camera API for every brand</h1>
+<p class="lede">Studio, the MCP tools, the CLI and Test Bench now call one vendor-independent <code>Camera</code>. <code>Camera</code> hands each call to the driver for the attached brand. MCP tools and CLI commands are generated from <code>Camera</code> itself, so every surface uses the same names.</p>
+
+<div class="figure" id="diagram">
+<svg viewBox="0 0 1000 760" role="img" aria-label="Slate's layers: surfaces, the Camera API, the driver contract, one column per brand, PTP framing and transports">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7b7870"/></marker>
+    <marker id="arrowGold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f5cd8a"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="760" fill="#121214"/>
+  <g font-size="11" class="mono" fill="#7b7870" letter-spacing="1.5">
+    <text x="20" y="66">SURFACES</text>
+    <text x="20" y="196">PUBLIC API</text>
+    <text x="20" y="342">CONTRACT</text>
+    <text x="20" y="452">DRIVERS</text>
+    <text x="20" y="524">DEFINITIONS</text>
+    <text x="20" y="648">WIRE</text>
+    <text x="20" y="718">TRANSPORT</text>
+  </g>
+
+  <!-- Surfaces -->
+  <rect x="150" y="28" width="196" height="68" rx="12" fill="#18181b" stroke="#4a4a50"/>
+  <text x="248" y="56" text-anchor="middle" font-size="16" font-weight="600">Studio</text>
+  <text x="248" y="78" text-anchor="middle" font-size="11.5" fill="#a8a49b">panels, assistant, its MCP server</text>
+  <rect x="360" y="28" width="196" height="68" rx="12" fill="none" stroke="#f5cd8a" stroke-dasharray="6 5"/>
+  <text x="458" y="56" text-anchor="middle" font-size="16" font-weight="600">MCP tools</text>
+  <text x="458" y="78" text-anchor="middle" font-size="11.5" fill="#a8a49b" class="mono">camera_set_iso …</text>
+  <rect x="570" y="28" width="196" height="68" rx="12" fill="none" stroke="#f5cd8a" stroke-dasharray="6 5"/>
+  <text x="668" y="56" text-anchor="middle" font-size="16" font-weight="600">CLI</text>
+  <text x="668" y="78" text-anchor="middle" font-size="11.5" fill="#a8a49b" class="mono">darkgrade camera set-iso</text>
+  <rect x="780" y="28" width="200" height="68" rx="12" fill="#18181b" stroke="#4a4a50"/>
+  <text x="880" y="56" text-anchor="middle" font-size="16" font-weight="600">Test Bench</text>
+  <text x="880" y="78" text-anchor="middle" font-size="11.5" fill="#a8a49b">runtime + MCP, separate repo</text>
+  <g stroke="#7b7870" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+    <path d="M248 96 V144"/><path d="M458 96 V144"/><path d="M668 96 V144"/><path d="M880 96 V144"/>
+  </g>
+
+  <!-- Camera -->
+  <rect x="150" y="146" width="830" height="92" rx="14" fill="rgba(245,205,138,0.10)" stroke="#f5cd8a"/>
+  <text x="565" y="178" text-anchor="middle" font-size="19" font-weight="600" class="mono">Camera</text>
+  <text x="565" y="201" text-anchor="middle" font-size="13.5">25 operations · typed get/set for 29 settings · settingsChanged / mediaAdded events</text>
+  <text x="565" y="222" text-anchor="middle" font-size="12.5" fill="#a8a49b">getCapabilities says what works now · one queue · writes once · confirms by reading back · three error types</text>
+
+  <!-- Generated list -->
+  <rect x="150" y="254" width="330" height="44" rx="10" fill="none" stroke="#f5cd8a" stroke-dasharray="6 5"/>
+  <text x="315" y="274" text-anchor="middle" font-size="13.5" font-weight="600">Operation list, generated at build time</text>
+  <text x="315" y="290" text-anchor="middle" font-size="11.5" fill="#a8a49b">from Camera's signatures and doc comments</text>
+  <g stroke="#f5cd8a" stroke-width="1.3" fill="none" stroke-dasharray="4 4">
+    <path d="M480 276 H990 V12 H458 V24" marker-end="url(#arrowGold)"/>
+    <path d="M668 12 V24" marker-end="url(#arrowGold)"/>
+    <path d="M315 240 V252"/>
+  </g>
+
+  <!-- Contract -->
+  <path d="M565 238 V316" stroke="#7b7870" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+  <rect x="340" y="318" width="450" height="46" rx="10" fill="#18181b" stroke="#4a4a50"/>
+  <text x="565" y="339" text-anchor="middle" font-size="15" font-weight="600">Driver contract</text>
+  <text x="565" y="355" text-anchor="middle" font-size="11.5" fill="#a8a49b">types only: what a driver can implement, each part optional</text>
+
+  <!-- Brand columns -->
+  <g>
+    <rect x="150" y="386" width="150" height="196" rx="14" fill="rgba(245,205,138,0.04)" stroke="#2a2a2e"/>
+    <rect x="320" y="386" width="150" height="196" rx="14" fill="rgba(255,255,255,0.015)" stroke="#2a2a2e"/>
+    <rect x="490" y="386" width="150" height="196" rx="14" fill="rgba(255,255,255,0.015)" stroke="#2a2a2e"/>
+    <rect x="660" y="386" width="150" height="196" rx="14" fill="rgba(255,255,255,0.015)" stroke="#2a2a2e"/>
+    <rect x="830" y="386" width="150" height="196" rx="14" fill="rgba(255,255,255,0.015)" stroke="#2a2a2e" stroke-dasharray="5 4"/>
+    <g font-size="11" class="mono" letter-spacing="1.2" text-anchor="middle">
+      <text x="225" y="406" fill="#f5cd8a">GENERIC</text>
+      <text x="395" y="406" fill="#a8a49b">SONY</text>
+      <text x="565" y="406" fill="#a8a49b">CANON</text>
+      <text x="735" y="406" fill="#a8a49b">NIKON</text>
+      <text x="905" y="406" fill="#a8a49b">OTHER BRANDS</text>
+    </g>
+  </g>
+  <g stroke="#7b7870" stroke-width="1.3" fill="none" marker-end="url(#arrow)">
+    <path d="M390 364 L240 384"/><path d="M470 364 L400 384"/><path d="M565 364 V384"/><path d="M660 364 L730 384"/><path d="M740 364 L890 384"/>
+  </g>
+  <g text-anchor="middle">
+    <rect x="160" y="418" width="130" height="62" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="225" y="443" font-size="13" font-weight="600" class="mono">GenericCamera</text>
+    <text x="225" y="462" font-size="11" fill="#a8a49b">standard PTP steps</text>
+    <rect x="330" y="418" width="130" height="62" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="395" y="443" font-size="13" font-weight="600" class="mono">SonyCamera</text>
+    <text x="395" y="462" font-size="11" fill="#a8a49b">+ SonyWifiCamera (SDK)</text>
+    <rect x="500" y="418" width="130" height="62" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="565" y="443" font-size="13" font-weight="600" class="mono">CanonCamera</text>
+    <text x="565" y="462" font-size="11" fill="#a8a49b">extends Generic</text>
+    <rect x="670" y="418" width="130" height="62" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="735" y="443" font-size="13" font-weight="600" class="mono">NikonCamera</text>
+    <text x="735" y="462" font-size="11" fill="#a8a49b">extends Generic</text>
+    <rect x="840" y="418" width="130" height="62" rx="10" fill="none" stroke="#4a4a50" stroke-dasharray="5 4"/>
+    <text x="905" y="443" font-size="12.5" font-weight="600" fill="#a8a49b">uses Generic</text>
+    <text x="905" y="462" font-size="11" fill="#7b7870">no driver of their own</text>
+    <rect x="160" y="494" width="130" height="58" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="225" y="518" font-size="12.5" font-weight="600">Standard PTP</text>
+    <text x="225" y="536" font-size="11" fill="#a8a49b">operations, properties</text>
+    <rect x="330" y="494" width="130" height="58" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="395" y="518" font-size="12.5" font-weight="600">Sony definitions</text>
+    <text x="395" y="536" font-size="11" fill="#a8a49b">+ settings map</text>
+    <rect x="500" y="494" width="130" height="58" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="565" y="518" font-size="12.5" font-weight="600">Canon definitions</text>
+    <text x="565" y="536" font-size="11" fill="#a8a49b">+ settings map</text>
+    <rect x="670" y="494" width="130" height="58" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="735" y="518" font-size="12.5" font-weight="600">Nikon definitions</text>
+    <text x="735" y="536" font-size="11" fill="#a8a49b">+ settings map</text>
+    <rect x="840" y="494" width="130" height="58" rx="10" fill="#18181b" stroke="#4a4a50"/>
+    <text x="905" y="518" font-size="12" font-weight="600">Fujifilm, Olympus…</text>
+    <text x="905" y="536" font-size="11" fill="#a8a49b">definitions only</text>
+  </g>
+  <g font-size="10.5" class="mono" fill="#7b7870" text-anchor="middle">
+    <text x="225" y="570">vendors/generic/</text><text x="395" y="570">vendors/sony/</text><text x="565" y="570">vendors/canon/</text><text x="735" y="570">vendors/nikon/</text><text x="905" y="570">vendors/&lt;brand&gt;/</text>
+  </g>
+
+  <!-- /protocol -->
+  <rect x="150" y="592" width="830" height="26" rx="8" fill="#121214" stroke="#6a6a70" stroke-dasharray="5 5"/>
+  <text x="565" y="610" text-anchor="middle" font-size="12" fill="#a8a49b"><tspan font-weight="600" fill="#eae6dc">@darkgrade/slate/protocol</tspan>  raw access to any brand's definitions and driver · for benches and diagnostics</text>
+
+  <!-- Wire + transport -->
+  <rect x="150" y="628" width="830" height="40" rx="10" fill="#18181b" stroke="#4a4a50"/>
+  <text x="565" y="653" text-anchor="middle" font-size="13.5"><tspan font-weight="600">PTP framing</tspan><tspan fill="#a8a49b">  ·  transactions and sessions  ·  codecs  ·  the same for every brand</tspan></text>
+  <g stroke="#7b7870" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+    <path d="M330 668 L281 692"/><path d="M565 668 V692"/><path d="M800 668 L848 692"/>
+  </g>
+  <rect x="150" y="694" width="263" height="44" rx="12" fill="#18181b" stroke="#4a4a50"/>
+  <text x="281" y="721" text-anchor="middle" font-size="14.5" font-weight="600">USB</text>
+  <rect x="433" y="694" width="264" height="44" rx="12" fill="#18181b" stroke="#4a4a50"/>
+  <text x="565" y="721" text-anchor="middle" font-size="14.5" font-weight="600">PTP/IP over Wi-Fi</text>
+  <rect x="717" y="694" width="263" height="44" rx="12" fill="#18181b" stroke="#4a4a50"/>
+  <text x="848" y="721" text-anchor="middle" font-size="14.5" font-weight="600">Sony SDK bridge (Wi-Fi)</text>
+</svg>
+<div class="legend"><span class="public">public API</span><span class="internal">internal</span><span class="generated">generated at build time</span><span class="bench">for benches, unsupported</span></div>
+</div>
+
+<h2>What changed</h2>
+<ul>
+  <li><b>One <code>Camera</code> for every brand.</b> It has 25 operations: connect, focus, zoom, photo, live view, record, card and media, battery, clock. It also has <code>setControl</code> and typed setters such as <code>setShutterSpeed('1/250')</code>, which only accept values the vendor codecs can produce. Vendor-named methods are gone from <code>Camera</code>, and raw access lives in <code>@darkgrade/slate/protocol</code>.</li>
+  <li><b>Every outcome is one of three errors:</b> unsupported, refused or outcome unknown. <code>getCapabilities()</code> says what works right now, and why not.</li>
+  <li><b>MCP and the CLI are generated from <code>Camera</code>.</b> That gives 83 tools and commands with the library's names; none are written by hand. Studio's MCP server uses the same tools.</li>
+  <li><b>Each brand lives in one folder</b>, <code>vendors/&lt;brand&gt;/</code>, with its definitions, its driver and its settings map.</li>
+  <li><b>Photos and clips are confirmed by the camera's own events</b>, not by scanning the card.</li>
+  <li><b>Studio</b> uses Slate's control list. Its sandboxed preload works again (the window had been blank since darkgrade/darkgrade#113).</li>
+  <li><b>Real-camera checks:</b> <code>camera:api-check</code> calls every public method on each attached camera, all in parallel, in about 40 s. <code>camera:parity</code> lists what Canon and Nikon are missing against Sony. The old hardware vitest files and the smoke and verify scripts are gone.</li>
+  <li><b>Tests were audited case by case</b>, cutting 1,380 cases to 1,075.</li>
+</ul>
+
+<h2>By the numbers</h2>
+<table>
+  <thead><tr><th>Measure</th><th>main</th><th>This PR</th></tr></thead>
+  <tr><td>Slate source lines</td><td class="n">33,069</td><td class="n">34,523</td></tr>
+  <tr><td>Slate test lines</td><td class="n">17,125</td><td class="n">20,220</td></tr>
+  <tr><td>Slate test suite</td><td class="n">—</td><td class="n">1,419 / 1,419 pass</td></tr>
+  <tr><td>camera:api-check failures</td><td class="n">—</td><td class="n">Sony 1 (flash, no flash attached) · Canon 0 · Nikon 0</td></tr>
+</table>
+
+<h2>Next</h2>
+<ul>
+  <li><b>Canon and Nikon parity with Sony in Studio:</b> run <code>bun run --cwd packages/slate camera:parity</code>. The main gaps are zoom, the camera's on-screen display, subject and eye detection, and most photo and video format settings.</li>
+  <li><b>Untangle:</b> <code>packages/slate/docs/untangle-preview.md</code> lists about 480 structural problems under 18 fixes. The first ones to do: one driver interface so shared code stops checking the brand, settings as numbers instead of text, and Studio hosting Slate's runtime instead of its own camera queue. Continue with the <a href="https://github.com/caldoai/skills/blob/main/skills/untangle-codebase/SKILL.md" style="color:var(--gold)">untangle-codebase skill</a>.</li>
+  <li><b>Test Bench:</b> moves to the public API in its own PR (darkgrade/test-bench).</li>
+</ul>
+
+<footer>Measured on <code>slate/generic-camera-api</code>, 2026-11-25.</footer>
+</main>
+</body>
+</html>

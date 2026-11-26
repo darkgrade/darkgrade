@@ -26,9 +26,10 @@ export function LensPanel({
 }: LensPanelProps): React.JSX.Element {
     const lens = cameraState.lens
     const disabled = !cameraState.connected || locked
-    // With the zoom mode at optical only, a lens without power zoom has nothing for these buttons to drive.
-    const opticalOnly = /^optical( zoom)?( only)?$/i.test(cameraState.controls?.zoomMode?.value ?? '')
-    const zoomDisabled = disabled || opticalOnly
+    // The camera says whether remote zoom can drive this lens in this mode, and why not.
+    const zoomUnavailable = lens?.zoom.supported === false
+    const zoomTitle = zoomUnavailable ? (lens?.zoom.reason ?? 'Zoom isn’t available on this camera') : undefined
+    const zoomDisabled = disabled || zoomUnavailable
     return (
         <InspectorSection title="Lens" collapsible defaultOpen>
             {cameraState.connected ? (
@@ -47,7 +48,7 @@ export function LensPanel({
                                 variant="ghost"
                                 size="icon-sm"
                                 disabled={zoomDisabled}
-                                title={opticalOnly ? 'Zoom mode is optical only' : undefined}
+                                title={zoomTitle}
                                 aria-label="Zoom out (hold)"
                                 onPointerDown={event => {
                                     event.currentTarget.setPointerCapture(event.pointerId)
@@ -63,7 +64,7 @@ export function LensPanel({
                                 variant="ghost"
                                 size="icon-sm"
                                 disabled={zoomDisabled}
-                                title={opticalOnly ? 'Zoom mode is optical only' : undefined}
+                                title={zoomTitle}
                                 aria-label="Zoom in (hold)"
                                 onPointerDown={event => {
                                     event.currentTarget.setPointerCapture(event.pointerId)
@@ -79,10 +80,10 @@ export function LensPanel({
                     </div>
                     {cameraState.controls && (
                         <ControlRow
-                            label="Zoom mode"
-                            control={cameraState.controls.zoomMode}
+                            label="Digital zoom"
+                            control={cameraState.controls.digitalZoom}
                             disabled={disabled}
-                            onChange={value => onChange('zoomMode', value)}
+                            onChange={value => onChange('digitalZoom', value)}
                         />
                     )}
                 </div>

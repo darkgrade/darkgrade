@@ -20,15 +20,9 @@ export interface CameraIdentification {
  * case and whitespace); a conflict is reported, never used to select another camera silently.
  * USB recognition alone proves no control.
  */
-export function identifyCamera(input: {
-    vendorId: number
-    productId: number
-    ptpModel?: string
-}): CameraIdentification {
-    for (const value of [input.vendorId, input.productId]) {
-        if (!Number.isInteger(value) || value < 0 || value > 0xffff)
-            throw new Error('USB IDs must be unsigned 16-bit integers')
-    }
+export function identifyCamera(input: { vendorId: number; productId: number; ptpModel?: string }): CameraIdentification {
+    for (const value of [input.vendorId, input.productId])
+        if (!Number.isInteger(value) || value < 0 || value > 0xffff) throw new Error('USB IDs must be unsigned 16-bit integers')
     const key = [input.vendorId, input.productId].map(value => value.toString(16).padStart(4, '0')).join(':')
     const table = identities as unknown as Record<string, CameraIdentityCandidate[]>
     const candidates = structuredClone(table[key] ?? [])
@@ -36,10 +30,8 @@ export function identifyCamera(input: {
     if (!candidates.length) return { usb, status: 'unknown', candidates }
     const normalize = (model: string) => model.trim().toLowerCase().replace(/\s+/g, ' ')
     const requestedModel = input.ptpModel === undefined ? undefined : normalize(input.ptpModel)
-    const matching =
-        requestedModel === undefined
-            ? candidates
-            : candidates.filter(candidate => candidate.models.some(model => normalize(model) === requestedModel))
+    const named = (candidate: CameraIdentityCandidate) => candidate.models.some(model => normalize(model) === requestedModel)
+    const matching = requestedModel === undefined ? candidates : candidates.filter(named)
     if (!matching.length) return { usb, status: 'identity-mismatch', candidates }
     return { usb, status: matching.length === 1 ? 'matched' : 'ambiguous', candidates: matching }
 }

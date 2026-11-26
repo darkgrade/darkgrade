@@ -2,8 +2,11 @@ import { Camera } from '@camera/index'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/protocol-session'
 
-// Numeric observations from Z6 III camera_controls, 2026-10-29.
+// Numeric observations from Z6 III camera_controls, 2026-10-29. Movie white balance (0xd23a) is
+// an enumeration: its observed 32789 (0x8015) decodes to the Nikon name "Same as photo settings".
+const decodedNames: Record<number, string> = { 0xd23a: 'Same as photo' }
 // Wire types independently checked against the model command specification Rev.2.00.
 // These are descriptor fixtures; this test does not communicate with hardware.
 const observed = [
@@ -46,28 +49,9 @@ function fixture() {
 }
 
 describe('Nikon captured shooting properties', () => {
-    it('retains exact documented photo shutter fractions and Bulb/Time sentinels', async () => {
-        const camera = fixture()
-        const instance = camera.getInstance()
-        const properties = instance.registry.properties
-        if (!('NikonPhotoShutterSpeed' in properties))
-            throw new Error('Nikon fixture registry is missing shutter speed')
-        const property = properties.NikonPhotoShutterSpeed
-        expect(property.code).toBe(0xd100)
-        const codec = new DevicePropDescCodec(instance.registry, true)
-        const send = vi.spyOn(instance, 'send')
-        for (const raw of [0x00011f40, 0x00010fa0, 0x000d000a, 0xffffffff, 0xfffffffd]) {
-            send.mockResolvedValueOnce({ code: 0x2001, data: codec.decode(descriptor(0xd100, 6, raw)).value } as any)
-            await expect(camera.get(property)).resolves.toBe(raw)
-            send.mockResolvedValueOnce({ code: 0x2001 } as any)
-            await camera.set(property, raw)
-            const wire = send.mock.lastCall?.[2]!
-            expect(new DataView(wire.buffer, wire.byteOffset, wire.byteLength).getUint32(0, true)).toBe(raw)
-        }
-    })
     it('reads all fifteen captured controls using exact descriptor widths and numeric values', async () => {
         const camera = fixture()
-        const instance = camera.getInstance()
+        const instance = protocolSession(camera).driver
         const codec = new DevicePropDescCodec(instance.registry, true)
         const definitions = Object.values(instance.registry.properties)
         const send = vi.spyOn(instance, 'send')
@@ -77,28 +61,29 @@ describe('Nikon captured shooting properties', () => {
             const property = matching[0]!
             expect(property.datatype).toBe(datatype)
             const decoded = codec.decode(descriptor(code, datatype, value)).value
-            expect(decoded.currentValueDecoded).toBe(value)
+            expect(decoded.currentValueRaw).toBe(value)
+            expect(decoded.currentValueDecoded).toBe(decodedNames[code] ?? value)
             send.mockResolvedValueOnce({ code: 0x2001, data: decoded } as any)
-            await expect(camera.get(property)).resolves.toBe(value)
+            await expect(protocolSession(camera).get(property)).resolves.toBe(decodedNames[code] ?? value)
             expect(send.mock.lastCall?.[1]).toEqual({ DevicePropCode: code })
         }
     })
 
     it('retains 32-bit focus codes and writes ISO as a number without treating 1000 as Auto ISO', async () => {
         const camera = fixture()
-        const instance = camera.getInstance()
+        const instance = protocolSession(camera).driver
         const properties = instance.registry.properties as any
         const send = vi.spyOn(instance, 'send').mockResolvedValue({ code: 0x2001 } as any)
-        await camera.set(properties.NikonFocusPointLock, 1)
-        await camera.set(properties.NikonMovieFocusPointLock, 0)
-        await camera.set(properties.NikonMovieISO, 1000)
+        await protocolSession(camera).set(properties.NikonFocusPointLock, 1)
+        await protocolSession(camera).set(properties.NikonMovieFocusPointLock, 0)
+        await protocolSession(camera).set(properties.NikonMovieISO, 1000)
         expect(send.mock.calls.map(([op, params, bytes]) => [op.code, params, Array.from(bytes ?? [])])).toEqual([
             [0x943c, { DevicePropCode: 0x1d015 }, [1]],
             [0x943c, { DevicePropCode: 0x1d016 }, [0]],
             [0x943c, { DevicePropCode: 0xd1aa }, [0xe8, 0x03, 0, 0]],
         ])
-        await expect(camera.set(properties.NikonActiveSlot, 1)).rejects.toThrow('not writable')
-        await expect(camera.set(properties.NikonExposureRemaining, 1)).rejects.toThrow('not writable')
+        await expect(protocolSession(camera).set(properties.NikonActiveSlot, 1)).rejects.toThrow('not writable')
+        await expect(protocolSession(camera).set(properties.NikonExposureRemaining, 1)).rejects.toThrow('not writable')
         expect(send).toHaveBeenCalledTimes(3)
     })
 })

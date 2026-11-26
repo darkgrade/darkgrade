@@ -1,15 +1,16 @@
 import type {Camera} from '@camera/index'
+import {protocolAccess,type ProtocolSession} from '@camera/protocol-session'
 import {getDatatypeByCode} from '@ptp/definitions/datatype-definitions'
-import {GetDevicePropDescEx,SetDevicePropValueEx} from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
-import {LiveViewSelector} from '@ptp/definitions/vendors/nikon/nikon-property-definitions'
+import {GetDevicePropDescEx,SetDevicePropValueEx} from '@vendors/nikon/definitions/nikon-operation-definitions'
+import {LiveViewSelector} from '@vendors/nikon/definitions/nikon-property-definitions'
 import {prepareNikonManualExposure} from '@vendors/nikon/manual-exposure'
-import {readNikonRecordingStatus} from '@vendors/nikon/recording-status'
+import {requireNikonIdle} from '@vendors/nikon/recording-status'
 import type {ShotProperty,ShotSetupReport} from '@workflows/shot-setup'
 import {nikonControlLabel} from '@vendors/nikon/control-values'
 
 const properties={iso:0xd1aa,aperture:0xd1a9,shutterSpeed:0xd1a8,shutterMode:0x1d074,shutterAngle:0x1d075,whiteBalance:0xd23a,focusMode:0xd1fa,autoIso:0xd0ad,exposureProgram:0x500e} as const
 type PropertyName=keyof typeof properties
-type OwnedCamera=Pick<Camera,'send'|'get'|'getInstance'|'getNikonVendorPropertyCodes'>
+type OwnedSession=Pick<ProtocolSession,'send'|'get'|'driver'|'getNikonVendorPropertyCodes'>
 interface Descriptor {devicePropertyCode:number;dataType:number;getSet:string;formFlag:number;currentValueRaw:unknown;supportedValuesRaw?:unknown[];minimumValue?:unknown;maximumValue?:unknown;stepSize?:unknown}
 const actions:Record<string,PropertyName>={'set-iso':'iso','set-aperture':'aperture','set-shutter-speed':'shutterSpeed','set-white-balance':'whiteBalance','set-focus-mode':'focusMode'}
 
@@ -17,13 +18,14 @@ const actions:Record<string,PropertyName>={'set-iso':'iso','set-aperture':'apert
  * This class never opens/closes a camera or starts live view, recording, or autofocus.
  */
 export class NikonShotControls {
-    private readonly instance:ReturnType<Camera['getInstance']>
+    private readonly instance:ProtocolSession['driver']
     private readonly session:number|null
     private descriptors=new Map<PropertyName,Descriptor>()
     private allowedCodes?:Set<number>
     private busy=false
 
-    constructor(private readonly camera:OwnedCamera){this.instance=camera.getInstance();this.session=this.instance.sessionId}
+    private readonly camera:OwnedSession
+    constructor(camera:Camera|OwnedSession){this.camera=protocolAccess(camera);this.instance=this.camera.driver;this.session=this.instance.sessionId}
 
     async prepare(){
         return this.exclusive(async()=>{
@@ -61,15 +63,12 @@ export class NikonShotControls {
 
     private async exclusive<T>(run:()=>Promise<T>):Promise<T>{
         if(this.busy)throw new Error('Another Nikon shot-control operation is in progress')
-        if(this.camera.getInstance()!==this.instance||this.session===null||this.instance.sessionId!==this.session)throw new Error('Nikon shot-control session changed; create a new controller')
+        if(this.camera.driver!==this.instance||this.session===null||this.instance.sessionId!==this.session)throw new Error('Nikon shot-control session changed; create a new controller')
         this.busy=true
         try{return await run()}finally{this.busy=false}
     }
 
-    private async requireIdle(){
-        const status=await readNikonRecordingStatus(this.camera)
-        if(!status||status.recording||status.bufferedImages)throw new Error('Nikon must confirm idle before changing shot settings')
-    }
+    private requireIdle(){return requireNikonIdle(this.camera,'Nikon must confirm idle before changing shot settings')}
 
     private async requireVideo(){
         if(await this.camera.get(LiveViewSelector)!=='VIDEO')throw new Error('Nikon shot tuning requires video mode')

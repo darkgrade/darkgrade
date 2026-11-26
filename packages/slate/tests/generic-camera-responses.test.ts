@@ -1,20 +1,14 @@
-import { createContributions } from '@darkgrade/slate/contribute'
-import { GenericCamera } from '@camera/generic-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
+import { NikonCamera } from '@vendors/nikon/nikon-camera'
+import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
 import { Logger } from '@core/logger'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
 import { describe, expect, it } from 'vitest'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 
-function container(type: number, code: number, payload: Uint8Array = new Uint8Array()): Uint8Array {
-    const bytes = new Uint8Array(12 + payload.length)
-    const view = new DataView(bytes.buffer)
-    view.setUint32(0, bytes.length, true)
-    view.setUint16(4, type, true)
-    view.setUint16(6, code, true)
-    view.setUint32(8, 1, true)
-    bytes.set(payload, 12)
-    return bytes
-}
+const container = (type: number, code: number, payload?: Uint8Array) => ptpContainer(type, code, 1, payload)
+
+const logger = () => new Logger({ captureConsole: false, renderInTerminal: false })
 
 function parameterBytes(parameters: number[]): Uint8Array {
     const bytes = new Uint8Array(parameters.length * 4)
@@ -24,22 +18,13 @@ function parameterBytes(parameters: number[]): Uint8Array {
 }
 
 function cameraWithResponses(responses: Uint8Array[]) {
-    const sent: Uint8Array[] = []
-    const transport = {
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        getType: () => 'usb',
-        send: async (bytes: Uint8Array) => { sent.push(bytes) },
-        receive: async () => {
-            const response = responses.shift()
-            if (!response) throw new Error('Unexpected receive after the supplied response containers')
-            return response
-        },
-    } as unknown as TransportInterface
-    return {
-        camera: new GenericCamera(transport, new Logger({ captureConsole: false, renderInTerminal: false })),
-        sent,
+    const { transport, sent } = answeringTransport()
+    transport.receive = async () => {
+        const response = responses.shift()
+        if (!response) throw new Error('Unexpected receive after the supplied response containers')
+        return response
     }
+    return { camera: new GenericCamera(transport, logger()), sent, transport }
 }
 
 const sendDataOperation = {
@@ -52,9 +37,12 @@ const sendDataOperation = {
 } as const satisfies OperationDefinition
 
 describe('GenericCamera response container parameters', () => {
-    it.each([0x2001, 0x200f])('preserves response words with outer status %i', async code => {
-        const parameters = [0xa004, 0, 0xffffffff, 0x80000000, 7]
-        const { camera } = cameraWithResponses([container(3, code, parameterBytes(parameters))])
+    it.each([
+        [0x2001, [0xa004, 0, 0xffffffff, 0x80000000, 7]],
+        [0x200f, [0xa004, 0, 0xffffffff, 0x80000000, 7]],
+        [0x2001, undefined],
+    ])('preserves response words with outer status %i: %j', async (code, parameters) => {
+        const { camera } = cameraWithResponses([container(3, code, parameters && parameterBytes(parameters))])
 
         const response = await camera.send(camera.registry.operations.CloseSession, {})
 
@@ -101,14 +89,8 @@ describe('GenericCamera response container parameters', () => {
 
         const response = await camera.send(sendDataOperation, {}, Uint8Array.of(1, 2))
 
-        expect(sent.map(bytes => new DataView(bytes.buffer).getUint16(4, true))).toEqual([1, 2])
+        expect(sent.map(container => container.type)).toEqual([1, 2])
         expect(response.parameters).toEqual([0xa001])
-    })
-
-    it('leaves parameters absent when the response has no payload', async () => {
-        const { camera } = cameraWithResponses([container(3, 0x2001)])
-
-        expect((await camera.send(camera.registry.operations.CloseSession, {})).parameters).toBeUndefined()
     })
 
     it('rejects a non-word-aligned response payload as a framing violation instead of guessing at it', async () => {
@@ -122,68 +104,39 @@ describe('GenericCamera response container parameters', () => {
     })
 })
 
-it('lists populated slots and never asks an empty storage placeholder for handles',async()=>{
- const operations={GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles',GetObjectInfo:'object'},calls:any[]=[]
- const camera={registry:{operations},send:async(operation:string,args:any)=>{
-  calls.push({operation,args})
-  if(operation==='ids')return {code:0x2001,data:[0x10000,0x20001]}
-  if(operation==='storage')return {code:0x2001,data:{storageDescription:'Card'}}
-  if(operation==='handles')return {code:0x2001,data:[7]}
-  return {code:0x2001,data:{filename:'new.NEF'}}
- }}
- const listed=await GenericCamera.prototype.listObjects.call(camera as any)
- expect(Object.keys(listed)).toEqual([String(0x20001)])
- expect(listed[0x20001].objects[7].filename).toBe('new.NEF')
- expect(calls.some(call=>call.args.StorageID===0x10000)).toBe(false)
-})
-
-it('preserves a card-list refusal rather than iterating an absent dataset',async()=>{
- const camera={registry:{operations:{GetStorageIDs:'ids',GetStorageInfo:'storage',GetObjectHandles:'handles'}},send:async(operation:string)=>operation==='ids'?{code:0x2001,data:[0x20001]}:operation==='storage'?{code:0x2001,data:{}}:{code:0x2013}}
- await expect(GenericCamera.prototype.listObjects.call(camera as any)).rejects.toThrow()
-})
-
-
-it('optional contributions preserve the real Slate transfer while omitting its image and response parameters', async () => {
-    const payload = new TextEncoder().encode('private-image-and-serial-8675309')
-    const responses = [container(2, 0x1009, payload), container(3, 0x2001, parameterBytes([8675309]))]
-    let uploaded = ''
-    const diagnostics = await createContributions({
-        endpoint: 'https://collector.example', accessToken: async () => 'fixture-token',
-        camera: { manufacturer: 'Canon', model: 'Synthetic', firmware: 'unknown', revision: '2e5ba0f', dirty: false, transport: 'usb', evidence: 'synthetic' },
-        consent: { read: async () => true, write: async () => {} },
-        fetch: async (_url, init) => { uploaded = String(init?.body); return new Response(null, { status: 202 }) },
-    })
-    const source: TransportInterface = {
-        isLittleEndian: () => true, isConnected: () => true, getType: () => TransportType.USB,
-        connect: async () => {}, disconnect: async () => {}, classRequestReset: async () => {}, send: async () => {},
-        receive: async () => responses.shift()!,
+describe('GenericCamera property values', () => {
+    // A Nikon Z6 reports NEF compression 2, a value the Z6 III specification Slate names does not list.
+    const nikon = (reply: Uint8Array) => {
+        const { transport } = cameraWithResponses([container(2, 0x1015, reply), container(3, 0x2001)])
+        return new NikonCamera(transport, logger())
     }
-    const observation = diagnostics.observe(source)
-    const observed: TransportInterface = observation.transport
-    const camera = new GenericCamera(observed, new Logger({ captureConsole: false, renderInTerminal: false }))
-    try {
-        const result = await camera.send(camera.registry.operations.GetObject, { ObjectHandle: 8675309 })
-        expect(result.data).toEqual(payload)
-        expect(result.parameters).toEqual([8675309])
-        expect(await diagnostics.flush()).toBe('sent')
-        expect(JSON.parse(uploaded).entries.map((entry: { code: number }) => entry.code)).toEqual([0x1009, 0x1009, 0x2001])
-        expect(uploaded).not.toContain('private-image')
-        expect(uploaded).not.toContain('8675309')
-    } finally { observation.detach(); diagnostics.close() }
-})
-it('state snapshots never issue USB work or replace observed mode with a requested write',()=>{
- const {camera,sent}=cameraWithResponses([]);camera.vendorId=0x04a9
- const evidence:any[]=[];camera.observeProfile(crypto.randomUUID(),value=>evidence.push(value))
- camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:0},0x9116)
- camera.recordProtocol({type:'property-write',vendorId:0x04a9,property:0xd1c2,dataType:6,requested:1,transactionId:1,outcome:'response',response:0x2001},0x9110)
- camera.recordStateSnapshot('recording','before-prepare')
- camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:1},0x9116)
- camera.recordStateSnapshot('recording','after-prepare')
- camera.recordStateSnapshot('recording','failure')
- camera.recordProtocol({type:'property-value',vendorId:0x04a9,property:0xd1c2,dataType:6,current:0},0x9116)
- camera.recordStateSnapshot('recording','after-cleanup')
- const snapshots=evidence.filter(item=>item.type==='state-snapshot')
- expect(snapshots.map(item=>item.settings[0].current)).toEqual([0,1,1,0])
- expect(snapshots.every(item=>item.settings[0].ageMilliseconds>=0&&item.basis==='observed-cache')).toBe(true)
- expect(sent).toEqual([])
+
+    it.each([
+        ['a value its codec names by that name', 4, 'High efficiency'],
+        ['a value its codec has no name for as the raw number', 2, 2],
+    ])('reads %s', async (_case, raw, expected) => {
+        const camera = nikon(Uint8Array.of(raw))
+        await expect(camera.readValue(camera.registry.properties.NikonRawCompression)).resolves.toBe(expected)
+    })
+
+    it('keeps a GetDevicePropValue reply whose value has no name', async () => {
+        const camera = nikon(Uint8Array.of(2))
+        const response = await camera.send(camera.registry.operations.GetDevicePropValue, {
+            DevicePropCode: camera.registry.properties.NikonRawCompression.code,
+        })
+        expect(response.code).toBe(0x2001)
+        expect(response.data).toEqual(Uint8Array.of(2))
+    })
+
+    it('still marks the unnamed value unrecognized in a descriptor, and never writes it', () => {
+        const camera = nikon(new Uint8Array())
+        const property = camera.registry.properties.NikonRawCompression
+        // GetDevicePropDesc: code, UINT8, GetSet, default 0, current 2, range 0..2 step 1.
+        const bytes = Uint8Array.of(0x16, 0xd0, 0x02, 0x00, 0x01, 0, 2, 0x01, 0, 2, 1)
+        const descriptor = new DevicePropDescCodec(camera.registry).decode(bytes).value
+        expect(descriptor).toMatchObject({ currentValueDecoded: 2, currentValueUnrecognized: true })
+        const codec = property.codec(camera.registry)
+        expect(() => codec.encode(2)).toThrow('Invalid enum value: 2')
+        expect(codec.encode('Lossless')).toEqual(Uint8Array.of(0))
+    })
 })

@@ -1,10 +1,21 @@
 import { createApplicationDiagnostics } from '@darkgrade/slate/contribute/application'
-import { localDiagnostics, sharedSettings } from '@darkgrade/slate/contribute/settings'
+import { sharedSettings } from '@darkgrade/slate/contribute/settings'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+
+const camera = {
+    manufacturer: 'Nikon',
+    model: 'Z5II',
+    firmware: '1',
+    revision: 'abcdef0',
+    dirty: false,
+    transport: 'usb' as const,
+    evidence: 'synthetic' as const,
+}
+const entry = { kind: 'command' as const, direction: 'out' as const, bytes: 12, failed: false, durationMilliseconds: 1 }
 
 test('daily upload rejection is explicit and retains the bounded pending batch without repeating delivery early', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-daily-budget-'))
@@ -25,18 +36,7 @@ test('daily upload rejection is explicit and retains the bounded pending batch w
         },
     })
     try {
-        client.record(
-            {
-                manufacturer: 'Nikon',
-                model: 'Z5II',
-                firmware: '1',
-                revision: 'abcdef0',
-                dirty: false,
-                transport: 'usb',
-                evidence: 'synthetic',
-            },
-            { kind: 'command', direction: 'out', bytes: 12, failed: false, durationMilliseconds: 1 }
-        )
+        client.record(camera, entry)
         assert.equal(await client.flush(), 'retry')
         assert.equal(client.status().error, 'Daily diagnostics upload limit reached')
         assert.equal(client.status().queuedEntries, 1)
@@ -66,22 +66,6 @@ test('a temporary external opt-out cannot leave old sharing entries queued for a
             throw Error('No upload expected')
         },
     })
-    const camera = {
-        manufacturer: 'Nikon',
-        model: 'Z5II',
-        firmware: '1',
-        revision: 'abcdef0',
-        dirty: false,
-        transport: 'usb' as const,
-        evidence: 'synthetic' as const,
-    }
-    const entry = {
-        kind: 'command' as const,
-        direction: 'out' as const,
-        bytes: 12,
-        durationMilliseconds: 1,
-        failed: false,
-    }
     try {
         client.record(camera, entry)
         const state = (await other.read())!
@@ -119,58 +103,6 @@ test('processes share random identity and stale enrollment writes cannot reverse
     }
 })
 
-test('opt-out in another process stops cloud uploads but retains bounded local diagnostics without a notice', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-settings-'))
-    const local = localDiagnostics(directory)
-    let network = 0
-    const store = sharedSettings(directory)
-    const client = await createApplicationDiagnostics({
-        endpoint: 'https://telemetry.example',
-        store,
-        localRecord: local.record,
-        fetch: async () => {
-            network++
-            throw new Error('No network expected')
-        },
-    })
-    try {
-        const other = sharedSettings(directory),
-            state = (await other.read())!
-        await other.write({ ...state, enabled: false })
-        const transport = client.observe(
-            {
-                connect: async () => {},
-                disconnect: async () => {},
-                classRequestReset: async () => {},
-                send: async () => {},
-                receive: async () => new Uint8Array(),
-                isConnected: () => true,
-                isLittleEndian: () => true,
-                getType: () => 'usb',
-            },
-            {
-                manufacturer: 'Canon',
-                model: 'EOS 90D',
-                firmware: '1',
-                revision: 'abcdef0',
-                dirty: false,
-                transport: 'usb',
-                evidence: 'synthetic',
-            }
-        )
-        await transport.transport.send(new Uint8Array(12), 1, 1)
-        assert.equal(await client.flush(), 'disabled')
-        assert.equal(network, 0)
-        local.close()
-        assert.ok((await readFile(join(directory, 'diagnostics', `${process.pid}.jsonl`), 'utf8')).includes('EOS 90D'))
-        assert.equal(client.status().sharingEnabled, false)
-    } finally {
-        client.close()
-        local.close()
-        await rm(directory, { recursive: true, force: true })
-    }
-})
-
 test('a short-lived process delivers queued metadata on normal exit and retains it locally on forced exit', async () => {
     const { execFile } = await import('node:child_process')
     const { promisify } = await import('node:util')
@@ -184,7 +116,7 @@ test('a short-lived process delivers queued metadata on normal exit and retains 
               import {appendFileSync} from 'node:fs';
               globalThis.fetch=async(url,init)=>{const body=JSON.parse(init.body);appendFileSync(process.env.DARKGRADE_HOME+'/requests.jsonl',JSON.stringify({path:new URL(url).pathname})+'\\n');return Response.json(new URL(url).pathname==='/v2/installations'?{installKey:body.installKey,noticeVersion:body.noticeVersion}:{accepted:true}, {status:200})};
               const {nodeDiagnostics}=await import(${JSON.stringify(moduleUrl)});const client=await nodeDiagnostics();
-              client.record({manufacturer:'Nikon',model:'Z5II',firmware:'1',revision:'abcdef0',dirty:false,transport:'usb',evidence:'synthetic'}, {kind:'command',direction:'out',bytes:12,failed:false,durationMilliseconds:1});
+              client.record(${JSON.stringify(camera)}, ${JSON.stringify(entry)});
               ${forced ? 'process.exit(0)' : ''}
             `
                 const result = await promisify(execFile)(
@@ -210,7 +142,7 @@ test('a short-lived process delivers queued metadata on normal exit and retains 
     }
 })
 
-test('Node defaults to the hosted collector, but opt-out still stops uploads and keeps local diagnostics', async () => {
+test('Node defaults to the hosted collector, but an opt-out written by another store stops uploads and keeps local diagnostics', async () => {
     const { nodeDiagnostics, closeNodeDiagnostics, DEFAULT_TELEMETRY_URL } = await import('@darkgrade/slate/contribute/settings')
     const directory = await mkdtemp(join(tmpdir(), 'darkgrade-default-sharing-'))
     const previous = {
@@ -232,22 +164,6 @@ test('Node defaults to the hosted collector, but opt-out still stops uploads and
     }
     try {
         const client = (await nodeDiagnostics())!
-        const camera = {
-            manufacturer: 'Nikon',
-            model: 'Z5II',
-            firmware: '1',
-            revision: 'abcdef0',
-            dirty: false,
-            transport: 'usb' as const,
-            evidence: 'synthetic' as const,
-        }
-        const entry = {
-            kind: 'command' as const,
-            direction: 'out' as const,
-            bytes: 12,
-            failed: false,
-            durationMilliseconds: 1,
-        }
         client.record(camera, entry)
         await client.flush()
         assert.ok(calls.some(url => url === DEFAULT_TELEMETRY_URL + '/v2/batches'))
@@ -257,6 +173,7 @@ test('Node defaults to the hosted collector, but opt-out still stops uploads and
         client.record(camera, entry)
         assert.equal(await client.flush(), 'disabled')
         assert.equal(calls.length, count)
+        assert.equal(client.status().sharingEnabled, false)
         await closeNodeDiagnostics()
         assert.ok((await readFile(join(directory, 'diagnostics', `${process.pid}.jsonl`), 'utf8')).includes('Z5II'))
     } finally {
@@ -301,18 +218,7 @@ test('automatic Node clients never upload test-runner fixtures to the default co
     }
     try {
         const client = (await nodeDiagnostics())!
-        client.record(
-            {
-                manufacturer: 'Nikon',
-                model: 'Z5II',
-                firmware: '1',
-                revision: 'abcdef0',
-                dirty: false,
-                transport: 'usb',
-                evidence: 'synthetic',
-            },
-            { kind: 'command', direction: 'out', bytes: 12, failed: false, durationMilliseconds: 1 }
-        )
+        client.record(camera, entry)
         assert.equal(await client.flush(), 'disabled')
         assert.equal(calls, 0)
     } finally {
@@ -481,6 +387,56 @@ test('the record of cameras last seen at a USB identity keeps what the body repo
         await (await import('node:fs/promises')).writeFile(join(directory, 'known-cameras.json'), '{broken')
         assert.equal(knownCameras(directory).lookup(byModel), undefined)
     } finally {
+        await rm(directory, { recursive: true, force: true })
+    }
+})
+
+test('a collector that rejects public-call records, command codes and request evidence still receives what it knows', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'darkgrade-legacy-collector-'))
+    const sent: string[] = []
+    const client = await createApplicationDiagnostics({
+        endpoint: 'https://telemetry.example',
+        store: sharedSettings(directory),
+        fetch: async (url, init) => {
+            if (String(url).endsWith('/v2/installations')) {
+                const body = JSON.parse(String(init!.body))
+                return Response.json({ installKey: body.installKey, noticeVersion: body.noticeVersion })
+            }
+            sent.push(String(init!.body))
+            // An older collector's strict validation: no call or attach kinds, callId or commandCode
+            // fields, request evidence types or a write's prior value.
+            return /"call"|callId|commandCode|"attach"|focus-point|object-info|"transfer"|warning-status|"prior"/.test(String(init!.body))
+                ? Response.json({ error: 'Invalid diagnostic entry' }, { status: 400 })
+                : Response.json({ accepted: true }, { status: 202 })
+        },
+    })
+    try {
+        const callId = crypto.randomUUID()
+        const call = { operation: 'getBattery', tool: 'camera_get_battery', command: 'darkgrade camera get-battery',
+            surface: 'library' as const, outcome: 'ok' as const, attribution: 'async-context' as const }
+        client.record(camera, { ...entry, callId })
+        client.record(camera, { kind: 'call', direction: 'lifecycle', bytes: 0, failed: false, durationMilliseconds: 2, callId, call })
+        client.record(camera, { kind: 'attach', direction: 'lifecycle', bytes: 0, failed: false, durationMilliseconds: 0 })
+        client.record(camera, { kind: 'response', direction: 'in', code: 0x2019, commandCode: 0x90c8, transactionId: 4, bytes: 12,
+            failed: false, durationMilliseconds: 1 })
+        client.record(camera, { kind: 'command', direction: 'out', code: 0x1016, transactionId: 5, bytes: 0, failed: false,
+            durationMilliseconds: 0, protocol: { type: 'property-write', vendorId: 0, property: 0x500f, dataType: 4, requested: 800,
+                transactionId: 5, outcome: 'response', response: 0x2001, prior: 400, priorAgeMilliseconds: 3 } })
+        client.record(camera, { kind: 'data', direction: 'in', code: 0x1008, transactionId: 6, bytes: 0, failed: false,
+            durationMilliseconds: 0, protocol: { type: 'object-info', vendorId: 0, format: 0x3801, size: 10, transactionId: 6 } })
+        assert.equal(await client.flush(), 'sent')
+        assert.equal(sent.length, 2)
+        const delivered = JSON.parse(sent[1]).contributions[0].entries
+        assert.deepEqual(delivered.map((item: { kind: string }) => item.kind), ['command', 'response', 'command'])
+        assert.equal(delivered[1].code, 0x2019)
+        assert.equal(delivered[2].protocol.requested, 800)
+        assert.equal(client.status().error, null)
+        // Later batches leave calls out from the start.
+        client.record(camera, { ...entry, callId })
+        assert.equal(await client.flush(), 'sent')
+        assert.equal(sent.length, 3)
+    } finally {
+        client.close()
         await rm(directory, { recursive: true, force: true })
     }
 })

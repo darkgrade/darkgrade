@@ -22,7 +22,7 @@ function fixture(options: {
         await options.onCommand?.(parameters as CommandParameters)
         return options.responses?.[(parameters as CommandParameters).Command] ?? { code: 0x2001, parameters: [0x2001, 0, 0, 0, 0] }
     })
-    const camera = { send, getInstance: () => instance }
+    const camera = { send, get driver(){return instance} }
     const controller = new NikonMenuController(camera as any)
     const commands = () => send.mock.calls.filter(([operation]) => operation.code === 0x94fd)
         .map(([, parameters]) => parameters as CommandParameters)
@@ -89,15 +89,13 @@ describe('scoped Nikon menu navigation', () => {
         expect(send.mock.calls.some(([operation]) => operation.code === 0x90c2)).toBe(false)
     })
 
-    it('surfaces unsuccessful exit while still attempting explicit mode restoration', async () => {
-        const { controller, send } = fixture({ responses: { [0xf002]: { code: 0x2001, parameters: [0xa001] } } })
-        await expect(controller.run(options, () => undefined)).rejects.toThrow('cleanup is unconfirmed')
+    it.each([
+        { failure: 'unsuccessful exit', setup: { responses: { [0xf002]: { code: 0x2001, parameters: [0xa001] } } }, restoreCameraMode: 'PC_CAMERA' as const },
+        { failure: 'failed mode restoration', setup: { restoreCode: 0x2019 }, restoreCameraMode: 'REMOTE' as const },
+    ])('does not claim cleanup after $failure, still attempting explicit mode restoration', async ({ setup, restoreCameraMode }) => {
+        const { controller, send } = fixture(setup)
+        await expect(controller.run({ restoreCameraMode }, () => undefined)).rejects.toThrow('cleanup is unconfirmed')
         expect(send.mock.calls.at(-1)?.[0].code).toBe(0x90c2)
-    })
-
-    it('does not claim cleanup when restoring the camera mode fails', async () => {
-        const { controller } = fixture({ restoreCode: 0x2019 })
-        await expect(controller.run({ restoreCameraMode: 'REMOTE' }, () => undefined)).rejects.toThrow('cleanup is unconfirmed')
     })
 
     it.each([{ recording: 0x400 }, { recording: 0x200 }, { recording: null }])('requires confirmed idle recording/card state %s', async state => {
@@ -122,7 +120,7 @@ describe('scoped Nikon menu navigation', () => {
     it('also rejects a replacement camera instance reusing the same numeric session', async () => {
         const setup = fixture()
         await expect(setup.controller.run(options, async menu => {
-            setup.camera.getInstance = () => ({ sessionId: 41 })
+            Object.defineProperty(setup.camera,'driver',{get:()=>({ sessionId: 41 }),configurable:true})
             await menu.press('menu')
         })).rejects.toThrow('cleanup is unconfirmed')
         expect(setup.commands().map(command => command.Command)).toEqual([0xf001, 0xf094])

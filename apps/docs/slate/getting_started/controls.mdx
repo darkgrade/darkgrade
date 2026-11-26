@@ -3,8 +3,11 @@ title: "Camera controls"
 description: "Current camera capabilities, shared setting names, shutter speed and shutter angle."
 ---
 
-Use `Camera` for application controls. Slate maps vendor properties to common ids;
-applications inspect the current body instead of checking the brand.
+Use `Camera` for application controls. Slate maps every vendor's properties to one set of
+setting ids and one spelling of their values; applications inspect the current body instead of
+checking the brand. Code that sets a known setting uses its typed setter (`setIso('ISO 800')`); a
+UI that lists every setting reads `getCapabilities().controls` and writes with
+`setControl(id, value)`. Both write once and resolve to the value the camera read back.
 
 ```typescript
 import { Camera } from '@darkgrade/slate'
@@ -30,13 +33,14 @@ try {
 `shutterSpeed` is one control with duration, angle, Bulb, Time or flash-sync state.
 `exposureTime`, `exposure time`, `shutter angle` and `shutterAngle` are search aliases
 that resolve to it; capabilities and writes use the `shutterSpeed` id.
-`getExposureTime()` returns a discriminated union. Native angle mode stays in angle
-mode; a write never changes the body's shutter-control mode implicitly.
+`setShutterSpeed()` resolves to the value read back; the control's `exposureTime` field is a
+discriminated union. Native angle mode stays in angle mode; a write never changes the body's
+shutter-control mode implicitly.
 
 ```typescript
-await camera.setExposureTime({ kind: 'duration', seconds: 1 / 50 })
-await camera.setExposureTime('180°', { framesPerSecond: 25 })
-await camera.setExposureTime('180°', { framesPerSecond: 24000 / 1001 })
+await camera.setShutterSpeed({ kind: 'duration', seconds: 1 / 50 })
+await camera.setShutterSpeed('180°', { framesPerSecond: 25 })
+await camera.setShutterSpeed('180°', { framesPerSecond: 24000 / 1001 })
 ```
 
 The exact requested value must be advertised. Converting units requires the actual
@@ -44,12 +48,39 @@ capture frame rate, supplied by the caller; Slate does not infer it from a label
 `180°` at 25 fps is 1/50 second; 24 and 24000/1001 fps differ. A bare `180` means
 seconds. Bulb and Time are not finite durations.
 
+## Setting ids and aliases
+
+The 30 settings are `shutterSpeed`, `aperture`, `iso`, `exposureMode`, `exposureCompensation`,
+`meteringMode`, `photoVideoMode`, `driveMode`, `whiteBalance`, `colorTemperature`, `pictureStyle`,
+`pictureProfile`, `focusMode`, `focusArea`, `subjectDetection`, `continuousAutofocus`, `detectionSubject`, `eyeSelection`,
+`photoFormat`, `photoSize`, `aspectRatio`, `jpegQuality`, `rawCompression`, `flashMode`,
+`videoFormat`, `videoQuality`, `frameRate`, `audioRecording`, `digitalZoom` and `liveViewQuality`.
+`controls` can also hold two ids without typed methods: `exposureProgram` (the camera's own
+shooting-mode word, transitional until `photoVideoMode` and `exposureMode` replace it) and
+`continuousAutofocus`; write them with `setControl`. Each typed setting has `get<Setting>()` and `set<Setting>()` on Camera, `camera_set_<setting>` as an MCP tool
+and `darkgrade camera get-<setting>` / `set-<setting>` on the command line. A vendor's own word is
+only a search alias: `resolveCameraControl('picture control')` and `'film simulation'` give
+`pictureStyle`, `'PASM'` gives `exposureMode`, `'codec'` gives `videoFormat`. Exposure mode values
+are words (`'Manual'`, `'Aperture priority'`, `'Shutter priority'`, `'Program'`); `M`/`A`/`S`/`P`
+and Canon's `Av`/`Tv` are accepted as input. [Feature compatibility](/slate/getting_started/feature-compatibility#settings-by-camera)
+lists which cameras map each setting.
+
+```typescript
+const exposure = await camera.setExposureMode('A') // resolves to 'Aperture priority'
+const kelvin = await camera.setColorTemperature(5600) // Kelvin is a number
+console.log(exposure, kelvin)
+```
+
 ## Availability and types
 
-`setControl('iso', advertisedLabel)` uses the body's current labels.
+The compiler checks that a value is one Slate knows on some camera, in its canonical spelling;
+at runtime Slate checks it against what this camera offers now and refuses it before anything is
+sent. `setControl('iso', advertisedLabel)` uses the body's current labels.
 `setControl('colorTemperature', 5600)` takes a number. Aliases resolve names, not
 units, modes or writability. Changing a mode can change the available settings:
 re-read capabilities when that happens. Setters perform their own fresh check.
+`getCapabilities().operations` reports, separately, which operations (focus, zoom, live view,
+recording …) the camera can do now and why not.
 
 Sony USB flags, Nikon descriptors and Canon events retain their different protocol
 semantics inside Slate. Common exposure/focus/white-balance controls and Canon

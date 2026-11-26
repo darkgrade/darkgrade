@@ -40,7 +40,7 @@ jobs:
             - name: Dependency security audit
               run: bun audit
             - run: npm run build --prefix packages/slate
-            - run: npm run test --prefix apps/contribution-collector
+            - run: npm run test:telemetry --prefix packages/slate
               env:
                   DATABASE_URL: postgresql://postgres:local-test-only@127.0.0.1:5432/telemetry
             - name: Slate type check
@@ -51,7 +51,7 @@ jobs:
               run: npm run test:package --prefix packages/slate
             - run: npm run test --prefix packages/cli
             - run: npm run typecheck --prefix apps/studio && npm run test --prefix apps/studio
-            - run: docker build -f apps/contribution-collector/Dockerfile -t telemetry-check .
+            - run: docker build -f packages/slate/telemetry/Dockerfile -t telemetry-check .
             - name: Test actual HTTP service
               run: |
                   docker run -d --name telemetry-service --network host \
@@ -61,10 +61,10 @@ jobs:
                     if curl --silent --fail http://127.0.0.1:8081/healthz >/dev/null; then break; fi
                     sleep 1
                   done
-                  TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 npm run smoke --prefix apps/contribution-collector
+                  TELEMETRY_SMOKE_URL=http://127.0.0.1:8081 npm run telemetry:smoke --prefix packages/slate
             - name: Validate infrastructure
               run: |
-                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 init -backend=false
-                  docker run --rm -v "$PWD/apps/contribution-collector/infra:/work" -w /work hashicorp/terraform:1.9.8 validate
+                  docker run --rm -v "$PWD/packages/slate/telemetry/infra:/work" -w /work hashicorp/terraform:1.9.8 init -backend=false
+                  docker run --rm -v "$PWD/packages/slate/telemetry/infra:/work" -w /work hashicorp/terraform:1.9.8 validate
             - if: always()
               run: docker rm -f telemetry-service || true

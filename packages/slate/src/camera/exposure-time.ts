@@ -49,12 +49,11 @@ function checkedFrameRate(context?: ExposureContext): number {
     return context.framesPerSecond
 }
 
+/** Equal within floating-point error, never a nearby camera setting. */
+const nearlyEqual = (left: number, right: number) => Math.abs(left - right) <= Number.EPSILON * Math.max(left, right) * 8
+
 /** Match an actual advertised value; do not round to a nearby camera setting. */
-export function matchExposureTime(
-    input: ExposureTimeInput,
-    choices: readonly string[],
-    context?: ExposureContext
-): string | undefined {
+export function matchExposureTime(input: ExposureTimeInput, choices: readonly string[], context?: ExposureContext): string | undefined {
     const requested = parseExposureTime(input)
     for (const label of choices) {
         let candidate: ExposureTime
@@ -63,20 +62,13 @@ export function matchExposureTime(
         } catch {
             continue
         }
-        if (requested.kind === candidate.kind && requested.kind !== 'duration' && requested.kind !== 'angle')
-            return label
+        if (requested.kind === candidate.kind && requested.kind !== 'duration' && requested.kind !== 'angle') return label
         if (requested.kind === 'angle' && candidate.kind === 'angle') {
-            if (
-                Math.abs(requested.degrees - candidate.degrees) <=
-                Number.EPSILON * Math.max(requested.degrees, candidate.degrees) * 8
-            )
-                return label
+            if (nearlyEqual(requested.degrees, candidate.degrees)) return label
             continue
         }
         if (!['duration', 'angle'].includes(requested.kind) || !['duration', 'angle'].includes(candidate.kind)) continue
-        const left = exposureSeconds(requested, context)!,
-            right = exposureSeconds(candidate, context)!
-        if (Math.abs(left - right) <= Number.EPSILON * Math.max(left, right) * 8) return label
+        if (nearlyEqual(exposureSeconds(requested, context)!, exposureSeconds(candidate, context)!)) return label
     }
     return undefined
 }

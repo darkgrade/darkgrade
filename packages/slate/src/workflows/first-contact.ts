@@ -1,13 +1,14 @@
 import type { Camera } from '@camera/index'
+import { protocolAccess } from '@camera/protocol-session'
 import { isValidatedModel } from '@camera/validated-models'
-import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
+import { runBenchmark, transportEvidence } from '@workflows/telemetry-benchmark'
 
 export interface FirstContactDependencies {
     /** Effective sharing (opt-out, DO_NOT_TRACK and pending deletion all disable it). */
     sharingEnabled(): Promise<boolean>
     /** True the first time this installation sees this exact body identity. */
     firstSighting(identity: string): Promise<boolean>
-    saveProfile(profile: Awaited<ReturnType<typeof runCameraBenchmark>>['profile']): Promise<unknown>
+    saveProfile(profile: Awaited<ReturnType<typeof runBenchmark>>['profile']): Promise<unknown>
     flush(): Promise<unknown>
 }
 
@@ -34,22 +35,16 @@ async function nodeDependencies(): Promise<FirstContactDependencies | undefined>
  * property descriptor, storage IDs) recorded as a `first-contact` profile. Never writes, captures or
  * throws; returns whether an inventory ran.
  */
-export async function recordFirstContact(
-    camera: Camera,
-    dependencies?: FirstContactDependencies
-): Promise<boolean> {
+export async function recordFirstContact(camera: Camera, dependencies?: FirstContactDependencies): Promise<boolean> {
     try {
-        const instance = camera.getInstance()
-        const evidence = (instance.transport as typeof instance.transport & { telemetryEvidence?: string })
-            .telemetryEvidence
-        const resolved = dependencies ?? (evidence === 'hardware' ? await nodeDependencies() : undefined)
+        const hardware = transportEvidence(protocolAccess(camera).driver.transport) === 'hardware'
+        const resolved = dependencies ?? (hardware ? await nodeDependencies() : undefined)
         if (!resolved || !(await resolved.sharingEnabled())) return false
-        const response = await camera.send(instance.registry.operations.GetDeviceInfo, {})
-        const information = response.code === 0x2001 ? response.data : undefined
-        if (!information?.model || isValidatedModel(information.model)) return false
-        const identity = JSON.stringify([information.manufacturer, information.model, information.deviceVersion])
+        const information = await camera.getInfo()
+        if (!information.model || isValidatedModel(information.model)) return false
+        const identity = JSON.stringify([information.manufacturer, information.model, information.firmware])
         if (!(await resolved.firstSighting(identity))) return false
-        const result = await runCameraBenchmark(camera, {
+        const result = await runBenchmark(camera, {
             purpose: 'first-contact',
             timeoutMilliseconds: 30_000,
             maximumProperties: 512,

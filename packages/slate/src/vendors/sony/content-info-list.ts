@@ -46,42 +46,21 @@ class Reader {
         return this.view.byteLength - this.offset
     }
     skip(bytes: number): void {
-        this.need(bytes)
-        this.offset += bytes
+        this.take(bytes, () => undefined)
     }
-    uint16(): number {
-        this.need(2)
-        const value = this.view.getUint16(this.offset, true)
-        this.offset += 2
-        return value
-    }
-    uint32(): number {
-        this.need(4)
-        const value = this.view.getUint32(this.offset, true)
-        this.offset += 4
-        return value
-    }
-    int32(): number {
-        this.need(4)
-        const value = this.view.getInt32(this.offset, true)
-        this.offset += 4
-        return value
-    }
-    uint64(): number {
-        this.need(8)
-        const value = this.view.getBigUint64(this.offset, true)
-        this.offset += 8
-        return Number(value)
-    }
+    uint16 = () => this.take(2, at => this.view.getUint16(at, true))
+    uint32 = () => this.take(4, at => this.view.getUint32(at, true))
+    int32 = () => this.take(4, at => this.view.getInt32(at, true))
+    uint64 = () => this.take(8, at => Number(this.view.getBigUint64(at, true)))
     utf8(length: number): string {
-        this.need(length)
-        const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, length)
-        this.offset += length
+        const bytes = this.take(length, at => new Uint8Array(this.view.buffer, this.view.byteOffset + at, length))
         return new TextDecoder().decode(bytes).replace(/\0+$/, '')
     }
-    private need(bytes: number): void {
-        if (bytes < 0 || this.offset + bytes > this.view.byteLength)
-            throw new Error('Sony ContentInfoList is truncated')
+    private take<Value>(bytes: number, read: (offset: number) => Value): Value {
+        if (bytes < 0 || this.offset + bytes > this.view.byteLength) throw new Error('Sony ContentInfoList is truncated')
+        const value = read(this.offset)
+        this.offset += bytes
+        return value
     }
 }
 

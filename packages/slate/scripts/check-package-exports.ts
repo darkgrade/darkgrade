@@ -43,6 +43,23 @@ try {
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
             `if(typeof (${cli}).runDarkgradeCli !== 'function')throw new Error('CLI runner is missing')`],
             { cwd: isolated, stdio: 'inherit' })
+        const load = (name: string) => format === 'esm' ? `await import('${name}')` : `require('${name}')`
+        const telemetryChecks = Object.entries(entries).filter(([path]) => path).map(([path, name]) =>
+            `if((${load('@darkgrade/slate/telemetry' + path)})[${JSON.stringify(name)}] !==
+                (${load('@darkgrade/slate/contribute' + path)})[${JSON.stringify(name)}])
+                throw new Error('Telemetry must reuse the existing client: ' + ${JSON.stringify(path)})`
+        ).join(';')
+        execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
+            `process.env.DATABASE_URL='invalid';process.env.TELEMETRY_PUBLIC_URL='invalid';
+            ${telemetryChecks};
+            if((${load('@darkgrade/slate/telemetry')}).createApplicationDiagnostics !==
+                (${load('@darkgrade/slate/contribute/application')}).createApplicationDiagnostics)
+                throw new Error('Telemetry must use the application client');
+            const server=${load('@darkgrade/slate/telemetry/server')};
+            for(const name of ['createTelemetry','cleanupWithdrawals','resendContactSender',
+                'operatorApi','exportMatrixPage'])
+                if(typeof server[name]!=='function')throw new Error('Missing telemetry server API: '+name)`,
+        ], { cwd: isolated, stdio: 'inherit' })
     }
     for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
         const entry = join(isolated, 'browser.ts')
@@ -50,6 +67,17 @@ try {
         const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
         if (!result.success) throw new AggregateError(result.logs, 'Browser diagnostics import failed: ' + path)
     }
+    for (const path of ['', '/application', '/batch', '/protocol', '/schema']) {
+        const entry = join(isolated, 'telemetry-browser.ts')
+        writeFileSync(entry, `export * from ${JSON.stringify('@darkgrade/slate/telemetry' + path)}`)
+        const result = await Bun.build({ entrypoints: [entry], target: 'browser' })
+        if (!result.success) throw new AggregateError(result.logs, 'Browser telemetry import failed: ' + path)
+    }
+    const serverBrowserEntry = join(isolated, 'telemetry-server-browser.ts')
+    writeFileSync(serverBrowserEntry, "export * from '@darkgrade/slate/telemetry/server'")
+    const serverBrowserBuilds = await Bun.build({ entrypoints: [serverBrowserEntry], target: 'browser' })
+        .then(result => result.success, () => false)
+    if (serverBrowserBuilds) throw new Error('The telemetry server must remain Node-only')
     const controlsEntry = join(isolated, 'controls-browser.ts')
     writeFileSync(controlsEntry, "export * from '@darkgrade/slate/controls'")
     const controlsBuild = await Bun.build({ entrypoints: [controlsEntry], target: 'browser' })
@@ -61,12 +89,16 @@ try {
         import { type DiagnosticBatch } from '@darkgrade/slate/contribute/batch'
         import { nodeDiagnostics } from '@darkgrade/slate/contribute/settings'
         import { runDarkgradeCli } from '@darkgrade/slate/cli'
+        import { createApplicationDiagnostics as telemetryClient } from '@darkgrade/slate/telemetry'
+        import { createTelemetry, type Database } from '@darkgrade/slate/telemetry/server'
         const command: (args: readonly string[]) => Promise<number> = runDarkgradeCli
         const context: CameraContext = { manufacturer: 'Test', model: 'Fixture', firmware: '1',
             revision: 'abcdef0', dirty: false, transport: 'usb', evidence: 'synthetic' }
         const batch: DiagnosticBatch = { schema: 'darkgrade.diagnostic-batch/v2', id: 'fixture', contributions: [] }
         const state: InstallationState = { enabled: false, noticeVersion: 'fixture', withdrawalPending: false }
-        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics, command]
+        const service: (database: Database, options: { publicUrl: string }) =>
+            (request: Request) => Promise<Response> = createTelemetry
+        void [context, batch, state, createApplicationDiagnostics, nodeDiagnostics, command, telemetryClient, service]
     `)
     writeFileSync(join(isolated, 'tsconfig.json'), JSON.stringify({
         compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext',
@@ -87,23 +119,51 @@ try {
     symlinkSync(realpathSync(require.resolve('usb/package.json')).replace(/\/package\.json$/, ''),
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
-        import { Camera, configureSlateTelemetry, genericOperationRegistry, genericPropertyRegistry, type DeviceInfo,
+        import { Camera, configureSlateTelemetry, type DeviceInfo,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
-            type CameraRecordingState, SonyWifiCamera, SonyCamera,
-            TransportFactory, TransportType } from '@darkgrade/slate'
+            type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
+            type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
+            type WhiteBalance, type PictureStyle, type PictureProfile, type PhotoVideoMode, type DriveMode,
+            type FocusMode, type FocusArea, type FocusResult, type OperationAvailability,
+            CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError, type DiscoveredCamera,
+            type RecoveryReport,
+            type CardPhoto, type ComputerPhoto, type PhotoFormat, type RawCompression,
+            type CardStatus, type MediaItem, type Battery, type CameraInfo,
+            type DigitalZoom, type LiveViewQuality, type LiveViewFrame, type FocusFrame, type CameraLens,
+            runBenchmark } from '@darkgrade/slate'
+        import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession, genericOperationRegistry, genericPropertyRegistry,
+            genericEventRegistry, TransportFactory, TransportType } from '@darkgrade/slate/protocol'
+        // @ts-expect-error Transports and registries are protocol-level; they are in @darkgrade/slate/protocol.
+        import { TransportFactory as RootTransportFactory } from '@darkgrade/slate'
+        // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.
+        import { SonyCamera as RootSonyCamera } from '@darkgrade/slate'
+        // @ts-expect-error Wireless pairing is in @darkgrade/slate/protocol as a written exception.
+        import { SonyWifiCamera as RootSonyWifiCamera } from '@darkgrade/slate'
+        // @ts-expect-error Raw protocol access goes through protocolSession(camera) from /protocol.
+        import { protocolSession as rootProtocolSession } from '@darkgrade/slate'
         import { exposureSeconds, resolveCameraControl } from '@darkgrade/slate/controls'
+        import { CameraClipNotFoundError, type AudioRecording, type Clip, type FrameRate, type VideoFormat } from '@darkgrade/slate'
         const camera = new Camera()
         configureSlateTelemetry(undefined)
-        const device: Promise<{code: number; data: DeviceInfo}> = camera.send(genericOperationRegistry.GetDeviceInfo, {})
+        // @ts-expect-error Raw PTP events are subscribed through protocolSession(camera).on.
+        camera.on(genericEventRegistry.ObjectAdded, () => {})
+        protocolSession(camera).on(genericEventRegistry.ObjectAdded, params => void params.ObjectHandle)
+        const device: Promise<{code: number; data: DeviceInfo}> = protocolSession(camera).send(genericOperationRegistry.GetDeviceInfo, {})
         const capabilities: Promise<CameraCapabilities> = camera.getCapabilities()
-        const exposure: Promise<ExposureTime> = camera.getExposureTime()
+        const exposure: Promise<ExposureTime | undefined> = capabilities.then(found => found.controls.shutterSpeed?.exposureTime)
         const native: CameraControlSession = camera
         const sdk: CameraControlSession = new SonyWifiCamera({
             request: async () => ({}), close: async () => {}
         })
+        // @ts-expect-error Raw protocol access left Camera for protocolSession(camera).
         camera.send(genericOperationRegistry.OpenSession, {SessionID: 1})
-        camera.set(genericPropertyRegistry.WhiteBalance, 2)
-        camera.setExposureTime({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
+        // @ts-expect-error getInstance left Camera; the driver is protocolSession(camera).driver.
+        camera.getInstance()
+        // @ts-expect-error Vendor-named methods left Camera; Sony's image format is setPhotoFormat.
+        camera.setSonyImageFormat('RAW')
+        // @ts-expect-error Exposure time is the shutterSpeed setting, through setShutterSpeed or setControl.
+        camera.setExposureTime({kind: 'angle', degrees: 180})
+        camera.setShutterSpeed({kind: 'angle', degrees: 180}, {framesPerSecond: 24000 / 1001})
         camera.setControl('colorTemperature', 5600)
         camera.setControl('iso', 'ISO 800')
         const observed: Promise<CameraControlState> = camera.setControl('shutterSpeed', {kind: 'angle', degrees: 180})
@@ -111,9 +171,44 @@ try {
         // @ts-expect-error Exposure time is a search alias; shutterSpeed is the sole control id.
         camera.setControl('exposureTime', '1/60')
         // @ts-expect-error Internal transport preparation is not a shipped consumer API.
-        camera.getInstance().connectTransport()
+        protocolSession(camera).driver.connectTransport()
         // @ts-expect-error Discarded-driver telemetry disposal is an internal lifecycle operation.
-        camera.getInstance().detachTransportObserver()
+        protocolSession(camera).driver.detachTransportObserver()
+        // Connection: discover without opening, connect read-only, identity, disconnect.
+        const discovered: Promise<DiscoveredCamera[]> = Camera.discover()
+        const opened: Promise<void> = camera.connect({ observeOnly: true })
+        camera.connect({ device: { usb: { filters: [{ vendorId: 0x054c }] } } })
+        camera.connect()
+        const information: Promise<CameraInfo> = camera.getInfo()
+        const closed: Promise<void> = camera.disconnect()
+        const recovery: Promise<RecoveryReport> = camera.recover({ allowPortReset: false })
+        // @ts-expect-error Recovery steps are software only; power cycling is never a step.
+        const power: RecoveryReport['steps'][number]['step'] = 'power-cycle'
+        // Connection failures are the three public types, with the PTP error kept as their cause.
+        const refusedCause: unknown = new CameraRefusedError('connect', 'OpenSession failed', { cause: new Error('0x2019') }).cause
+        // @ts-expect-error A device descriptor is passed as { device }, never as the options themselves.
+        camera.connect({ usb: { filters: [{ vendorId: 0x054c }] } })
+        // @ts-expect-error observeOnly is a boolean.
+        camera.connect({ observeOnly: 'yes' })
+        // @ts-expect-error The connection kinds are usb, wifi and ip.
+        const bluetooth: CameraInfo['connection'] = 'bluetooth'
+        // @ts-expect-error CameraInfo never guesses a lens mount as a number.
+        const mount: CameraInfo['lensMount'] = 1
+        const benchmark = runBenchmark(camera, { photo: true, liveView: false })
+        // @ts-expect-error runBenchmark takes photo and liveView, not the old capture and live flags.
+        runBenchmark(camera, { capture: true })
+        // Raw protocol access is a session of the same Camera, typed by the registries' codecs.
+        const session: ProtocolSession = protocolSession(camera)
+        const rawIdentity: Promise<{code: number; data: DeviceInfo}> = session.send(genericOperationRegistry.GetDeviceInfo, {})
+        session.set(genericPropertyRegistry.WhiteBalance, 'Daylight')
+        // @ts-expect-error A raw property write still takes its codec's value type.
+        session.set(genericPropertyRegistry.WhiteBalance, 'daylight')
+        // @ts-expect-error Known read-only definitions cannot be written through a protocol session.
+        session.set(genericPropertyRegistry.BatteryLevel, 40)
+        // @ts-expect-error Raw sessions are only for a Camera.
+        protocolSession('camera')
+        // @ts-expect-error An object shaped like a session is not a Camera; it throws rather than passing through.
+        protocolSession({ send: async () => ({ code: 0x2001 }) })
         const factory = new TransportFactory()
         factory.createIPTransport({ address: '127.0.0.1', timeout: 1000, telemetryEvidence: 'synthetic' })
         factory.createUSBTransport({ maxBulkReadBytes: 16384 })
@@ -159,7 +254,238 @@ try {
         camera.setControl('vendorMagic', 'on')
         // @ts-expect-error Angle values need a degrees field.
         camera.setExposureTime({kind: 'angle', seconds: 0.02})
-        void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk]
+        // Typed settings: one getter/setter per setting, canonical values, the value read back.
+        const confirmedShutter: Promise<ShutterSpeed> = camera.setShutterSpeed('1/250')
+        const currentShutter: Promise<ShutterSpeed> = camera.getShutterSpeed()
+        camera.setShutterSpeed('180°', {framesPerSecond: 24000 / 1001})
+        camera.setShutterSpeed({kind: 'duration', seconds: 1 / 60})
+        sdk.setShutterSpeed('30"')
+        const anyString: string = '1/250'
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setShutterSpeed(anyString)
+        // @ts-expect-error A vendor's own word is not a canonical shutter speed.
+        camera.setShutterSpeed('fast')
+        const confirmedAperture: Promise<Aperture> = camera.setAperture('f/2.8')
+        const currentIso: Promise<Iso> = camera.getIso()
+        camera.setIso('ISO 800')
+        camera.setIso('Auto')
+        const confirmedMode: Promise<ExposureMode> = camera.setExposureMode('Aperture priority')
+        camera.setExposureMode('M')
+        camera.setExposureMode('Tv')
+        const confirmedCompensation: Promise<ExposureCompensation> = camera.setExposureCompensation('+0.7')
+        const confirmedMetering: Promise<MeteringMode> = camera.setMeteringMode('Spot')
+        sdk.setIso('ISO 100')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setAperture(anyString)
+        // @ts-expect-error An ISO keeps its ISO prefix; Canon's raw '800' is not canonical.
+        camera.setIso('800')
+        // @ts-expect-error Exposure modes are words; Canon's AE code is not one.
+        camera.setExposureMode('3')
+        // @ts-expect-error Sony's movie-family word maps to Manual; it is not an exposure mode.
+        camera.setExposureMode('Movie Manual')
+        // @ts-expect-error Compensation is a signed number of stops, not a number.
+        camera.setExposureCompensation(0.7)
+        // @ts-expect-error Canon Evaluative and Nikon Matrix are both Multi.
+        camera.setMeteringMode('Evaluative')
+        // Colour and mode: canonical names from the vendor codecs, Kelvin as a number, photo or video.
+        const confirmedWhiteBalance: Promise<WhiteBalance> = camera.setWhiteBalance('Daylight')
+        const currentKelvin: Promise<number> = camera.getColorTemperature()
+        camera.setColorTemperature(5600)
+        const look: Promise<PictureStyle> = camera.setPictureStyle('Standard')
+        const profile: Promise<PictureProfile> = camera.setPictureProfile('PP8')
+        const mode: Promise<PhotoVideoMode> = camera.setPhotoVideoMode('video')
+        const drive: Promise<DriveMode> = camera.setDriveMode('Continuous high')
+        sdk.setWhiteBalance('Underwater Auto')
+        // @ts-expect-error Nikon's own word for daylight is spelled Daylight.
+        camera.setWhiteBalance('Sunny')
+        // @ts-expect-error Canon's kebab-case codes are not canonical names.
+        camera.setWhiteBalance('daylight')
+        // One name per concept: ISO 15740's Manual white balance and every vendor preset are Custom.
+        camera.setWhiteBalance('Custom')
+        // @ts-expect-error Preset white balance is spelled Custom, not Manual.
+        camera.setWhiteBalance('Manual')
+        camera.setPictureStyle('Same as photo')
+        // @ts-expect-error Same as photo is written in sentence case for white balance and look alike.
+        camera.setWhiteBalance('Same as Photo')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setWhiteBalance(anyString)
+        // @ts-expect-error Kelvin is a number.
+        camera.setColorTemperature('5600')
+        // @ts-expect-error Photo or video; Sony's own movie program names are not modes.
+        camera.setPhotoVideoMode('Movie Manual')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setDriveMode(anyString)
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setPictureStyle(anyString)
+        // Photo: takePhoto returns the confirmed file; only a computer photo carries its bytes.
+        const cardPhoto: Promise<CardPhoto> = camera.takePhoto()
+        const computerPhoto: Promise<ComputerPhoto> = camera.takePhoto({ autofocus: false, destination: 'computer' })
+        void camera.takePhoto({ destination: 'computer' }).then(photo => photo.data.byteLength + (photo.mediaId?.length ?? 0))
+        // @ts-expect-error A card photo has no bytes; ask for destination 'computer'.
+        void camera.takePhoto({ destination: 'card' }).then(photo => photo.data)
+        // @ts-expect-error The destination is the card or the computer; 'memory' is not a destination.
+        camera.takePhoto({ destination: 'memory' })
+        // @ts-expect-error RAW compression is a setting (setRawCompression), not a photo option.
+        camera.takePhoto({ rawCompression: 'lossless' })
+        // @ts-expect-error The old capture name is not on a control session.
+        sdk.takePhoto()
+        const photoFormat: Promise<PhotoFormat> = camera.setPhotoFormat('RAW+JPEG')
+        const rawCompression: Promise<RawCompression> = camera.setRawCompression('Lossless')
+        camera.setPhotoSize('Large')
+        camera.setAspectRatio('16:9')
+        camera.setJpegQuality('Fine')
+        camera.setFlashMode('Off')
+        sdk.setPhotoFormat('RAW')
+        // @ts-expect-error Photo formats use the codecs' canonical spelling.
+        camera.setPhotoFormat('RAW + JPEG')
+        // @ts-expect-error The old setting id is not a typed setter.
+        camera.setStillFormat('RAW')
+        // @ts-expect-error A flash mode is a canonical word, not the vendor's.
+        camera.setFlashMode('Fill-flash')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setJpegQuality(anyString)
+        type PlainStringSetters = { [Name in keyof TypedSettingMethods]: Name extends \`set\${string}\`
+            ? TypedSettingMethods[Name] extends (value: infer Value, ...options: never[]) => unknown
+                ? string extends Value ? Name : never : never
+            : never }[keyof TypedSettingMethods]
+        const noPlainStringSetters: [PlainStringSetters] extends [never] ? true : PlainStringSetters = true
+        // Focus: a confirmed result, 0–1 points, named step sizes and canonical focus settings.
+        const focused: Promise<FocusResult> = camera.autofocus()
+        camera.setFocusPoint(0.5, 0.4)
+        camera.setFocusPoint(0.5, 0.4, { autofocus: false })
+        camera.resetFocusPoint()
+        const nudged: Promise<{ atLimit: boolean }> = camera.nudgeFocus('near', 'small')
+        const focusMode: Promise<FocusMode> = camera.setFocusMode('AF-C')
+        const focusArea: Promise<FocusArea> = camera.getFocusArea()
+        camera.setFocusArea('Wide')
+        camera.setSubjectDetection('On')
+        camera.setDetectionSubject('People')
+        camera.setEyeSelection('Left')
+        sdk.setFocusMode('MF')
+        capabilities.then(found => {
+            const availability: OperationAvailability | undefined = found.operations?.setFocusPoint
+            void availability
+        })
+        // @ts-expect-error autofocus takes no duration; the camera decides how long it focuses.
+        camera.autofocus(800)
+        // @ts-expect-error autofocus reports acquired, not-acquired or unknown, never a bare boolean.
+        const focusedFlag: Promise<boolean> = camera.autofocus()
+        // @ts-expect-error A focus point needs both coordinates.
+        camera.setFocusPoint(0.5)
+        // @ts-expect-error The option is autofocus, not the old vendor-method focus flag.
+        camera.setFocusPoint(0.5, 0.4, { focus: false })
+        // @ts-expect-error Nudges are named sizes, never motor steps.
+        camera.nudgeFocus('near', 3)
+        // @ts-expect-error Focus moves near or far.
+        camera.nudgeFocus('in', 'small')
+        // @ts-expect-error Canon's One-Shot is a search alias; the canonical value is AF-S.
+        camera.setFocusMode('one-shot')
+        // @ts-expect-error Sony's Flexible Spot is a spot in Slate's words.
+        camera.setFocusArea('Flexible Spot M')
+        // @ts-expect-error Subject detection is On or Off, not a boolean.
+        camera.setSubjectDetection(true)
+        // @ts-expect-error Eye selection says Left or Right, not Sony's Left Eye.
+        camera.setEyeSelection('Left Eye')
+        // Card, media, body and events: generic operations with typed results.
+        const cards: Promise<CardStatus[]> = camera.getCardStatus()
+        const media: Promise<MediaItem[]> = camera.listMedia()
+        const preview: Promise<Uint8Array> = camera.getMediaPreview('id', 'preview')
+        const download: Promise<Uint8Array> = camera.downloadMedia('id', {
+            onProgress: (receivedBytes: number, totalBytes: number) => void [receivedBytes, totalBytes],
+            signal: new AbortController().signal,
+        })
+        const battery: Promise<Battery> = camera.getBattery()
+        const clock: Promise<void> = camera.setClock(new Date())
+        const info: Promise<CameraInfo> = camera.getInfo()
+        const listMediaAvailability: Promise<OperationAvailability | undefined> =
+            camera.getCapabilities().then(current => current.operations?.listMedia)
+        camera.on('mediaAdded', () => {})
+        camera.off('settingsChanged')
+        // @ts-expect-error Operation availability is keyed by Camera's own method names.
+        camera.getCapabilities().then(current => current.operations?.listMedias)
+        // @ts-expect-error Preview sizes are thumbnail or preview.
+        camera.getMediaPreview('id', 'large')
+        // @ts-expect-error Media ids are the strings listMedia returns, not object handles.
+        camera.downloadMedia(42)
+        // @ts-expect-error setClock takes a Date.
+        camera.setClock('2026-11-24T12:00:00')
+        // @ts-expect-error The named events are settingsChanged and mediaAdded.
+        camera.on('objectAdded', () => {})
+        // @ts-expect-error A named event passes nothing to its handler.
+        camera.on('mediaAdded', (item: MediaItem) => void item)
+        // @ts-expect-error Battery power sources are a closed set.
+        const invented: Battery['powerSource'] = 'solar'
+        void [cards, media, preview, download, battery, clock, info, listMediaAvailability, invented]
+        // Video: recording returns the confirmed clip; video settings take their codec names.
+        const started: Promise<void> = camera.startRecording()
+        const clip: Promise<Clip> = camera.stopRecording()
+        clip.then(finished => { const name: string = finished.name; const id: string = finished.mediaId; void [name, id] })
+        // @ts-expect-error startRecording takes no options; Slate prepares the camera itself.
+        camera.startRecording({ mode: 'movie' })
+        // @ts-expect-error stopRecording resolves to the clip, not a bare acknowledgement.
+        const stopAcknowledged: Promise<void> = camera.stopRecording()
+        // @ts-expect-error The recording state is a closed set.
+        const inventedState: CameraRecordingState = 'paused'
+        const frameRate: Promise<FrameRate> = camera.setFrameRate('24p')
+        const videoFormat: Promise<VideoFormat> = camera.getVideoFormat()
+        camera.setVideoFormat('XAVC S 4K')
+        camera.setVideoFormat('4K 23.98 fps · MP4 · IPB (Standard)')
+        camera.setVideoQuality('150M 4:2:0 10-bit')
+        const audio: Promise<AudioRecording> = camera.setAudioRecording('Off')
+        sdk.setFrameRate('60p')
+        // @ts-expect-error A frame rate is a codec name such as 24p, not a number.
+        camera.setFrameRate(24)
+        // @ts-expect-error A typed video setter never takes a plain string.
+        camera.setVideoQuality(anyString)
+        // @ts-expect-error Movie sound is On or Off, not a vendor's own word.
+        camera.setAudioRecording('auto')
+        // @ts-expect-error The old Sony/Canon names are search aliases, not control ids.
+        camera.setControl('movieFormat', 'XAVC S 4K')
+        const clipErrors = [CameraClipNotFoundError]
+        // Zoom and live view: millimetres, named directions and speeds, canonical setting values.
+        const landed: Promise<number> = camera.zoomTo(35)
+        camera.startZoom('in', {speed: 'slow'})
+        camera.startZoom('out', {speed: 'fast'})
+        const stopped: Promise<void> = camera.stopZoom()
+        // @ts-expect-error A focal length is a number of millimetres, not text.
+        camera.zoomTo('35mm')
+        // @ts-expect-error Zoom directions are in and out, not a vendor's wide and tele.
+        camera.startZoom('tele', {speed: 'fast'})
+        // @ts-expect-error Zoom speeds are named, never motor steps.
+        camera.startZoom('in', {speed: 3})
+        // @ts-expect-error startZoom always names its speed.
+        camera.startZoom('in')
+        const frame: Promise<LiveViewFrame> = camera.getLiveViewFrame({overlay: true})
+        camera.getLiveViewFrame().then(({jpeg, focusFrames, overlay}) => {
+            const picture: Uint8Array = jpeg
+            const frames: FocusFrame[] = focusFrames
+            const display: Uint8Array | undefined = overlay?.png
+            void [picture, frames, display]
+        })
+        // @ts-expect-error The overlay option is a boolean.
+        camera.getLiveViewFrame({overlay: 'on'})
+        // @ts-expect-error Vendor live-view fields are not part of the frame.
+        camera.getLiveViewFrame().then(frame => frame.sonyFocalFrames)
+        capabilities.then(({lens}) => { const reported: CameraLens | undefined = lens; void reported })
+        const zoomSetting: Promise<DigitalZoom> = camera.setDigitalZoom('Clear Image Zoom')
+        const quality: Promise<LiveViewQuality> = camera.getLiveViewQuality()
+        camera.setLiveViewQuality('Low')
+        sdk.setDigitalZoom('Off')
+        // @ts-expect-error Sony's codec word maps to the canonical 'Off'.
+        camera.setDigitalZoom('Optical Zoom Only')
+        // @ts-expect-error Live-view quality is High or Low, not Sony's HIGH.
+        camera.setLiveViewQuality('HIGH')
+        // @ts-expect-error A typed setter never takes a plain string.
+        camera.setLiveViewQuality(anyString)
+        const errors = [CameraRefusedError, CameraUnsupportedError, CameraOutcomeUnknownError]
+        void [started, clip, stopAcknowledged, inventedState, frameRate, videoFormat, audio, clipErrors]
+        void [device, capabilities, exposure, observed, recording, exposureSeconds, resolveCameraControl, native, sdk,
+            confirmedShutter, currentShutter, noPlainStringSetters, errors, confirmedAperture, currentIso, confirmedMode,
+            confirmedCompensation, confirmedMetering, confirmedWhiteBalance, currentKelvin, look, profile, mode, drive,
+            focused, nudged, focusMode, focusArea, focusedFlag, cardPhoto, computerPhoto, photoFormat, rawCompression,
+            landed, stopped, frame, zoomSetting, quality,
+            discovered, opened, information, closed, bluetooth, mount, benchmark, rawIdentity, RootSonyCamera,
+            RootSonyWifiCamera, rootProtocolSession]
     `
     for (const extension of ['ts', 'cts']) {
         writeFileSync(join(isolated, 'camera.' + extension), consumer)
@@ -180,7 +506,8 @@ try {
         ['root', join(import.meta.dirname, '../../../README.md')],
         ['slate', join(import.meta.dirname, '../README.md')],
         ['quickstart', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/quickstart.mdx')],
-        ['vendor-features', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/vendor-features.mdx')],
+        ['feature-compatibility', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/feature-compatibility.mdx')],
+        ['controls', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/controls.mdx')],
         ['ptp-ip', join(import.meta.dirname, '../../../apps/docs/slate/getting_started/ptp-ip.mdx')],
     ] as const) {
         const markdown = readFileSync(path, 'utf8')
@@ -242,7 +569,7 @@ try {
             `if(api.parseExposureTime('180°').kind!=='angle')throw Error('Packed exposure API is missing');`],
             { cwd: isolated, stdio: 'inherit' })
         execFileSync('node', [...(format === 'esm' ? ['--input-type=module'] : []), '-e',
-            `const api=${load};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
+            `const api=${load.replace("slate'", "slate/protocol'")};(async()=>{const log=console.log;const factory=new api.TransportFactory();` +
             `await factory.createUSBTransport();await factory.createIPTransport({address:'127.0.0.1'});` +
             `if((await factory.create(api.TransportType.USB)).getType()!=='usb')throw Error('Wrong USB dispatch');` +
             `if((await factory.create(api.TransportType.IP,{address:'127.0.0.1'})).getType()!=='ip')throw Error('Wrong IP dispatch');` +
@@ -273,7 +600,13 @@ try {
 // under Bun/Vitest, which can accept a mislabeled CommonJS file.
 for(const format of ['esm','commonjs']){
     const load=format==='esm'?"const api=await import('@darkgrade/slate')":"const api=require('@darkgrade/slate')"
-    const check=load+"; for(const name of ['Camera','configureSlateTelemetry','VideoTake','optimiseShot','readCameraPower','readNikonRecordingStatus'])if(typeof api[name]!=='function')throw new Error(name+' is missing');console.log('Built '+"+JSON.stringify(format)+"+' exports passed')"
+    const loadProtocol=format==='esm'?"const protocol=await import('@darkgrade/slate/protocol')":"const protocol=require('@darkgrade/slate/protocol')"
+    const check=load+";"+loadProtocol+"; for(const name of ['Camera','configureSlateTelemetry','VideoTake','optimiseShot','readCameraPower','runBenchmark'])if(typeof api[name]!=='function')throw new Error(name+' is missing');"+
+        "for(const name of ['protocolSession','GenericCamera','SonyCamera','CanonCamera','NikonCamera','SonyWifiCamera','readNikonRecordingStatus','compareSonyModels','NikonBluetoothRemote','sonyPropertyRegistry'])if(!protocol[name])throw new Error('/protocol '+name+' is missing');"+
+        "const vendorNamed=Object.keys(api).filter(name=>/sony|canon|nikon|fujifilm|panasonic|olympus|leica|sigma/i.test(name)||['GenericCamera','VendorExtensionCamera','protocolSession'].includes(name));if(vendorNamed.length)throw new Error('Main entry exports protocol names: '+vendorNamed.join(', '));"+
+        "const camera=new api.Camera();if(protocol.protocolSession(camera)!==protocol.protocolSession(camera)||!(protocol.protocolSession(camera).driver instanceof protocol.GenericCamera))throw new Error('protocolSession must share the Camera driver');"+
+        "let refused=false;try{protocol.protocolSession({})}catch(error){refused=error instanceof TypeError}if(!refused||'protocolAccess' in protocol)throw new Error('protocolSession must refuse anything but a Camera');"+
+        "console.log('Built '+"+JSON.stringify(format)+"+' exports passed')"
     execFileSync('node',[...(format==='esm'?['--input-type=module']:[]),'-e',check],{stdio:'inherit'})
 }
 

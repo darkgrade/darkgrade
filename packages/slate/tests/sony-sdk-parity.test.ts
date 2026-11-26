@@ -1,6 +1,6 @@
-import {performSonySdkControl} from '@vendors/sony/sdk-controls'
-import { SonyWifiCamera, type SonySdkBridge } from '@vendors/sony/sdk-camera'
-import { describe, expect, it } from 'vitest'
+import { performSonySdkControl, sonySdkControls } from '@vendors/sony/sdk-controls'
+import { SonyWifiCamera, type SonySdkBridge, type SonySdkProperty } from '@vendors/sony/sdk-camera'
+import { describe, expect, it, vi } from 'vitest'
 
 function sdkCamera(ignoreFirstPoint = false) {
     const properties = [
@@ -92,9 +92,9 @@ describe('Sony Wi-Fi USB control parity', () => {
             ['set-shutter-speed', '1/125', 259, String((1 << 16) | 125)],
             ['set-focus-mode', 'AF-S', 265, '2'],
             ['set-white-balance', 'Daylight', 264, '17'],
-            ['set-image-format', 'RAW + JPEG', 262, '3'],
+            ['set-image-format', 'RAW+JPEG', 262, '3'],
             ['set-jpeg-quality', 'Extra Fine', 263, '4'],
-            ['set-image-size', 'M', 272, '2'],
+            ['set-image-size', 'Medium', 272, '2'],
             ['set-aspect-ratio', '16:9', 273, '2'],
             ['set-movie-format', 'XAVC S 4K', 295, '2'],
             ['set-zoom-setting', 'Clear Image Zoom', 293, '3'],
@@ -204,4 +204,135 @@ it('a video shutter angle is usable exposure control even when shutter speed is 
  expect(manual.controls.shutterSpeed.value).toBe('180°');expect(manual.exposureModeVerified).toBe(true)
  await performSonySdkControl(f.camera,'set-shutter-speed','90°')
  expect(f.properties.find(p=>p.code===378).value).toBe('90000')
+})
+it('uses the advertised packed SDK value for an extended ISO label', async () => {
+    let value = '800'
+    const properties = () => [{ code: 260, value, writable: true, valueForm: 'enum', allowedValues: ['800', '268435506'] }] as SonySdkProperty[]
+    const camera = {
+        getSonyPropertyStates: async () => properties(),
+        setSonySetting: async (_: number, requested: bigint) => { value = String(requested); return {} },
+    } as unknown as SonyWifiCamera
+    expect(sonySdkControls(properties()).iso?.allowedValues).toEqual(['800', '50 (extended)'])
+    await performSonySdkControl(camera, 'set-iso', '50 (extended)')
+    expect(value).toBe('268435506')
+    expect(sonySdkControls(properties()).iso?.value).toBe('50 (extended)')
+})
+
+function stillCaptureFixture(movie = false) {
+    const values: Record<string, string> = {
+        StillImageStoreDestination: '1', PriorityKeySettings: '1',
+        ExposureProgramMode: movie ? '32853' : '1', FileType: '1', RAW_J_PC_Save_Image: '0', FocusMode: '3',
+    }
+    const request = vi.fn(async (command: Record<string, string>) =>
+        command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {})
+    const camera = new SonyWifiCamera({ request, close: async () => {} })
+    vi.spyOn(camera, 'getSonyProperty').mockImplementation(async (name: any) => ({
+        name, code: 261, type: 3, value: values[name]!, writable: true,
+        allowedValues: name === 'ExposureProgramMode'
+            ? values.PriorityKeySettings === '2' ? ['1', '32853'] : ['32853'] : undefined,
+    }))
+    vi.spyOn(camera, 'setSonySetting').mockImplementation(async (name: any, value: any) => {
+        values[name] = String(value)
+        return { verified: true } as any
+    })
+    return { camera, values, request }
+}
+
+describe('Sony SDK still capture', () => {
+    it('honors explicit card delivery from a host-only configuration and restores that configuration', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = stillCaptureFixture()
+            await camera.connectUsb('test')
+            request.mockImplementation(async command => {
+                if (command.cmd === 'command') expect(values.StillImageStoreDestination).toBe('3')
+                return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
+            })
+            const pending = camera.captureAndDownload('/tmp/photos', {destination:'card'})
+            await vi.runAllTimersAsync(); await pending
+            expect(values.StillImageStoreDestination).toBe('1')
+        } finally { vi.useRealTimers() }
+    })
+    it('holds S1 through S2 and restores autofocus after an explicit focus bypass', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = stillCaptureFixture()
+            await camera.connectUsb('test')
+            request.mockImplementation(async command => {
+                if (command.cmd === 'command') expect(values.FocusMode).toBe('1')
+                return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
+            })
+            const pending = camera.captureAndDownload('/tmp/photos', { autofocus: false })
+            await vi.runAllTimersAsync(); await pending
+            expect(values.FocusMode).toBe('3')
+            expect(request.mock.calls.map(([command]) => command).filter(command => command.cmd === 'set' || command.cmd === 'command'))
+                .toEqual([{cmd:'set',code:'1',type:'2',value:'2'},{cmd:'command',id:'0',param:'1'},
+                    {cmd:'command',id:'0',param:'0'},{cmd:'set',code:'1',type:'2',value:'1'}])
+        } finally { vi.useRealTimers() }
+    })
+    it('does not treat a still Auto exposure program as a movie program', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values } = stillCaptureFixture()
+            values.ExposureProgramMode = '32768'
+            await camera.connectUsb('test')
+            const pending = camera.captureAndDownload('/tmp/photos')
+            await vi.runAllTimersAsync(); await pending
+            expect(camera.setSonySetting).not.toHaveBeenCalledWith('ExposureProgramMode', expect.anything())
+            expect(values.ExposureProgramMode).toBe('32768')
+        } finally { vi.useRealTimers() }
+    })
+    it('selects an advertised still mode after acquiring PC priority and restores the movie mode', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = stillCaptureFixture(true)
+            await camera.connectUsb('test')
+            request.mockImplementation(async command => {
+                if (command.cmd === 'command') expect(values.ExposureProgramMode).toBe('1')
+                return command.cmd === 'wait_download' ? { files: [{ filename: 'fresh.jpg' }] } : {}
+            })
+            const pending = camera.captureAndDownload('/tmp/photos')
+            await vi.runAllTimersAsync()
+            expect(await pending).toMatchObject({ files: [{ filename: 'fresh.jpg' }] })
+            expect(values).toMatchObject({ ExposureProgramMode: '32853', PriorityKeySettings: '1', StillImageStoreDestination: '1' })
+        } finally { vi.useRealTimers() }
+    })
+
+    it('preserves capture failure when restoration also fails and attempts every restoration', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = stillCaptureFixture(true)
+            await camera.connectUsb('test')
+            request.mockImplementation(async command => {
+                if (command.cmd === 'wait_download') throw new Error('No new photo')
+                return {}
+            })
+            camera.setSonySetting = vi.fn(async (name: any, value: any) => {
+                if (name === 'ExposureProgramMode' && String(value) === '32853') throw new Error('Movie restore rejected')
+                values[name] = String(value)
+                return { verified: true } as any
+            })
+            const pending = expect(camera.captureAndDownload('/tmp/photos')).rejects.toThrow(/No new photo.*Movie restore rejected/)
+            await vi.runAllTimersAsync()
+            await pending
+            expect(values.PriorityKeySettings).toBe('1')
+        } finally { vi.useRealTimers() }
+    })
+
+    it('restores the original mode even when changing mode fails after the camera accepts it', async () => {
+        vi.useFakeTimers()
+        try {
+            const { camera, values, request } = stillCaptureFixture(true)
+            await camera.connectUsb('test')
+            const set = camera.setSonySetting
+            camera.setSonySetting = vi.fn(async (name: any, value: any) => {
+                const result = await set(name, value)
+                if (name === 'ExposureProgramMode' && String(value) === '1') throw new Error('Readback timed out')
+                return result
+            })
+            await expect(camera.captureAndDownload('/tmp/photos')).rejects.toThrow('Readback timed out')
+            expect(values.ExposureProgramMode).toBe('32853')
+            expect(request.mock.calls.some(([command]) => command.cmd === 'command')).toBe(false)
+        } finally { vi.useRealTimers() }
+    })
 })

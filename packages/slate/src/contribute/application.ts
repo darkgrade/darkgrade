@@ -6,17 +6,16 @@ import {
     validateBatch,
     type DiagnosticBatch,
 } from '@contribute/batch'
-import { observeTransport, type CameraTransport } from '@contribute/observe'
+import { environmentDisabled, newContribution, observeTransport, type CameraTransport } from '@contribute/observe'
 import {
-    DISCLOSURE,
     MAXIMUM_BODY_BYTES,
     MAXIMUM_ENTRIES,
-    SCHEMA,
     validateContribution,
     type CameraContext,
     type Contribution,
     type DiagnosticEntry,
 } from '@contribute/schema'
+import { concatenateBytes } from '@ptp/datasets/codecs/byte-sequence'
 
 export interface InstallationState {
     enabled: boolean
@@ -47,6 +46,10 @@ export interface ApplicationDiagnosticsOptions {
     requestTimeoutMilliseconds?: number
 }
 type FlushResult = 'sent' | 'empty' | 'disabled' | 'retry' | 'rejected'
+const STATE_KEYS = [
+    ...['enabled', 'noticeVersion', 'installKey', 'collectorOrigin', 'withdrawalPending'],
+    ...['installationId', 'enrollmentKey', 'registrationPending'],
+]
 const keyPattern = /^dgi_[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.[A-Za-z0-9_-]{43}$/
 export function validateInstallationState(state: unknown): asserts state is InstallationState {
     const value = state as InstallationState
@@ -54,19 +57,7 @@ export function validateInstallationState(state: unknown): asserts state is Inst
         !value ||
         typeof value !== 'object' ||
         Array.isArray(value) ||
-        Object.keys(value).some(
-            key =>
-                ![
-                    'enabled',
-                    'noticeVersion',
-                    'installKey',
-                    'collectorOrigin',
-                    'withdrawalPending',
-                    'installationId',
-                    'enrollmentKey',
-                    'registrationPending',
-                ].includes(key)
-        ) ||
+        Object.keys(value).some(key => !STATE_KEYS.includes(key)) ||
         typeof value.enabled !== 'boolean' ||
         typeof value.noticeVersion !== 'string' ||
         typeof value.withdrawalPending !== 'boolean' ||
@@ -79,9 +70,28 @@ export function validateInstallationState(state: unknown): asserts state is Inst
     )
         throw new Error('Invalid diagnostics settings; restore preferences before enabling collection')
 }
-function environmentDisabled() {
-    const environment = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-    return environment?.DARKGRADE_CONTRIBUTIONS === '0' || environment?.DO_NOT_TRACK === '1'
+/** Protocol evidence an older collector validates; later types are Telemetry's request and response detail. */
+const LEGACY_PROTOCOL_TYPES = new Set(['inventory', 'unknown', 'state-snapshot', 'property-write', 'descriptor', 'property-value', 'unrecognized-value', 'benchmark'])
+/** An entry as an older collector accepts it, or undefined when it has nothing such a collector knows. */
+function legacyEntry(entry: DiagnosticEntry): DiagnosticEntry | undefined {
+    if (entry.kind === 'call' || entry.kind === 'attach') return
+    if (entry.protocol && !LEGACY_PROTOCOL_TYPES.has(entry.protocol.type)) return
+    const { callId: _callId, commandCode: _commandCode, ...rest } = entry
+    if (rest.protocol?.type !== 'property-write') return rest
+    const { prior: _prior, priorAgeMilliseconds: _age, ...protocol } = rest.protocol
+    return { ...rest, protocol }
+}
+/**
+ * The batch as a collector older than public-call records, command codes and request evidence
+ * accepts it, or undefined when it has none of them.
+ */
+function legacyBatch(batch: DiagnosticBatch): DiagnosticBatch | undefined {
+    const contributions = batch.contributions.map(camera => ({
+        ...camera,
+        entries: camera.entries.flatMap(entry => legacyEntry(entry) ?? []),
+    }))
+    if (JSON.stringify(contributions) === JSON.stringify(batch.contributions)) return
+    return { ...batch, contributions: contributions.filter(camera => camera.entries.length || camera.droppedEntries) }
 }
 
 /** Create once per application process and observe every camera through this shared queue. */
@@ -91,15 +101,9 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         throw new Error('A credential-free HTTPS collector origin is required')
     const interval = options.flushIntervalMilliseconds ?? 30_000
     const timeout = options.requestTimeoutMilliseconds ?? 10_000
-    if (
-        !Number.isSafeInteger(interval) ||
-        interval < 1000 ||
-        interval > 3_600_000 ||
-        !Number.isSafeInteger(timeout) ||
-        timeout < 1 ||
-        timeout > 60_000
-    )
-        throw new Error('Invalid diagnostics timing')
+    const within = (value: number, minimum: number, maximum: number) =>
+        Number.isSafeInteger(value) && value >= minimum && value <= maximum
+    if (!within(interval, 1000, 3_600_000) || !within(timeout, 1, 60_000)) throw new Error('Invalid diagnostics timing')
     const request = options.fetch ?? fetch
     const saved = await options.store.read()
     if (saved !== null) validateInstallationState(saved)
@@ -122,6 +126,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         dropped = 0,
         retryAt = 0
     let storageError = false,
+        legacyCollector = false,
         lastError: string | null = null
     const queue = new Map<string, Contribution>()
     let pending: DiagnosticBatch | undefined
@@ -129,6 +134,11 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
     let withdrawal: Promise<void> | undefined
     let writes = Promise.resolve()
     const requests = new Set<AbortController>()
+    const adoptSaved = (latest: InstallationState, overrides: Partial<InstallationState> = {}) => {
+        if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
+            throw new Error('Collector changed')
+        state = { ...latest, collectorOrigin: url.origin, ...overrides }
+    }
     const persist = (value = state) => {
         const snapshot = structuredClone(value)
         const write = writes.catch(() => {}).then(() => options.store.write(snapshot))
@@ -199,13 +209,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 await reader.cancel().catch(() => {})
                 reader.releaseLock()
             }
-            const bytes = new Uint8Array(length)
-            let offset = 0
-            for (const chunk of chunks) {
-                bytes.set(chunk, offset)
-                offset += chunk.length
-            }
-            const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(concatenateBytes(chunks))
             let data: any
             try {
                 data = JSON.parse(text)
@@ -258,13 +262,12 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 const latest = await options.store.read()
                 if (latest) {
                     validateInstallationState(latest)
-                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
-                        throw new Error('Collector changed')
-                    if (latest.installationId !== state.installationId) {
+                    const sameInstallation = latest.installationId === state.installationId
+                    adoptSaved(latest)
+                    if (!sameInstallation) {
                         epoch++
                         clear()
                     }
-                    state = { ...latest, collectorOrigin: url.origin }
                 }
             } catch {
                 storageError = true
@@ -285,6 +288,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             count = 0
             queueBytes = 0
         }
+        if (legacyCollector) pending = legacyBatch(pending) ?? pending
         const batch = pending
         try {
             validateBatch(batch)
@@ -307,6 +311,14 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 return 'disabled'
             }
             if ([400, 404, 405, 409, 413, 415, 422].includes(response.status)) {
+                // A collector older than public-call records, command codes and request evidence
+                // rejects the whole batch: send what it knows again, and leave the rest out from now on.
+                const legacy = legacyCollector ? undefined : legacyBatch(batch)
+                if (legacy) {
+                    legacyCollector = true
+                    pending = legacy
+                    return send()
+                }
                 pending = undefined
                 lastError = 'Collector rejected this diagnostic batch'
                 return 'rejected'
@@ -414,14 +426,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         }
         let contribution = queue.get(group)
         if (!contribution) {
-            contribution = {
-                schema: SCHEMA,
-                disclosure: DISCLOSURE,
-                id: crypto.randomUUID(),
-                camera,
-                entries: [],
-                droppedEntries: 0,
-            }
+            contribution = newContribution(camera, [])
             queue.set(group, contribution)
         }
         contribution.entries.push(entry)
@@ -442,14 +447,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         if (!source.entries.length && !source.droppedEntries) queue.delete(JSON.stringify(unidentified))
         let target = queue.get(group)
         if (!target) {
-            target = {
-                schema: SCHEMA,
-                disclosure: DISCLOSURE,
-                id: crypto.randomUUID(),
-                camera: structuredClone(camera),
-                entries: [],
-                droppedEntries: 0,
-            }
+            target = newContribution(structuredClone(camera), [])
             queue.set(group, target)
             queueBytes += new TextEncoder().encode(group).length + 512
         }
@@ -470,27 +468,17 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         }),
         record(camera: CameraContext, entry: DiagnosticEntry) {
             if (closed || storageError) return
-            validateContribution({
-                schema: SCHEMA,
-                disclosure: DISCLOSURE,
-                id: crypto.randomUUID(),
-                camera,
-                entries: [entry],
-                droppedEntries: 0,
-            })
+            validateContribution(newContribution(camera, [entry]))
             append(structuredClone(camera), structuredClone(entry))
         },
-        observe<Device, Kind extends string>(source: CameraTransport<Device, Kind>, context: CameraContext) {
+        observe<Device, Kind extends string>(
+            source: CameraTransport<Device, Kind>,
+            context: CameraContext,
+            options: { callId?: () => string | undefined } = {}
+        ) {
             const checked = (value: CameraContext) => {
                 const camera = structuredClone(value)
-                validateContribution({
-                    schema: SCHEMA,
-                    disclosure: DISCLOSURE,
-                    id: crypto.randomUUID(),
-                    camera,
-                    entries: [],
-                    droppedEntries: 0,
-                })
+                validateContribution(newContribution(camera, []))
                 return camera
             }
             let camera = checked(context)
@@ -499,19 +487,13 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 () => !closed && !storageError,
                 (entry: DiagnosticEntry) => append(camera, entry),
                 () => epoch,
-                () => camera
+                () => camera,
+                options.callId
             )
             return {
                 ...observer,
                 record: (entry: DiagnosticEntry) => {
-                    validateContribution({
-                        schema: SCHEMA,
-                        disclosure: DISCLOSURE,
-                        id: crypto.randomUUID(),
-                        camera,
-                        entries: [entry],
-                        droppedEntries: 0,
-                    })
+                    validateContribution(newContribution(camera, [entry]))
                     observer.record(entry)
                 },
                 identify: (context: CameraContext) => {
@@ -530,11 +512,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             if (options.store.current) {
                 await writes.catch(() => {})
                 const latest = await options.store.read()
-                if (latest) {
-                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
-                        throw new Error('Collector changed')
-                    state = { ...latest, collectorOrigin: url.origin }
-                }
+                if (latest) adoptSaved(latest)
             }
             if (value && state.withdrawalPending) throw new Error('Finish withdrawal before enrolling again')
             const generation = ++epoch
@@ -562,11 +540,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 } catch {
                     /* Keep the in-memory key if disk state is damaged. */
                 }
-                if (latest) {
-                    if ((latest.installKey || latest.registrationPending) && latest.collectorOrigin !== url.origin)
-                        throw new Error('Collector changed')
-                    state = { ...latest, collectorOrigin: url.origin, enabled: false, withdrawalPending: true }
-                }
+                if (latest) adoptSaved(latest, { enabled: false, withdrawalPending: true })
             }
             // A local storage failure must not prevent revoking the server-side credential.
             let failure: unknown

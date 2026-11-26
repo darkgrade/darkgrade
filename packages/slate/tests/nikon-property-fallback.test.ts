@@ -1,22 +1,11 @@
-import { NikonCamera } from '@camera/nikon-camera'
-import { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
-import type { TransportInterface } from '@transport/interfaces/transport.interface'
+import { nikonCamera as cameraFixture } from '@tests/fixtures/nikon'
 import { describe, expect, it, vi } from 'vitest'
-
-function cameraFixture() {
-    return new NikonCamera(
-        { isLittleEndian: () => true, on: () => undefined } as unknown as TransportInterface,
-        new Logger({ captureConsole: false, renderInTerminal: false })
-    )
-}
 
 describe('Nikon standard property fallback', () => {
     it('rejects a response describing a different property', async () => {
         const camera = cameraFixture()
-        vi.spyOn(camera, 'send').mockResolvedValue({
-            code: 0x2001, data: { devicePropertyCode: 0x5007, currentValueDecoded: '200' },
-        } as any)
+        vi.spyOn(camera, 'send').mockResolvedValue({ code: 0x2001, data: { devicePropertyCode: 0x5007, currentValueDecoded: '200' } } as any)
         await expect(camera.get(camera.registry.properties.ExposureIndex)).rejects.toThrow('different property')
     })
     it('reads and writes a standard property when the body refuses only the extension operation', async () => {

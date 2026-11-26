@@ -1,77 +1,60 @@
-import { CanonCamera } from '@camera/canon-camera'
-import type { CameraRecordingState } from '@camera/controls'
-import type { Camera } from '@camera/index'
-import { readCameraObjectHandles, readCameraStorages } from '@camera/storage'
-import { openCanonRecordingMode } from '@vendors/canon/recording-mode'
-import { readNikonObjectSize } from '@vendors/nikon/object-size'
+import { protocolAccess } from '@camera/protocol-session'
+import { CameraClipNotFoundError } from '@camera/errors'
+import { readCameraObjectHandles, readCameraStorages } from '@vendors/generic/storage'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
-import { readSonyPtpRecordingState } from '@vendors/sony/ptp-video-recording'
 import type { TakeMedia } from '@workflows/video-take'
 
-/** Reuse native movie observations; missing values never prove that recording stopped. */
-export async function readCameraRecordingState(camera: Camera): Promise<CameraRecordingState> {
-    const driver = camera.getInstance()
-    const vendor = driver.vendorId
-    if (vendor === 0x054c) {
-        const state = await readSonyPtpRecordingState(camera)
-        // Native 2 is recording failure and 3 is interval-recording waiting.
-        // Neither proves idle or a start/stop transition.
-        return state === 0 ? 'idle' : state === 1 ? 'recording' : 'unknown'
-    }
-    if (vendor === 0x04b0) {
-        const state = await readNikonRecordingStatus(camera)
-        return !state ? 'unknown' : state.recording ? 'recording' : state.bufferedImages ? 'stopping' : 'idle'
-    }
-    if (driver instanceof CanonCamera) {
-        await driver.refreshEventProperties()
-        const state = driver.listPropertyStates().find(state => state.name === 'CanonRecordingDestination')?.value
-        return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
-    }
-    return 'unknown'
-}
 const sleep = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
-/** Persistent PTP movie recording, final-file discovery and bounded-memory transfer. */
+
+/** Camera.stopRecording confirms the stop first; a clip it did not find is looked for again by the recorder. */
+export async function stopCameraRecording(camera: { stopRecording(): Promise<unknown> }): Promise<void> {
+    try {
+        await camera.stopRecording()
+    } catch (error) {
+        if (!(error instanceof CameraClipNotFoundError)) throw error
+    }
+}
+
+/**
+ * Persistent PTP movie recording, final-file discovery and bounded-memory transfer. Camera's
+ * startRecording prepares the recording mode and its stopRecording restores it.
+ */
 export class UsbVideoRecording {
     private baseline = new Set<number>()
     private attempted = false
-    private movieMode?: Awaited<ReturnType<typeof openCanonRecordingMode>>
     constructor(
         private readonly camera: any,
         private readonly vendor: 'canon' | 'nikon'
     ) {}
     private get operations() {
-        return this.camera.getInstance().registry.operations
+        return protocolAccess(this.camera).driver.registry.operations
     }
     private handles() {
         return readCameraObjectHandles(this.camera)
+    }
+    /** Nikon reports sizes over 4 GiB through its own object-size property. */
+    private size(handle: number, reported: number) {
+        return this.vendor === 'nikon' ? protocolAccess(this.camera).driver.fullObjectSize(handle, reported) : reported
     }
     async prepare() {
         const storages = await readCameraStorages(this.camera)
         if (!storages.some(card => card.writable && card.freeBytes > 0))
             throw new Error('Insert a writable memory card with free space before recording')
-        if (this.vendor === 'canon') {
-            const states = await this.camera.getCanonPropertyStates()
-            if (states.some((state: any) => state.name === 'CanonRecordingDestination' && state.value === 'CARD'))
-                throw new Error('This camera is already recording')
-        }
+        if (this.vendor === 'canon' && (await this.camera.getRecordingState()) === 'recording')
+            throw new Error('This camera is already recording')
         this.baseline = await this.handles()
     }
     async start() {
-        if (this.vendor === 'canon') this.movieMode = await openCanonRecordingMode(this.camera)
         this.attempted = true
         await this.camera.startRecording()
-        const states = this.vendor === 'canon' ? await this.camera.getCanonPropertyStates() : []
-        const confirmed =
-            this.vendor === 'nikon'
-                ? (await readNikonRecordingStatus(this.camera))?.recording === true
-                : states.some((state: any) => state.name === 'CanonRecordingDestination' && state.value === 'CARD')
+        const nikon = this.vendor === 'nikon'
+        const confirmed = nikon
+            ? (await readNikonRecordingStatus(this.camera))?.recording === true
+            : (await this.camera.getRecordingState()) === 'recording'
+        const reported = nikon ? 'Nikon reports active movie recording' : 'Camera reports card recording'
         return {
             recordingConfirmed: confirmed,
-            evidence: confirmed
-                ? this.vendor === 'nikon'
-                    ? 'Nikon reports active movie recording'
-                    : 'Camera reports card recording'
-                : 'Movie-start command acknowledged; recording-state telemetry unavailable',
+            evidence: confirmed ? reported : 'Movie-start command acknowledged; recording-state telemetry unavailable',
         }
     }
     getRecoveryState() {
@@ -90,7 +73,7 @@ export class UsbVideoRecording {
             this.attempted = true
             return this.stop()
         }
-        await this.camera.stopRecording()
+        await stopCameraRecording(this.camera)
         return {
             stopped: true,
             media: [] as TakeMedia[],
@@ -100,7 +83,7 @@ export class UsbVideoRecording {
     }
     async stop() {
         if (!this.attempted) return { stopped: true, media: [] as TakeMedia[] }
-        await this.camera.stopRecording()
+        await stopCameraRecording(this.camera)
         this.attempted = false
         const deadline = Date.now() + 15000
         let media: TakeMedia[] = []
@@ -110,13 +93,10 @@ export class UsbVideoRecording {
                 media = []
                 for (const handle of await this.handles()) {
                     if (this.baseline.has(handle)) continue
-                    const result = await this.camera.send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
+                    const result = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle }),
                         info = result.data
                     const reported = Number(info?.objectCompressedSize)
-                    const bytes =
-                        result.code === 0x2001 && this.vendor === 'nikon'
-                            ? await readNikonObjectSize(this.camera, handle, reported)
-                            : reported
+                    const bytes = result.code === 0x2001 ? await this.size(handle, reported) : reported
                     if (
                         result.code === 0x2001 &&
                         Number.isSafeInteger(bytes) &&
@@ -131,19 +111,8 @@ export class UsbVideoRecording {
             }
             await sleep(300)
         } while (Date.now() < deadline)
-        await this.movieMode?.restore()
-        this.movieMode = undefined
-        return {
-            stopped: true,
-            media,
-            ...(!media.length
-                ? {
-                      warning:
-                          'Recording stopped, but a new card movie is not yet available. Originals remain on the card.' +
-                          (lastIndexError ? ' ' + lastIndexError : ''),
-                  }
-                : {}),
-        }
+        const warning = 'Recording stopped, but a new card movie is not yet available. Originals remain on the card.'
+        return { stopped: true, media, ...(!media.length && { warning: warning + (lastIndexError ? ' ' + lastIndexError : '') }) }
     }
     async transfer(
         file: TakeMedia,
@@ -151,41 +120,30 @@ export class UsbVideoRecording {
         progress: (bytes: number, total: number) => void
     ) {
         const handle = Number(file.id),
-            fresh = await this.camera.send(this.operations.GetObjectInfo, { ObjectHandle: handle })
-        if (fresh.code !== 0x2001 || fresh.data?.filename !== file.filename)
+            fresh = await protocolAccess(this.camera).send(this.operations.GetObjectInfo, { ObjectHandle: handle })
+        if (
+            fresh.code !== 0x2001 ||
+            fresh.data?.filename !== file.filename ||
+            (await this.size(handle, Number(fresh.data?.objectCompressedSize))) !== file.bytes
+        )
             throw new Error('Camera file changed; transfer refused')
-        const reported = Number(fresh.data?.objectCompressedSize)
-        const freshSize = this.vendor === 'nikon' ? await readNikonObjectSize(this.camera, handle, reported) : reported
-        if (freshSize !== file.bytes) throw new Error('Camera file changed; transfer refused')
         if (!Number.isSafeInteger(file.bytes) || file.bytes <= 0) throw new Error('Invalid camera file size')
         const extended = this.vendor === 'nikon' && this.operations.GetPartialObjectEx
         if (!extended && file.bytes > 0xffffffff)
-            throw new Error(
-                'This camera transfer path cannot safely address files over 4 GiB; copy this original from its card'
-            )
+            throw new Error('This camera transfer path cannot safely address files over 4 GiB; copy this original from its card')
         let offset = 0
         while (offset < file.bytes) {
             const count = Math.min(2 * 1024 * 1024, file.bytes - offset)
-            const response = await this.camera.send(
+            const response = await protocolAccess(this.camera).send(
                 extended || this.operations.GetPartialObject,
                 extended
-                    ? {
-                          ObjectHandle: handle,
-                          OffsetLower: offset >>> 0,
-                          OffsetUpper: Math.floor(offset / 0x100000000),
-                          MaxSizeLower: count,
-                          MaxSizeUpper: 0,
-                      }
+                    ? { ObjectHandle: handle, OffsetLower: offset >>> 0, OffsetUpper: Math.floor(offset / 0x100000000), MaxSizeLower: count, MaxSizeUpper: 0 }
                     : { ObjectHandle: handle, Offset: offset, MaxBytes: count },
                 undefined,
                 count + 12
             )
-            if (
-                response.code !== 0x2001 ||
-                !(response.data instanceof Uint8Array) ||
-                !response.data.length ||
-                response.data.length > count
-            )
+            const chunk = response.data
+            if (response.code !== 0x2001 || !(chunk instanceof Uint8Array) || !chunk.length || chunk.length > count)
                 throw new Error('Camera returned an incomplete video chunk')
             await write(response.data)
             offset += response.data.length
@@ -194,6 +152,5 @@ export class UsbVideoRecording {
     }
     async cleanup() {
         if (this.attempted) await this.stop()
-        else await this.movieMode?.restore()
     }
 }

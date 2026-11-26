@@ -1,4 +1,4 @@
-import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@camera/sony-camera'
+import { SONY_CAMERA_BUTTONS, type SonyCameraButton } from '@vendors/sony/sony-camera'
 import { performSonySdkControl, sonySdkCapabilities, sonySdkControlWireValue } from '@vendors/sony/sdk-controls'
 import type { CameraCapabilities, CameraControlId, CameraControlInputs } from '@camera/controls'
 import { matchExposureTime, type ExposureContext, type ExposureTime, type ExposureTimeInput } from '@camera/exposure-time'
@@ -11,6 +11,14 @@ import { SONY_SDK_SETTING_LABELS } from '@vendors/sony/sdk-setting-labels'
 import {repairSonyRecordingIndex} from '@vendors/sony/media-index'
 import { isSonyModelName } from '@vendors/sony/model-name'
 import { isVerifiedFeature } from '@camera/validated-models'
+import { CameraOutcomeUnknownError, CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import { kelvinInput } from '@camera/settings/values'
+import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
+import type { Battery } from '@camera/driver'
+import type { CardStatus } from '@camera/driver'
+import { batteryFromPower } from '@vendors/generic/generic-operations'
+import { normalizeCameraPower } from '@vendors/camera-power'
+import { sonySdkCardStatus } from '@vendors/sony/media'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */
 export interface SonySdkBridge {
@@ -58,30 +66,18 @@ export interface SonySdkProperty {
     choices?: { value: string; label: string }[]
 }
 
+/** SDK names plus the names Slate uses for them; a repeated name keeps its SDK position. */
 const propertyCodes = {
     ...SONY_SDK_NAMED_PROPERTIES,
-    S1: 1,
     Aperture: 256,
     ApertureMode: 310,
     ShutterMode: 311,
     IsoMode: 312,
     ExposureCompensation: 257,
-    ShutterSpeed: 259,
     ISO: 260,
     ExposureProgram: 261,
-    FileType: 262,
     ImageQuality: 263,
-    WhiteBalance: 264,
-    FocusMode: 265,
-    MeteringMode: 266,
-    DriveMode: 270,
-    ImageSize: 272,
-    AspectRatio: 273,
-    FocusArea: 275,
     ColorTemperature: 277,
-    ColorTuningAB: 278,
-    ColorTuningGM: 279,
-    LiveViewDisplayEffect: 280,
     FocusMagnifier: 285,
     FocusOperation: 287,
     AfAreaPosition: 289,
@@ -91,13 +87,8 @@ const propertyCodes = {
     MovieFileFormat: 295,
     MovieRecordingSetting: 296,
     MovieFrameRate: 297,
-    AudioRecording: 411,
     AudioLevel: 412,
-    PictureProfile: 426,
-    CreativeLook: 453,
-    CameraButtonFunction: 563,
     OsdImageMode: 709,
-    RecordingState: 1797,
 } as const
 
 export const SONY_SDK_PROPERTY_CODES = propertyCodes
@@ -114,19 +105,21 @@ function fingerprintKey(value: string): string {
     return normalized
 }
 
-export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentication): void {
-    if (
-        !authentication ||
-        ['host', 'mac', 'username', 'password', 'fingerprint'].some(
-            field => typeof (authentication as unknown as Record<string, unknown>)[field] !== 'string'
-        )
-    )
-        throw new Error('Sony Wi-Fi requires runtime authentication strings')
-    const segments = authentication.host.split('.')
+const MAC_ADDRESS = /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i
+
+/** Throws `missing` unless every field is a string, then checks the camera's IPv4 and MAC addresses. */
+function validateCameraAddress(authentication: object, fields: string[], transport: string, missing: string): void {
+    const record = authentication as Record<string, unknown> | undefined
+    if (!record || fields.some(field => typeof record[field] !== 'string')) throw new Error(missing)
+    const segments = String(record.host).split('.')
     if (segments.length !== 4 || segments.some(segment => !/^\d{1,3}$/.test(segment) || Number(segment) > 255))
-        throw new Error('Sony Wi-Fi requires a valid IPv4 camera address')
-    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
-        throw new Error('Sony Wi-Fi requires the camera MAC address')
+        throw new Error(`${transport} requires a valid IPv4 camera address`)
+    if (!MAC_ADDRESS.test(String(record.mac))) throw new Error(`${transport} requires the camera MAC address`)
+}
+
+export function validateSonyWifiAuthentication(authentication: SonyWifiAuthentication): void {
+    const fields = ['host', 'mac', 'username', 'password', 'fingerprint']
+    validateCameraAddress(authentication, fields, 'Sony Wi-Fi', 'Sony Wi-Fi requires runtime authentication strings')
     if (authentication.model !== undefined && !isSonyModelName(authentication.model))
         throw new Error('Unsupported Sony Wi-Fi camera model')
     if (!authentication.username || !authentication.password || !authentication.fingerprint)
@@ -150,19 +143,10 @@ function numericValue(value: unknown): string {
 }
 
 function validateSonyBluetoothDirectAuthentication(authentication: SonyBluetoothDirectAuthentication): void {
-    if (
-        !authentication ||
-        ['host', 'mac', 'model', 'bluetoothAddress'].some(
-            field => typeof (authentication as unknown as Record<string, unknown>)[field] !== 'string'
-        )
-    )
-        throw new Error('Sony Bluetooth Direct requires the camera IP, MAC, model, and Bluetooth address')
-    const segments = authentication.host.split('.')
-    if (segments.length !== 4 || segments.some(segment => !/^\d{1,3}$/.test(segment) || Number(segment) > 255))
-        throw new Error('Sony Bluetooth Direct requires a valid IPv4 camera address')
-    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.mac))
-        throw new Error('Sony Bluetooth Direct requires the camera MAC address')
-    if (!/^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(authentication.bluetoothAddress))
+    const fields = ['host', 'mac', 'model', 'bluetoothAddress']
+    const missing = 'Sony Bluetooth Direct requires the camera IP, MAC, model, and Bluetooth address'
+    validateCameraAddress(authentication, fields, 'Sony Bluetooth Direct', missing)
+    if (!MAC_ADDRESS.test(authentication.bluetoothAddress))
         throw new Error('Sony Bluetooth Direct requires the camera Bluetooth MAC address')
     if (!isSonyModelName(authentication.model))
         throw new Error('Unsupported Sony Bluetooth Direct camera model')
@@ -208,18 +192,25 @@ export class SonyWifiCamera {
         return this.controlsQueue.run('camera', async () => {
         const properties = await this.getSonyPropertyStates()
         const control = sonySdkCapabilities(properties).controls[id]
-        if (!control?.writable) throw new Error(`${id} is not writable in the current SDK camera mode`)
-        if (id !== 'shutterSpeed' && (id === 'colorTemperature' ? typeof value !== 'number' : typeof value !== 'string'))
-            throw new Error(`Invalid ${id} value`)
+        if (!control?.writable) throw new CameraUnsupportedError(id, `${id} is not writable in the current SDK camera mode`)
+        const kelvin = id === 'colorTemperature' ? kelvinInput(value) : undefined
+        if (id !== 'shutterSpeed' && (id === 'colorTemperature' ? kelvin === undefined : typeof value !== 'string'))
+            throw new CameraRefusedError(id, `Invalid ${id} value`)
         const requested = id === 'shutterSpeed'
-            ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context) : String(value)
-        if (!requested || !control.allowedValues?.includes(requested)) throw new Error('Requested SDK control value is not advertised')
+            ? matchExposureTime(value as ExposureTimeInput, control.allowedValues ?? [], context)
+            : kelvin !== undefined ? String(kelvin) : canonicalControlInput(id, String(value))
+        if (!requested || !control.allowedValues?.includes(requested)) throw new CameraRefusedError(id, 'Requested SDK control value is not advertised')
         const wire = sonySdkControlWireValue(properties, id, requested)
-        await this.setSonySetting(wire.code, wire.value)
-        const observed = (await this.getCapabilities()).controls[id]
-        if (!observed || observed.source.code !== control.source.code || observed.value !== requested)
-            throw new CameraConfirmationError(id, requested, observed?.value ?? null)
-        return observed
+        // One write; confirmation polls the canonical readback and never resends it.
+        await this.setSonyProperty(wire.code, wire.value)
+        let observed: CameraControlState | undefined
+        await confirmCameraValue(id, requested, async () => {
+            observed = (await this.getCapabilities()).controls[id]
+            if (observed && observed.source.code !== control.source.code)
+                throw new CameraConfirmationError(id, requested, `control changed to ${observed.source.name}`)
+            return observed?.value ?? null
+        }, 5000)
+        return observed!
         })
     }
 
@@ -236,14 +227,16 @@ export class SonyWifiCamera {
                 ssh: '1',
                 ...(authentication.model ? { model: authentication.model } : {}),
             }
+            const retryable = async (error: unknown, codes: RegExp) => {
+                if (attempt === 2 || !(error instanceof Error) || !codes.test(error.message)) throw error
+                await this.bridge.request({ cmd: 'disconnect' })
+                await new Promise(resolve => setTimeout(resolve, 1500))
+            }
             let result: Record<string, unknown>
             try {
                 result = await this.bridge.request({ cmd: 'fingerprint', ...identity })
             } catch (error) {
-                if (attempt === 2 || !(error instanceof Error) || !/SDK code (33300|33304)/.test(error.message))
-                    throw error
-                await this.bridge.request({ cmd: 'disconnect' })
-                await new Promise(resolve => setTimeout(resolve, 1500))
+                await retryable(error, /SDK code (33300|33304)/)
                 continue
             }
             if (
@@ -263,10 +256,7 @@ export class SonyWifiCamera {
                 })
                 break
             } catch (error) {
-                if (attempt === 2 || !(error instanceof Error) || !/SDK code (33282|33291|33296)/.test(error.message))
-                    throw error
-                await this.bridge.request({ cmd: 'disconnect' })
-                await new Promise(resolve => setTimeout(resolve, 1500))
+                await retryable(error, /SDK code (33282|33291|33296)/)
             }
         }
         this.connected = true
@@ -460,8 +450,12 @@ export class SonyWifiCamera {
             await new Promise(resolve => setTimeout(resolve, 200))
             after = await this.getSonyProperty(before.code)
         } while (after.value !== String(value) && Date.now() < deadline)
+        // Sent and acknowledged by the bridge but never shown: unconfirmed, never resent.
         if (after.value !== String(value))
-            throw new Error(`Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`)
+            throw new CameraOutcomeUnknownError(
+                before.name,
+                `Sony ${before.name} did not confirm ${String(value)}; readback was ${after.value}`
+            )
         return { before, after, verified: true }
     }
 
@@ -499,6 +493,16 @@ export class SonyWifiCamera {
         await this.bridge.request({ cmd: 'set', code: String(code), type: String(type), value: String(value) })
     }
 
+    /** Writes `pressed`, waits, then always writes `released`. */
+    private async holdProperty(code: number, type: number, pressed: number, released: number, milliseconds: number) {
+        try {
+            await this.writeProperty(code, type, pressed)
+            await new Promise(resolve => setTimeout(resolve, milliseconds))
+        } finally {
+            await this.writeProperty(code, type, released)
+        }
+    }
+
     async sonyPressButton(button: SonyCameraButton, options: { holdMilliseconds?: number } = {}): Promise<void> {
         const identifier = SONY_CAMERA_BUTTONS[button]
         if (!identifier) throw new Error('Unsupported Sony camera button')
@@ -506,23 +510,13 @@ export class SonyWifiCamera {
         if (!Number.isInteger(holdMilliseconds) || holdMilliseconds < 30 || holdMilliseconds > 2000)
             throw new Error('Button duration must be 30–2000 milliseconds')
         const prefix = identifier << 16
-        try {
-            await this.writeProperty(propertyCodes.CameraButtonFunction, 0x4003, prefix | 2)
-            await new Promise(resolve => setTimeout(resolve, holdMilliseconds))
-        } finally {
-            await this.writeProperty(propertyCodes.CameraButtonFunction, 0x4003, prefix | 1)
-        }
+        await this.holdProperty(propertyCodes.CameraButtonFunction, 0x4003, prefix | 2, prefix | 1, holdMilliseconds)
     }
 
     async autofocus(durationMilliseconds = 500): Promise<void> {
         if (!Number.isInteger(durationMilliseconds) || durationMilliseconds < 30 || durationMilliseconds > 5000)
             throw new Error('Autofocus duration must be 30–5000 milliseconds')
-        try {
-            await this.writeProperty(propertyCodes.S1, 2, 2)
-            await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
-        } finally {
-            await this.writeProperty(propertyCodes.S1, 2, 1)
-        }
+        await this.holdProperty(propertyCodes.S1, 2, 2, 1, durationMilliseconds)
     }
 
     /** Read focus telemetry while half-press is held; release can clear the acquired frame. */
@@ -538,8 +532,7 @@ export class SonyWifiCamera {
     }
 
     async setSonyAfAreaPosition(x: number, y: number): Promise<void> {
-        if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 639 || y < 0 || y > 479)
-            throw new Error('AF-area position must be within 640×480')
+        assertAfAreaPosition(x, y)
         await this.writeProperty(propertyCodes.AfAreaPosition, 3, (x << 16) | y)
     }
 
@@ -551,12 +544,7 @@ export class SonyWifiCamera {
             durationMilliseconds > 5000
         )
             throw new Error('Invalid Sony zoom direction or duration')
-        try {
-            await this.writeProperty(propertyCodes.ZoomOperation, 0x1001, direction === 'tele' ? 1 : -1)
-            await new Promise(resolve => setTimeout(resolve, durationMilliseconds))
-        } finally {
-            await this.writeProperty(propertyCodes.ZoomOperation, 0x1001, 0)
-        }
+        await this.holdProperty(propertyCodes.ZoomOperation, 0x1001, direction === 'tele' ? 1 : -1, 0, durationMilliseconds)
     }
 
     async captureImage(): Promise<void> {
@@ -589,6 +577,16 @@ export class SonyWifiCamera {
             await this.bridge.request({ cmd: 'command', id: '1', param: '0' })
             await confirmCameraValue('record_stop', 'idle', () => this.getRecordingState(), 15000)
         })
+    }
+
+    /** Level, minutes left and power source, from the SDK's battery properties. */
+    async getBattery(): Promise<Battery> {
+        return batteryFromPower(normalizeCameraPower('sony', await this.getSonyPropertyStates()))
+    }
+
+    /** Per card slot: photos left and recording time left, from the SDK's slot properties. */
+    async getCardStatus(): Promise<CardStatus[]> {
+        return sonySdkCardStatus(await this.getSonyPropertyStates())
     }
 
     async getRecordingState(): Promise<CameraRecordingState> {
@@ -681,8 +679,7 @@ export class SonyWifiCamera {
 
     /** Place an AF spot and verify its position through live-view frame information. */
     async placeSonyFocusPoint(x: number, y: number): Promise<Record<string, unknown>> {
-        if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 639 || y < 0 || y > 479)
-            throw new Error('AF-area position must be within 640×480')
+        assertAfAreaPosition(x, y)
         const mode = await this.getSonyProperty('FocusMode')
         if (['1', '6'].includes(mode.value))
             throw new Error('Choose AF-S, AF-A or AF-C before placing an autofocus point')
@@ -837,3 +834,12 @@ export class SonyWifiCamera {
         }
     }
 }
+
+function assertAfAreaPosition(x: number, y: number): void {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || x > 639 || y < 0 || y > 479)
+        throw new Error('AF-area position must be within 640×480')
+}
+
+/** The Wi-Fi session has the same typed settings as Camera, filled by the same shared helper. */
+export interface SonyWifiCamera extends TypedSettingMethods {}
+installTypedSettings(SonyWifiCamera.prototype)

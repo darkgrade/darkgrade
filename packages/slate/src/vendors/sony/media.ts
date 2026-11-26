@@ -1,0 +1,263 @@
+import type { CardStatus, MediaDownloadOptions, MediaItem, MediaPreviewSize } from '@camera/driver'
+import type { MediaCapability } from '@vendors/generic/capability-groups'
+import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
+import type { SonyCamera, SonyPropertyState } from '@vendors/sony/sony-camera'
+import { PTPResponseError } from '@core/ptp-errors'
+import type { SonyContent, SonyContentFile } from '@vendors/sony/content-info-list'
+import { encodeMediaId, decodeMediaId, mediaKind, newestFirst, type SonyContentMediaReference } from '@vendors/generic/media-id'
+import { OBJECT_SIZE_UNREPORTED, PtpObjectIndex, reportingRefusals } from '@vendors/generic/ptp-object-index'
+import { sonyPtpCardSlot, sonyPtpMovieMode } from '@vendors/sony/ptp-recording-card'
+
+const OPERATION_NOT_SUPPORTED = 0x2005
+const SLOTS = [1, 2] as const
+
+/** Each card slot from Sony's property snapshot; Sony's PTP storage byte capacity is not card space. */
+export function sonyCardStatus(properties: SonyPropertyState[]): CardStatus[] {
+    const movieMode = sonyPtpMovieMode(properties)
+    return SLOTS.map(slot => sonyPtpCardSlot(properties, slot, { movieMode }))
+        .filter(card => card.code !== undefined)
+        .map(card => ({
+            slot: card.slot,
+            state: card.status,
+            ...(card.photos !== undefined && { photosRemaining: card.photos }),
+            ...(card.seconds !== undefined && { recordingSecondsRemaining: card.seconds }),
+        }))
+}
+
+/** Each card slot from the Sony Camera Remote SDK, whose slot status numbers native 1..9 as 0..8. */
+export function sonySdkCardStatus(properties: { name: string; value: string }[]): CardStatus[] {
+    const read = (name: string) => {
+        const value = properties.find(property => property.name === name)?.value
+        const number = value === undefined || value === '' ? NaN : Number(value)
+        return Number.isSafeInteger(number) && number >= 0 && number < 0xffffffff ? number : undefined
+    }
+    return SLOTS.flatMap((slot): CardStatus[] => {
+        const code = read(`MediaSLOT${slot}_Status`)
+        if (code === undefined) return []
+        const photos = read(`MediaSLOT${slot}_RemainingNumber`)
+        // Zero time is also what still mode reports; only a positive time is evidence.
+        const seconds = read(`MediaSLOT${slot}_RemainingTime`)
+        return [{
+            slot,
+            state: code === 0 ? 'ready' : code === 1 ? 'absent' : code <= 8 ? 'error' : 'unknown',
+            ...(photos !== undefined && { photosRemaining: photos }),
+            ...(seconds !== undefined && seconds > 0 && { recordingSecondsRemaining: seconds }),
+        }]
+    })
+}
+
+function contentFileReference(slot: 1 | 2, content: SonyContent, file: SonyContentFile): SonyContentMediaReference {
+    return {
+        source: 'sony-content',
+        slot,
+        contentId: content.contentId,
+        fileId: file.fileId,
+        name: file.path.split('/').pop() || file.path,
+        sizeBytes: file.sizeBytes,
+    }
+}
+
+function sonyItem(slot: 1 | 2, content: SonyContent, file: SonyContentFile): MediaItem {
+    const reference = contentFileReference(slot, content, file)
+    const name = reference.name
+    const kind = file.video ? 'clip' : mediaKind(name)
+    const width = file.video?.width ?? file.width
+    const height = file.video?.height ?? file.height
+    return {
+        id: encodeMediaId(reference),
+        name,
+        kind,
+        slot,
+        sizeBytes: file.sizeBytes,
+        // Sony stores the camera's local wall time as if it were UTC.
+        ...(content.createdLocalMs > 0 && { capturedAt: new Date(content.createdLocalMs).toISOString().slice(0, 19) }),
+        ...(width && height && { widthPixels: width, heightPixels: height }),
+        previews: kind === 'other' ? [] : ['thumbnail', 'preview'],
+    }
+}
+
+/**
+ * How old a property snapshot may be for a card-status report. A settings refresh reads the full
+ * inventory and then the card status in the same queued operation; this reuses that read.
+ */
+const CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS = 1_000
+
+/** Slots whose card is ready; a body that reports no slot status still has its first slot read. */
+async function readableSlots(driver: SonyCamera): Promise<(1 | 2)[]> {
+    const cards = sonyCardStatus(await driver.recentPropertyStates(CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS))
+    const slots = SLOTS.filter(slot => cards.some(card => card.slot === slot && card.state === 'ready'))
+    return slots.length || cards.length ? slots : [1]
+}
+
+/** One slot of Sony's card index; a body without one answers CameraUnsupportedError. */
+async function listSlot(driver: SonyCamera, operation: string, slot: 1 | 2, sinceUtcMs?: number) {
+    try {
+        return await driver.listContents({ slot, ...(sinceUtcMs !== undefined && { sinceUtcMs }) })
+    } catch (error) {
+        if (error instanceof PTPResponseError && error.code === OPERATION_NOT_SUPPORTED)
+            throw new CameraUnsupportedError(operation, 'This camera does not offer its card index over USB')
+        if (error instanceof PTPResponseError) throw new CameraRefusedError(operation, error.message)
+        throw error
+    }
+}
+
+/** The card-index content with the highest id a lookup saw: the camera numbers each new content higher. */
+export interface SonyNewestContent {
+    contentId: number
+    createdUtcMs: number
+}
+
+/**
+ * The newest card file `matches` accepts, as `listMedia()` lists it, from one card-index read per
+ * readable slot, and the content with the highest id that read saw. With `after`, only contents
+ * numbered above it are candidates, and the read starts two seconds (a creation time may be stored
+ * at whole-second precision) before its creation time, unless `everything` reads the whole index.
+ */
+export async function findSonyCardItem(
+    driver: SonyCamera,
+    operation: string,
+    matches: (item: MediaItem) => boolean,
+    after?: SonyNewestContent,
+    { everything = false } = {}
+): Promise<{ item?: MediaItem; newest?: SonyNewestContent; newer: boolean }> {
+    const sinceUtcMs = after && !everything ? after.createdUtcMs - 2_000 : undefined
+    let found: { item: MediaItem; contentId: number } | undefined
+    let newest: SonyNewestContent | undefined
+    let newer = false
+    for (const slot of await reportingRefusals(operation, () => readableSlots(driver))) {
+        for (const content of (await listSlot(driver, operation, slot, sinceUtcMs)).contents) {
+            if (!newest || content.contentId > newest.contentId)
+                newest = { contentId: content.contentId, createdUtcMs: content.createdUtcMs }
+            if (after && content.contentId <= after.contentId) continue
+            newer = true
+            if (found && found.contentId > content.contentId) continue
+            const item = content.files.map(file => sonyItem(slot, content, file)).find(matches)
+            if (item) found = { item, contentId: content.contentId }
+        }
+    }
+    return { ...(found && { item: found.item }), ...(newest && { newest }), newer }
+}
+
+function contentReference(operation: string, id: string): SonyContentMediaReference {
+    const reference = decodeMediaId(operation, id)
+    if (reference.source !== 'sony-content')
+        throw new CameraRefusedError(operation, `${reference.name} is not a file this camera listed`)
+    return reference
+}
+
+const contentKey = (reference: SonyContentMediaReference) => `${reference.slot}:${reference.contentId}:${reference.fileId}`
+const contentIdentity = (reference: SonyContentMediaReference) => `${reference.name}:${reference.sizeBytes}`
+
+/** The card-index entries this session has read, as `slot:contentId:fileId` to `name:size`. */
+class SonyContentIndex {
+    private sessionId: number | null = null
+    private entries = new Map<string, string>()
+
+    constructor(private readonly driver: SonyCamera) {}
+
+    private current(): Map<string, string> {
+        if (this.driver.sessionId !== this.sessionId) {
+            this.sessionId = this.driver.sessionId
+            this.entries.clear()
+        }
+        return this.entries
+    }
+
+    remember(reference: SonyContentMediaReference): void {
+        this.current().set(contentKey(reference), contentIdentity(reference))
+    }
+
+    /**
+     * The reference as this session's card index numbers it. Content ids can change across a
+     * reconnect or after files are deleted on the body, so an id this session has not read is
+     * checked against the index once and, when its entry now holds another file, found by name and size.
+     */
+    async resolve(operation: string, reference: SonyContentMediaReference): Promise<SonyContentMediaReference> {
+        if (this.current().get(contentKey(reference)) === contentIdentity(reference)) return reference
+        const list = await this.driver.listContents({ slot: reference.slot })
+        let found: SonyContentMediaReference | undefined
+        for (const content of list.contents)
+            for (const file of content.files) {
+                const listed = contentFileReference(reference.slot, content, file)
+                this.remember(listed)
+                if (contentIdentity(listed) === contentIdentity(reference) && (!found || contentKey(listed) === contentKey(reference)))
+                    found = listed
+            }
+        if (!found) throw new CameraRefusedError(operation, `${reference.name} is no longer on the card`)
+        return found
+    }
+}
+
+/**
+ * Sony card media. The list and previews come from the camera's own card index (Remote Control
+ * with Transfer Mode), which needs no content-transfer mode, so live view keeps running. A
+ * download enters content-transfer mode and finds the file's object handle by name; the next
+ * live-view frame returns the body to shooting by itself.
+ */
+export function sonyMediaCapability(driver: SonyCamera): MediaCapability {
+    const objects = new PtpObjectIndex(driver)
+    const contents = new SonyContentIndex(driver)
+    const cardStatus = async () => sonyCardStatus(await driver.recentPropertyStates(CARD_STATUS_SNAPSHOT_MAXIMUM_AGE_MS))
+
+    return {
+        getCardStatus: async () => reportingRefusals('getCardStatus', cardStatus),
+
+        async listMedia(): Promise<MediaItem[]> {
+            const items: MediaItem[] = []
+            const order = new Map<string, number>()
+            for (const slot of await reportingRefusals('listMedia', () => readableSlots(driver))) {
+                const list = await listSlot(driver, 'listMedia', slot)
+                for (const content of list.contents)
+                    for (const file of content.files) {
+                        contents.remember(contentFileReference(slot, content, file))
+                        const item = sonyItem(slot, content, file)
+                        // Content ids grow with each capture; files within a content keep their order.
+                        order.set(item.id, content.contentId * 0x10000 - file.fileId)
+                        items.push(item)
+                    }
+            }
+            return newestFirst(items, item => order.get(item.id) ?? 0)
+        },
+
+        async getMediaPreview(id: string, size: MediaPreviewSize): Promise<Uint8Array> {
+            const requested = contentReference('getMediaPreview', id)
+            if (mediaKind(requested.name) === 'other')
+                throw new CameraUnsupportedError('getMediaPreview', `The camera has no preview of ${requested.name}`)
+            return reportingRefusals('getMediaPreview', async () => {
+                const reference = await contents.resolve('getMediaPreview', requested)
+                try {
+                    return await driver.getContentPreview(reference.contentId, reference.fileId, {
+                        slot: reference.slot,
+                        size: size === 'preview' ? 'screennail' : 'thumbnail',
+                    })
+                } catch (error) {
+                    if (error instanceof Error && error.message === 'The camera returned no preview')
+                        throw new CameraRefusedError('getMediaPreview', error.message)
+                    throw error
+                }
+            })
+        },
+
+        async downloadMedia(id: string, options: MediaDownloadOptions): Promise<Uint8Array> {
+            const reference = contentReference('downloadMedia', id)
+            return reportingRefusals('downloadMedia', async () => {
+                // Card enumeration and transfer require content-transfer mode.
+                await driver.prepareMediaDownload()
+                const storages = (await objects.storageIds('downloadMedia')).filter(
+                    storageId => storageId >>> 16 === reference.slot
+                )
+                const listed = await objects.list('downloadMedia', storages)
+                // ObjectInfo holds 0xffffffff for originals over 4 GiB; the card index has the full size.
+                const found = listed.find(
+                    indexed =>
+                        indexed.info.filename === reference.name &&
+                        (indexed.info.objectCompressedSize === reference.sizeBytes ||
+                            (indexed.info.objectCompressedSize === OBJECT_SIZE_UNREPORTED &&
+                                reference.sizeBytes >= OBJECT_SIZE_UNREPORTED))
+                )
+                if (!found) throw new CameraRefusedError('downloadMedia', `${reference.name} is no longer on the card`)
+                return driver.getObject(found.objectHandle, reference.sizeBytes, options.onProgress, options.signal)
+            })
+        },
+    }
+}

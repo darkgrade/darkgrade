@@ -20,9 +20,11 @@
             "@ptp/*": ["src/ptp/*"],
             "@vendors/*": ["src/vendors/*"],
             "@runtime/*": ["src/runtime/*"],
-            "@cli/*": ["src/cli/*"]
+            "@cli/*": ["src/cli/*"],
+            "@tests/*": ["tests/*"],
+            "@scripts/*": ["scripts/*"]
         }
     },
-    "include": ["src", "tests", "scripts/recover-camera.ts", "*.config.ts"],
-    "exclude": ["tests/runtime"]
+    "include": ["src", "tests", "scripts/recover-camera.ts", "scripts/camera-lease.ts", "scripts/check-guards.ts", "*.config.ts"],
+    "exclude": ["tests/runtime", "tests/telemetry", "src/telemetry/server"]
 }

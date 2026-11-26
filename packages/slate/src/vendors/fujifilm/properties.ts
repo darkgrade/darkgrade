@@ -1,4 +1,4 @@
-import type { PropertyAccess, PropertyDefinition } from '@ptp/types/property'
+import type { PropertyDefinition } from '@ptp/types/property'
 
 /**
  * Shooting property codes/types: libgphoto2 config.c and ptp.h at 02d92fea8a269eb94330a4eade204ba799433606.
@@ -10,19 +10,13 @@ import type { PropertyAccess, PropertyDefinition } from '@ptp/types/property'
  * would reject them. Access permits an operation; the camera's descriptor/mode still governs it.
  * Preset properties address the slot selected by 0xd18c, not the active shooting settings.
  */
-const scalar = <Name extends string>(
-    code: number,
-    name: Name,
-    description: string,
-    signed = false,
-    access: PropertyAccess = 'GetSet'
-) =>
+const scalar = <Name extends string>(code: number, name: Name, description: string, signed = false) =>
     ({
         code,
         name,
         description,
         datatype: signed ? 0x0003 : 0x0004,
-        access,
+        access: 'GetSet',
         codec: registry => (signed ? registry.codecs.int16 : registry.codecs.uint16),
     }) as const satisfies PropertyDefinition<number>
 
@@ -48,67 +42,22 @@ export const fujifilmPropertyRegistry = {
     FujiPresetImageQuality: scalar(0xd18f, 'FujiPresetImageQuality', 'Selected preset image-quality code'),
     FujiPresetDynamicRange: scalar(0xd190, 'FujiPresetDynamicRange', 'Selected preset dynamic-range percentage'),
     FujiPresetFilmSimulation: scalar(0xd192, 'FujiPresetFilmSimulation', 'Selected preset film-simulation code'),
-    FujiPresetMonochromeWarmCool: scalar(
-        0xd193,
-        'FujiPresetMonochromeWarmCool',
-        'Selected preset warm/cool tone times ten; conditional write',
-        true
-    ),
-    FujiPresetMonochromeMagentaGreen: scalar(
-        0xd194,
-        'FujiPresetMonochromeMagentaGreen',
-        'Selected preset magenta/green tone times ten; conditional write',
-        true
-    ),
+    FujiPresetMonochromeWarmCool: scalar(0xd193, 'FujiPresetMonochromeWarmCool', 'Selected preset warm/cool tone times ten; conditional write', true),
+    FujiPresetMonochromeMagentaGreen: scalar(0xd194, 'FujiPresetMonochromeMagentaGreen', 'Selected preset magenta/green tone times ten; conditional write', true),
     FujiPresetGrainEffect: scalar(0xd195, 'FujiPresetGrainEffect', 'Selected preset grain-effect code'),
     FujiPresetColorChrome: scalar(0xd196, 'FujiPresetColorChrome', 'Selected preset Color Chrome code'),
-    FujiPresetColorChromeFxBlue: scalar(
-        0xd197,
-        'FujiPresetColorChromeFxBlue',
-        'Selected preset Color Chrome FX Blue code'
-    ),
+    FujiPresetColorChromeFxBlue: scalar(0xd197, 'FujiPresetColorChromeFxBlue', 'Selected preset Color Chrome FX Blue code'),
     FujiPresetSmoothSkin: scalar(0xd198, 'FujiPresetSmoothSkin', 'Selected preset smooth-skin code'),
-    FujiPresetWhiteBalance: scalar(
-        0xd199,
-        'FujiPresetWhiteBalance',
-        'Selected preset white-balance code, including vendor values above 0x8000'
-    ),
-    FujiPresetWhiteBalanceShiftRed: scalar(
-        0xd19a,
-        'FujiPresetWhiteBalanceShiftRed',
-        'Selected preset signed red white-balance shift',
-        true
-    ),
-    FujiPresetWhiteBalanceShiftBlue: scalar(
-        0xd19b,
-        'FujiPresetWhiteBalanceShiftBlue',
-        'Selected preset signed blue white-balance shift',
-        true
-    ),
-    FujiPresetColorTemperature: scalar(
-        0xd19c,
-        'FujiPresetColorTemperature',
-        'Selected preset Kelvin temperature; conditional write'
-    ),
-    FujiPresetHighlightTone: scalar(
-        0xd19d,
-        'FujiPresetHighlightTone',
-        'Selected preset signed highlight tone times ten',
-        true
-    ),
+    FujiPresetWhiteBalance: scalar(0xd199, 'FujiPresetWhiteBalance', 'Selected preset white-balance code, including vendor values above 0x8000'),
+    FujiPresetWhiteBalanceShiftRed: scalar(0xd19a, 'FujiPresetWhiteBalanceShiftRed', 'Selected preset signed red white-balance shift', true),
+    FujiPresetWhiteBalanceShiftBlue: scalar(0xd19b, 'FujiPresetWhiteBalanceShiftBlue', 'Selected preset signed blue white-balance shift', true),
+    FujiPresetColorTemperature: scalar(0xd19c, 'FujiPresetColorTemperature', 'Selected preset Kelvin temperature; conditional write'),
+    FujiPresetHighlightTone: scalar(0xd19d, 'FujiPresetHighlightTone', 'Selected preset signed highlight tone times ten', true),
     FujiPresetShadowTone: scalar(0xd19e, 'FujiPresetShadowTone', 'Selected preset signed shadow tone times ten', true),
     FujiPresetColor: scalar(0xd19f, 'FujiPresetColor', 'Selected preset signed color value times ten', true),
     FujiPresetSharpness: scalar(0xd1a0, 'FujiPresetSharpness', 'Selected preset signed sharpness times ten', true),
-    FujiPresetHighIsoNoiseReduction: scalar(
-        0xd1a1,
-        'FujiPresetHighIsoNoiseReduction',
-        'Selected preset high-ISO noise-reduction code; not a signed times-ten value'
-    ),
+    FujiPresetHighIsoNoiseReduction: scalar(0xd1a1, 'FujiPresetHighIsoNoiseReduction', 'Selected preset high-ISO noise-reduction code; not a signed times-ten value'),
     FujiPresetClarity: scalar(0xd1a2, 'FujiPresetClarity', 'Selected preset signed clarity times ten', true),
-    FujiPresetLongExposureNoiseReduction: scalar(
-        0xd1a3,
-        'FujiPresetLongExposureNoiseReduction',
-        'Selected preset long-exposure noise-reduction code'
-    ),
+    FujiPresetLongExposureNoiseReduction: scalar(0xd1a3, 'FujiPresetLongExposureNoiseReduction', 'Selected preset long-exposure noise-reduction code'),
     FujiPresetColorSpace: scalar(0xd1a4, 'FujiPresetColorSpace', 'Selected preset color-space code'),
 } as const

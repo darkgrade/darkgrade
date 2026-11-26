@@ -1,4 +1,4 @@
-import { Registry } from '@ptp/registry'
+import { Registry } from '@vendors/registry'
 import { LoggerConfig, defaultLoggerConfig } from './logger-config'
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
@@ -90,10 +90,7 @@ type NewLog =
 
 export class Logger {
     private logs: Map<string, Log[]> = new Map()
-    private orderedTransactions: Array<{
-        key: string
-        timestamp: number
-    }> = []
+    private orderedTransactions: Array<{ key: string; timestamp: number }> = []
     private config: LoggerConfig
     private nextId: number = 1
     private changeListeners: Array<() => void> = []
@@ -107,23 +104,15 @@ export class Logger {
 
         if (typeof window === 'undefined' && typeof process !== 'undefined') {
             if (this.config.captureConsole) this.captureConsole()
-            if (this.config.renderInTerminal) {
-                this.setupInkRenderer()
-            }
+            if (this.config.renderInTerminal) this.setupInkRenderer()
         }
     }
 
     private captureConsole() {
-        const createWrapper = (consoleLevel: 'log' | 'error' | 'info' | 'warn') => {
-            return (...args: (number | bigint | string | boolean | null | undefined | object)[]) => {
-                this.addLog({
-                    type: 'console',
-                    level: 'info',
-                    consoleLevel,
-                    args,
-                })
-            }
-        }
+        const createWrapper =
+            (consoleLevel: ConsoleLog['consoleLevel']) =>
+            (...args: ConsoleLog['args']) =>
+                this.addLog({ type: 'console', level: 'info', consoleLevel, args })
 
         console.log = createWrapper('log')
         console.error = createWrapper('error')
@@ -136,9 +125,7 @@ export class Logger {
         const ink = await import('ink')
         const renderer = await import('./renderers/ink')
 
-        ink.render(react.createElement(renderer.InkLogger, { logger: this }), {
-            patchConsole: false,
-        })
+        ink.render(react.createElement(renderer.InkLogger, { logger: this }), { patchConsole: false })
     }
 
     onChange(listener: () => void) {
@@ -150,13 +137,9 @@ export class Logger {
     }
 
     private notifyChange() {
-        if (this.notifyTimeout) {
-            clearTimeout(this.notifyTimeout)
-        }
+        if (this.notifyTimeout) clearTimeout(this.notifyTimeout)
         this.notifyTimeout = setTimeout(() => {
-            for (const listener of [...this.changeListeners]) {
-                listener()
-            }
+            for (const listener of [...this.changeListeners]) listener()
             this.notifyTimeout = null
         }, 0)
     }
@@ -168,50 +151,15 @@ export class Logger {
     addLog(log: NewLog): number {
         const id = this.nextId++
         const timestamp = Date.now()
-        this.logKeys.set(id, this.keyForNewLog(log, id))
-
-        if (log.type === 'console') {
-            const consoleLog: ConsoleLog = { ...log, id, timestamp }
-            const key = `console:${id}`
-            this.logs.set(key, [consoleLog])
-            this.orderedTransactions.push({ key, timestamp })
-        } else if (log.type === 'ptp_operation') {
-            const ptpLog: PTPOperationLog = Object.assign({}, log, { id, timestamp })
-            const key = this.getKey(log.sessionId, log.transactionId)
-            const existing = this.logs.get(key)
-            if (!existing) {
-                this.logs.set(key, [ptpLog])
-                this.orderedTransactions.push({ key, timestamp })
-            } else {
-                existing.push(ptpLog)
-            }
-        } else if (log.type === 'ptp_transfer') {
-            const transferLog: PTPTransferLog = Object.assign({}, log, { id, timestamp })
-            const key = this.getKey(log.sessionId, log.transactionId)
-            const existing = this.logs.get(key)
-            if (!existing) {
-                this.logs.set(key, [transferLog])
-                this.orderedTransactions.push({ key, timestamp })
-            } else {
-                existing.push(transferLog)
-            }
-        } else if (log.type === 'usb_transfer') {
-            const usbLog: USBTransferLog = Object.assign({}, log, { id, timestamp })
-            const key = this.getKey(log.sessionId, log.transactionId)
-            const existing = this.logs.get(key)
-            if (!existing) {
-                this.logs.set(key, [usbLog])
-                this.orderedTransactions.push({ key, timestamp })
-            } else {
-                existing.push(usbLog)
-            }
-        } else if (log.type === 'ptp_event') {
-            const eventLog: PTPEventLog = { ...log, id, timestamp }
-            const key = `event:${log.sessionId}:${id}`
-            this.logs.set(key, [eventLog])
+        const key = this.keyForNewLog(log, id)
+        this.logKeys.set(id, key)
+        const existing = this.logs.get(key)
+        const entry: Log = { ...log, id, timestamp }
+        if (existing) existing.push(entry)
+        else {
+            this.logs.set(key, [entry])
             this.orderedTransactions.push({ key, timestamp })
         }
-
         this.trimIfNeeded()
         this.notifyChange()
         return id
@@ -234,10 +182,6 @@ export class Logger {
         return id
     }
 
-    getLogs(): Log[] {
-        return Array.from(this.logs.values()).flat()
-    }
-
     getOrderedTransactions(): Array<{ key: string; logs: Log[]; timestamp: number }> {
         return this.orderedTransactions.map(({ key, timestamp }) => ({
             key,
@@ -255,20 +199,12 @@ export class Logger {
         return this.logs.get(this.getKey(sessionId, transactionId)) || []
     }
 
-    setConfig(config: Partial<LoggerConfig>): void {
-        this.config = { ...this.config, ...config }
-    }
-
     getConfig(): LoggerConfig {
         return this.config
     }
 
     setRegistry(registry: Registry): void {
         this.registry = registry
-    }
-
-    getRegistry(): Registry | null {
-        return this.registry
     }
 
     getResponseRegistry(): Record<string, { code: number; name: string; description: string }> {
@@ -287,20 +223,12 @@ export class Logger {
         return this.activeTransfers.get(objectHandle)
     }
 
-    registerTransfer(objectHandle: number, logId: number): void {
-        this.activeTransfers.set(objectHandle, logId)
-    }
-
     completeTransfer(objectHandle: number, code = 0x2001): void {
         const logId = this.activeTransfers.get(objectHandle)
         if (logId !== undefined) {
-            // Add response phase to mark transfer as complete
             this.updateLog(logId, {
                 level: code === 0x2001 ? 'info' : 'error',
-                responsePhase: {
-                    timestamp: Date.now(),
-                    code,
-                },
+                responsePhase: { timestamp: Date.now(), code },
             })
         }
         this.activeTransfers.delete(objectHandle)
@@ -332,12 +260,11 @@ export class Logger {
                 decodedParams: { ObjectHandle: objectHandle },
             },
         }
-        // Use object handle in key to avoid collisions for multi-chunk transfers
         const key = `transfer:${sessionId}:${objectHandle}`
         this.logKeys.set(transferLog.id, key)
         this.logs.set(key, [transferLog])
         this.orderedTransactions.push({ key, timestamp: transferLog.timestamp })
-        this.registerTransfer(objectHandle, transferLog.id)
+        this.activeTransfers.set(objectHandle, transferLog.id)
         this.notifyChange()
         return transferLog.id
     }
@@ -349,20 +276,15 @@ export class Logger {
         const log = this.getLogById(logId)
         if (!log || log.type !== 'ptp_transfer') return
 
-        const chunks = [
-            ...log.chunks,
-            {
-                transactionId: chunkTransactionId,
-                timestamp: Date.now(),
-                offset: log.transferredBytes,
-                bytes: chunkBytes,
-            },
-        ]
-
+        const chunk = {
+            transactionId: chunkTransactionId,
+            timestamp: Date.now(),
+            offset: log.transferredBytes,
+            bytes: chunkBytes,
+        }
         const transferredBytes = log.transferredBytes + chunkBytes
-
         this.updateLog(logId, {
-            chunks,
+            chunks: [...log.chunks, chunk],
             transferredBytes,
             dataPhase: {
                 timestamp: Date.now(),

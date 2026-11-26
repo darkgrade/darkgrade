@@ -1,9 +1,10 @@
 import type { Camera } from '@camera/index'
+import { protocolAccess, type ProtocolSession } from '@camera/protocol-session'
 import { GetDeviceInfo } from '@ptp/definitions/operation-definitions'
-import { ChangeCameraMode } from '@ptp/definitions/vendors/nikon/nikon-operation-definitions'
+import { ChangeCameraMode } from '@vendors/nikon/definitions/nikon-operation-definitions'
 import { baseCodecs } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
-import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
+import { requireNikonIdle } from '@vendors/nikon/recording-status'
 
 export type NikonMenuKey = 'menu' | 'ok' | 'left' | 'right' | 'up' | 'down' | 'delete'
 export interface NikonMenuRunOptions {
@@ -27,8 +28,8 @@ const menuOperation = {
     responseParameters: [],
 } as const satisfies OperationDefinition
 
-type MenuCamera = Pick<Camera, 'send' | 'getInstance'>
-type CameraInstance = ReturnType<Camera['getInstance']>
+type MenuSession = Pick<ProtocolSession, 'send' | 'driver'>
+type CameraInstance = ProtocolSession['driver']
 
 /** Navigation on the physically validated Z6III firmware only. Requires an owned session.
  * Service entry temporarily changes camera operation and preview state. Successful commands
@@ -43,14 +44,18 @@ export class NikonMenuController {
     private keyFailure: unknown
     private pendingPress: Promise<{ commandAccepted: true; visualVerificationRequired: true }> | undefined
 
-    constructor(private readonly camera: MenuCamera) {}
+    private readonly camera: MenuSession
+
+    constructor(camera: Camera | MenuSession) {
+        this.camera = protocolAccess(camera)
+    }
 
     async run<Result>(
         options: NikonMenuRunOptions,
         callback: (controller: Pick<NikonMenuController, 'press'>) => Result | Promise<Result>
     ): Promise<Result> {
         if (!['PC_CAMERA', 'REMOTE'].includes(options.restoreCameraMode)) throw new Error('Specify the camera mode to restore')
-        const instance = this.camera.getInstance()
+        const instance = this.camera.driver
         if (this.running || activeInstances.has(instance)) throw new Error('Nikon menu control is already in progress')
         if (instance.sessionId === null) throw new Error('Open a Nikon PTP session before menu control')
         this.running = true
@@ -146,11 +151,8 @@ export class NikonMenuController {
 
     private async requireIdleCamera(): Promise<void> {
         this.requireSession()
-        const recording = await readNikonRecordingStatus(this.camera)
+        await requireNikonIdle(this.camera, 'Nikon must confirm recording and pending card writes are idle before menu control')
         this.requireSession()
-        if (!recording || recording.recording || recording.bufferedImages) {
-            throw new Error('Nikon must confirm recording and pending card writes are idle before menu control')
-        }
     }
 
     private async command(command: number, argument1 = 0, argument2 = 0) {
@@ -169,7 +171,7 @@ export class NikonMenuController {
     }
 
     private requireSession(): void {
-        if (!this.instance || this.camera.getInstance() !== this.instance || this.session === null
+        if (!this.instance || this.camera.driver !== this.instance || this.session === null
             || this.instance.sessionId !== this.session) {
             throw new Error('Nikon PTP session changed; no commands were sent to the replacement session')
         }

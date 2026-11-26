@@ -1,6 +1,6 @@
 import type { SpeechModelId } from '@shared/speech-models'
-import { cameraControlDefinitions, resolveCameraControl } from '@darkgrade/slate/controls'
-import type { CameraRecordingState } from '@darkgrade/slate/controls'
+import { cameraControlDefinitions } from '@darkgrade/slate/controls'
+import type { CameraControlId, CameraRecordingState } from '@darkgrade/slate/controls'
 import type { DepthModelSize, VisionEngineStatus, VisionModelId, VisionOverlay } from '@shared/vision-models'
 /**
  * Shared IPC contract between the Electron main process and the renderer.
@@ -111,36 +111,14 @@ export interface CameraControl {
     enabled: boolean
 }
 
-export const CAMERA_CONTROL_NAMES = [
-    'whiteBalance',
-    'colorTemperature',
-    'focusMode',
-    'focusArea',
-    'subjectRecognition',
-    'recognitionTarget',
-    'eyeSelect',
-    'stillFormat',
-    'imageSize',
-    'aspectRatio',
-    'jpegQuality',
-    'movieFormat',
-    'movieSetting',
-    'movieFrameRate',
-    'zoomMode',
-    'liveViewQuality',
-    'exposureProgram',
-    'aperture',
-    'shutterSpeed',
-    'iso',
-] as const
-export type CameraControlName = (typeof CAMERA_CONTROL_NAMES)[number]
+/** Slate's control ids, in its own order: Studio adds no vocabulary of its own. */
+export const CAMERA_CONTROL_NAMES = Object.keys(cameraControlDefinitions) as [CameraControlId, ...CameraControlId[]]
+export type CameraControlName = CameraControlId
 
 /** What each setting is called on screen, in logs and in tool descriptions. */
-export const CAMERA_CONTROL_LABELS = Object.fromEntries(CAMERA_CONTROL_NAMES.map(name => {
-    const id = resolveCameraControl(name)
-    if (!id) throw new Error(`Studio control ${name} has no Slate definition`)
-    return [name, cameraControlDefinitions[id].label]
-})) as Record<CameraControlName, string>
+export const CAMERA_CONTROL_LABELS = Object.fromEntries(
+    CAMERA_CONTROL_NAMES.map(name => [name, cameraControlDefinitions[name].label])
+) as Record<CameraControlName, string>
 export type CameraControls = Record<CameraControlName, CameraControl | null>
 
 /** The attached lens and where its zoom sits. */
@@ -148,6 +126,8 @@ export interface CameraLens {
     name: string | null
     /** Current focal length in millimetres, as the camera reports it. */
     focalLengthMillimetres: number | null
+    /** Whether the zoom buttons can drive the zoom now, with the camera's reason when not. */
+    zoom: { supported: boolean; reason: string | null }
 }
 
 /** The camera clock is always set from this computer; this records the last attempt. */
@@ -193,6 +173,8 @@ export interface CameraState {
     controls: CameraControls | null
     /** The camera's on-screen display drawn over live view; null when the camera can't send it. */
     osdOverlay: boolean | null
+    /** Slate reports that the camera can place a focus point now (click-to-focus in live view). */
+    clickToFocus: boolean
     liveView: boolean
     recording: boolean
     recordingState: CameraRecordingState
@@ -209,21 +191,22 @@ export interface LogEntry {
 }
 
 export interface FileEntry {
-    storageId: number
-    storageDescription: string
-    objectHandle: number
+    /** Slate's media id: opaque, and still valid after a reconnect while the file stays on the card. */
+    id: string
+    slot: number
     filename: string
     sizeBytes: number
-    format: string
+    kind: 'photo' | 'clip' | 'other'
+    /** The camera's local wall time, ISO 8601 without an offset; empty when the camera doesn't say. */
     captureDate: string
     /** Pixel size of a photo or video, when the camera reports it. */
     width?: number
     height?: number
-    /** Sony's content index for this file: thumbnails and screennails come from here. */
-    sonyContent?: { contentId: number; fileId: number; slot: 1 | 2 }
+    /** The preview sizes the camera can serve for this file without downloading it. */
+    previews: readonly ('thumbnail' | 'preview')[]
 }
 
-export type DownloadRequest = Pick<FileEntry, 'objectHandle' | 'sizeBytes' | 'filename' | 'captureDate' | 'sonyContent'>
+export type DownloadRequest = Pick<FileEntry, 'id' | 'sizeBytes' | 'filename' | 'captureDate' | 'kind' | 'previews'>
 
 /** The card list as the main process last read it; files is null while a read is in flight or failed. */
 export interface FilesUpdate {

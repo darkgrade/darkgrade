@@ -25,7 +25,8 @@ export default defineConfig({
         },
     },
     preload: {
-        plugins: [externalizeDepsPlugin()],
+        // A sandboxed preload can only load electron at run time, so Slate's browser-safe controls are bundled in.
+        plugins: [externalizeDepsPlugin({ exclude: ['@darkgrade/slate'] })],
         build: {
             rollupOptions: {
                 output: { format: 'cjs', entryFileNames: 'index.cjs' },

@@ -87,18 +87,19 @@ test('protocol diagnostics exclude payloads, parameters, serials and error text 
     await assert.rejects(observed.disconnect(), /serial-secret/)
     assert.equal(await client.flush(), 'sent')
     validateContribution(JSON.parse(bodies[0]))
-    assert.equal(JSON.parse(bodies[0]).entries.length, 3)
+    // The transport was already open when observation began, so the session says so first.
+    assert.equal(JSON.parse(bodies[0]).entries.length, 4)
     assert.doesNotMatch(bodies[0], /PRIVATE|serial-secret|parameters/)
     // Random UUIDs can contain the digits of a session ID; inspect the actual entry schema.
     for (const entry of JSON.parse(bodies[0]).entries)
         assert.ok(
             Object.keys(entry).every(key =>
-                ['kind', 'code', 'direction', 'bytes', 'durationMilliseconds', 'failed', 'occurredAt', 'sessionId', 'transactionId'].includes(key)
+                ['kind', 'code', 'commandCode', 'direction', 'bytes', 'durationMilliseconds', 'failed', 'occurredAt', 'sessionId', 'transactionId'].includes(key)
             )
         )
     assert.deepEqual(
         JSON.parse(bodies[0]).entries.map((entry: { kind: string }) => entry.kind),
-        ['command', 'data', 'disconnect']
+        ['attach', 'command', 'data', 'disconnect']
     )
 })
 
@@ -197,7 +198,7 @@ test('bounded diagnostics count overflow and reject extra sensitive envelope fie
     await client.flush()
     const value = JSON.parse(body)
     assert.equal(value.entries.length, 1000)
-    assert.equal(value.droppedEntries, 3)
+    assert.equal(value.droppedEntries, 4) // 1003 commands after the attach marker
     assert.throws(() => validateContribution({ ...value, photos: ['private'] }))
     assert.throws(() => validateContribution({ ...value, entries: [{ ...value.entries[0], parameters: [123] }] }))
 })

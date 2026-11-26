@@ -1,7 +1,7 @@
 import { ToggleGroup, ToggleGroupItem } from '@kevinschaich/components'
 import { ControlRow } from '@renderer/components/ControlRow'
 import { InspectorSection } from '@renderer/components/InspectorSection'
-import type { CameraControlName, CameraState } from '@shared/ipc'
+import type { CameraControl, CameraControlName, CameraState } from '@shared/ipc'
 import { useEffect, useState } from 'react'
 
 interface RecordingPanelProps {
@@ -18,20 +18,22 @@ function formatElapsed(totalSeconds: number): string {
     return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`
 }
 
-type ShootingMode = 'photo' | 'movie'
+type ShootingMode = 'photo' | 'video'
 
-/** Sony names movie exposure modes "Movie …"; everything else without S&Q or Interval is a photo mode. */
-function shootingModeOf(exposureProgram: string): ShootingMode | null {
-    if (/^(S&Q|Interval)/i.test(exposureProgram)) return null
-    return /^Movie /i.test(exposureProgram) ? 'movie' : 'photo'
+/** Slate's photoVideoMode: 'photo' or 'video', with only the modes the camera can switch to as options. */
+function shootingModeOf(value: string | null | undefined): ShootingMode | null {
+    return value === 'photo' || value === 'video' ? value : null
 }
 
-/** The same exposure mode in the other shooting mode: Manual ↔ Movie Manual, else that mode's first option. */
-function exposureProgramFor(target: ShootingMode, current: string, options: string[]): string | null {
-    const base = current.replace(/^Movie /i, '')
-    const wanted = target === 'movie' ? `Movie ${base}` : base
-    if (options.includes(wanted)) return wanted
-    return options.find(option => shootingModeOf(option) === target) ?? null
+/**
+ * Why a segment is off: Slate offers only the same program in the other half (Manual and Movie
+ * Manual), never a guess, so from Auto, a scene, S&Q or interval the camera's dial decides.
+ */
+function unavailableModeTip(control: CameraControl | null | undefined, target: ShootingMode): string | undefined {
+    if (!control || control.value === target || control.options.includes(target)) return undefined
+    return target === 'video'
+        ? 'The camera offers no switch to video from this mode. Choose M, A, S or P on the camera, or switch there.'
+        : 'The camera offers no switch to photo from this mode. Choose movie M, A, S or P on the camera, or switch there.'
 }
 
 const SEGMENT_CLASS =
@@ -78,26 +80,35 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
         >
             {controls ? (
                 <div className="flex flex-col gap-6">
-                    {controls.exposureProgram?.value && shootingModeOf(controls.exposureProgram.value) && (
+                    {shootingModeOf(controls.photoVideoMode?.value) && (
                         <ToggleGroup
                             className="w-full rounded-lg bg-foreground/6 p-0.5"
                             spacing={0}
                             size="sm"
-                            value={[shootingModeOf(controls.exposureProgram.value) as ShootingMode]}
+                            value={[shootingModeOf(controls.photoVideoMode?.value) as ShootingMode]}
                             onValueChange={values => {
                                 const target = values[0] as ShootingMode | undefined
-                                const program = controls.exposureProgram
-                                if (!target || !program?.value) return
-                                const next = exposureProgramFor(target, program.value, program.options)
-                                if (next && next !== program.value) onChange('exposureProgram', next)
+                                const mode = controls.photoVideoMode
+                                if (!target || !mode?.value || target === mode.value) return
+                                if (mode.options.includes(target)) onChange('photoVideoMode', target)
                             }}
-                            disabled={disabled || !controls.exposureProgram.enabled}
-                            aria-label="Photo or movie"
+                            disabled={disabled || !controls.photoVideoMode?.enabled}
+                            aria-label="Photo or video"
                         >
-                            <ToggleGroupItem value="photo" className={SEGMENT_CLASS}>
+                            <ToggleGroupItem
+                                value="photo"
+                                className={SEGMENT_CLASS}
+                                disabled={!controls.photoVideoMode?.options.includes('photo')}
+                                title={unavailableModeTip(controls.photoVideoMode, 'photo')}
+                            >
                                 Photo
                             </ToggleGroupItem>
-                            <ToggleGroupItem value="movie" className={SEGMENT_CLASS}>
+                            <ToggleGroupItem
+                                value="video"
+                                className={SEGMENT_CLASS}
+                                disabled={!controls.photoVideoMode?.options.includes('video')}
+                                title={unavailableModeTip(controls.photoVideoMode, 'video')}
+                            >
                                 Movie
                             </ToggleGroupItem>
                         </ToggleGroup>
@@ -106,15 +117,15 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         <span className="slate-label">Photo</span>
                         <ControlRow
                             label="Format"
-                            control={controls.stillFormat}
+                            control={controls.photoFormat}
                             disabled={photoDisabled}
-                            onChange={value => onChange('stillFormat', value)}
+                            onChange={value => onChange('photoFormat', value)}
                         />
                         <ControlRow
                             label="Size"
-                            control={controls.imageSize}
+                            control={controls.photoSize}
                             disabled={photoDisabled}
-                            onChange={value => onChange('imageSize', value)}
+                            onChange={value => onChange('photoSize', value)}
                         />
                         <ControlRow
                             label="Aspect"
@@ -133,21 +144,27 @@ export function RecordingPanel({ cameraState, locked, onChange }: RecordingPanel
                         <span className="slate-label">Video</span>
                         <ControlRow
                             label="Format"
-                            control={controls.movieFormat}
+                            control={controls.videoFormat}
                             disabled={disabled}
-                            onChange={value => onChange('movieFormat', value)}
+                            onChange={value => onChange('videoFormat', value)}
                         />
                         <ControlRow
                             label="Quality"
-                            control={controls.movieSetting}
+                            control={controls.videoQuality}
                             disabled={disabled}
-                            onChange={value => onChange('movieSetting', value)}
+                            onChange={value => onChange('videoQuality', value)}
                         />
                         <ControlRow
                             label="Frame rate"
-                            control={controls.movieFrameRate}
+                            control={controls.frameRate}
                             disabled={disabled}
-                            onChange={value => onChange('movieFrameRate', value)}
+                            onChange={value => onChange('frameRate', value)}
+                        />
+                        <ControlRow
+                            label="Audio"
+                            control={controls.audioRecording}
+                            disabled={disabled}
+                            onChange={value => onChange('audioRecording', value)}
                         />
                     </div>
                 </div>

@@ -1,10 +1,10 @@
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { runCameraBenchmark } from '@workflows/telemetry-benchmark'
 import { protocolEvidence, propertyWriteEvidence, stateSnapshotEvidence } from '@vendors/protocol-evidence'
 import { DeviceInfoCodec, type DeviceInfo } from '@ptp/datasets/device-info-dataset'
-import { createPTPRegistry, createNikonRegistry } from '@ptp/registry'
-import { TransportType, type TransportInterface } from '@transport/interfaces/transport.interface'
+import { createPTPRegistry, createNikonRegistry } from '@vendors/registry'
+import { TransportType } from '@transport/interfaces/transport.interface'
 import { recordPtpTransport, type CapturedPtpTransaction } from '@transport/ptp-trace'
 import {
     captureCameraProfile,
@@ -12,10 +12,13 @@ import {
     sanitizeProfileTransaction,
     type ProfileObservation,
 } from '@vendors/profile-capture'
-import { describe, expect, it } from 'vitest'
+import { GenericCamera } from '@vendors/generic/generic-camera'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { answeringTransport, ptpContainer } from '@tests/fixtures/ptp-wire'
 import { qualifyProfileProperty } from '@vendors/profile-qualification'
 import { configureSlateTelemetry } from '@core/telemetry'
 import { createApplicationDiagnostics } from '@contribute/application'
+import { protocolSession } from '@camera/protocol-session'
 
 const codecs = createPTPRegistry(true).codecs
 it('retains numeric Canon write intent and rejection without inventing a readback or retaining opaque bytes', () => {
@@ -56,7 +59,7 @@ it('Sony profile storage reads enter transfer mode and restore shooting after a 
         prepareStorageRead:async()=>{calls.push('prepare')},
         resumeShooting:async()=>{calls.push('restore')},
     })
-    const camera={getInstance:()=>instance,send:async(operation:any)=>{
+    const camera={get driver(){return instance},send:async(operation:any)=>{
         if(operation.code===0x1001)return {code:0x2001,data:identity}
         calls.push('storage')
         throw new Error('Read refused')
@@ -71,6 +74,7 @@ it('rejects invalid or unintended media recording requests before connecting', a
         { initialize: true, repetitions: 4, liveView: true },
         { initialize: true, takePhoto: { autofocus: false, destination: 'other' } },
         { initialize: true, takePhoto: { autofocus: false, rawCompression: 'lossless' } },
+        { liveView: true },
     ]) {
         const source = fixture()
         await expect(captureCameraProfile(source.transport, {
@@ -101,21 +105,11 @@ const identity: DeviceInfo = {
     devicePropertiesSupportedDecoded: [],
     imageFormatsDecoded: [],
 }
-function packet(type: number, code: number, transactionId: number, data: Uint8Array = new Uint8Array()): Uint8Array {
-    const bytes = new Uint8Array(12 + data.length)
-    const view = new DataView(bytes.buffer)
-    view.setUint32(0, bytes.length, true)
-    view.setUint16(4, type, true)
-    view.setUint16(6, code, true)
-    view.setUint32(8, transactionId, true)
-    bytes.set(data, 12)
-    return bytes
-}
+const packet = ptpContainer
 function fixture(refuseProperty = false, nikonEventResponse?: number, inventory = identity) {
     const commands: number[] = []
     const eventParameters: number[][] = []
     const replies: Uint8Array[] = []
-    let connected = false
     const descriptor = join(
         codecs.uint16.encode(0x5001),
         codecs.uint16.encode(4),
@@ -124,51 +118,38 @@ function fixture(refuseProperty = false, nikonEventResponse?: number, inventory 
         codecs.uint16.encode(75),
         Uint8Array.of(0)
     )
-    const transport: TransportInterface = {
-        connect: async () => {
-            connected = true
-        },
-        disconnect: async () => {
-            connected = false
-        },
-        isConnected: () => connected,
-        isLittleEndian: () => true,
-        getType: () => TransportType.USB,
-        classRequestReset: async () => {
-            throw new Error('Capture must not reset hardware')
-        },
-        send: async bytes => {
-            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-            if (view.getUint16(4, true) !== 1) throw new Error('Unexpected settings write')
-            const code = view.getUint16(6, true)
-            const id = view.getUint32(8, true)
-            commands.push(code)
-            if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
-                ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
-            })))
-            if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
-            if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
-            if (code === 0x941c) {
-                const parameters = Array.from({ length: (bytes.length - 12) / 4 }, (_, index) => view.getUint32(12 + index * 4, true))
-                eventParameters.push(parameters)
-                const response = parameters.length ? nikonEventResponse! : 0x2001
-                if (response === 0x2001) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
-                replies.push(packet(3, response, id))
-                return
-            }
-            replies.push(packet(3, code === 0x1014 && refuseProperty ? 0x200a : 0x2001, id))
-        },
-        receive: async () => {
-            const bytes = replies.shift()
-            if (!bytes) throw new Error('Unexpected read')
-            return bytes
-        },
+    const { transport } = answeringTransport(({ type, code, transactionId: id, parameters }) => {
+        if (type !== 1) throw new Error('Unexpected settings write')
+        commands.push(code)
+        if (code === 0x1001) replies.push(packet(2, code, id, information.encode(nikonEventResponse === undefined ? inventory : {
+            ...identity, manufacturer: 'Nikon', model: 'Z 6', operationsSupportedRaw: [...identity.operationsSupportedRaw, 0x941c],
+        })))
+        if (code === 0x1004) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
+        if (code === 0x1014 && !refuseProperty) replies.push(packet(2, code, id, descriptor))
+        if (code === 0x941c) {
+            eventParameters.push(parameters)
+            const response = parameters.length ? nikonEventResponse! : 0x2001
+            if (response === 0x2001) replies.push(packet(2, code, id, codecs.uint32.encode(0)))
+            replies.push(packet(3, response, id))
+            return
+        }
+        replies.push(packet(3, code === 0x1014 && refuseProperty ? 0x200a : 0x2001, id))
+    }, { connected: false })
+    transport.classRequestReset = async () => {
+        throw new Error('Capture must not reset hardware')
+    }
+    transport.receive = async () => {
+        const bytes = replies.shift()
+        if (!bytes) throw new Error('Unexpected read')
+        return bytes
     }
     return { transport, commands, descriptor, eventParameters }
 }
 function transaction(operation: number, data: Uint8Array, parameters: number[] = []): CapturedPtpTransaction {
     return { operation, transactionId: 7, parameters, response: { code: 0x2001, parameters: [], data } }
 }
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('explicit profile capture', () => {
     it.each([0x2001, 0x2006, 0x2005, 0x200f, 0x2019])('preserves Nikon event refusals except unsupported retention (0x%s)', async response => {
@@ -248,6 +229,34 @@ describe('explicit profile capture', () => {
         expect(transport.isConnected()).toBe(false)
     })
 
+    it('initializes a generic body through Camera.connect and reads on the driver that holds the session', async () => {
+        const { transport, commands } = fixture()
+        const configured = new Map<GenericCamera, Parameters<GenericCamera['configureTransactions']>[0]>()
+        const configure = GenericCamera.prototype.configureTransactions
+        vi.spyOn(GenericCamera.prototype, 'configureTransactions').mockImplementation(function (this: GenericCamera, policy) {
+            configured.set(this, { ...configured.get(this), ...policy })
+            return configure.call(this, policy)
+        })
+        const senders: Array<{ driver: GenericCamera; sessionId: number | null }> = []
+        const send = GenericCamera.prototype.send
+        vi.spyOn(GenericCamera.prototype, 'send').mockImplementation(function (this: GenericCamera, ...parameters) {
+            senders.push({ driver: this, sessionId: this.sessionId })
+            return send.apply(this, parameters)
+        } as typeof send)
+        const result = await captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture', initialize: true })
+        expect(commands).toEqual([0x1002, 0x1001, 0x1014, 0x1003])
+        expect(result.mode).toBe('initialized')
+        expect(result.checks.every(check => check.status === 'pass')).toBe(true)
+        const reads = senders.filter((_, index) => index > 0 && index < senders.length - 1)
+        const [session] = senders
+        expect(reads.length).toBeGreaterThan(0)
+        for (const read of reads) {
+            expect(read.driver).toBe(session!.driver)
+            expect(read.sessionId).not.toBeNull()
+        }
+        expect(configured.get(session!.driver)).toMatchObject({ timeoutMilliseconds: 2000, deviceBusyRetries: 0, automaticUSBReset: false })
+    })
+
     it('keeps camera refusals as errors and still closes its session', async () => {
         const { transport, commands } = fixture(true)
         const result = await captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture' })
@@ -257,14 +266,6 @@ describe('explicit profile capture', () => {
         })
         expect(result.transactions.find(item => item.operation === 0x1014)?.response.code).toBe(0x200a)
         expect(commands.at(-1)).toBe(0x1003)
-    })
-
-    it('rejects live-view activation without explicit initialization before opening hardware', async () => {
-        const { transport, commands } = fixture()
-        await expect(
-            captureCameraProfile(transport, { vendorId: 0x1234, productId: 1, revision: 'fixture', liveView: true })
-        ).rejects.toThrow('explicit initialization')
-        expect(commands).toEqual([])
     })
 })
 
@@ -303,14 +304,6 @@ describe('retained payload privacy', () => {
         })
     })
 
-    it('redacts undocumented Sony connect parameters even when the response is empty', () => {
-        const handshake = transaction(0x9201, new Uint8Array(), [1, 123, 0])
-        expect(sanitizeProfileTransaction(handshake, 0x054c, [])).toMatchObject({
-            parameters: [],
-            redactions: ['authentication-payload'],
-        })
-    })
-
     it('retains only public zero-key phase acknowledgement when Sony returns an opaque unused reply', () => {
         const handshake = transaction(0x9201, Buffer.from('PRIVATE_REPLY'), [2, 0, 0])
         handshake.response.parameters = [123456]
@@ -320,7 +313,7 @@ describe('retained payload privacy', () => {
         })
     })
 
-    it('omits media and authentication bytes, including authentication response words', () => {
+    it('omits media and authentication bytes, including authentication response words and undocumented connect parameters with an empty response', () => {
         const secret = Buffer.from('PRIVATE_PASSWORD')
         const auth = transaction(0x9201, secret, [1, 123, 456])
         auth.response.parameters = [987, 654]
@@ -332,6 +325,10 @@ describe('retained payload privacy', () => {
         })
         expect(output.response.data).toBeUndefined()
         expect(sanitizeProfileTransaction(transaction(0x1009, secret), 0x054c, []).response.data).toBeUndefined()
+        expect(sanitizeProfileTransaction(transaction(0x9201, new Uint8Array(), [1, 123, 0]), 0x054c, [])).toMatchObject({
+            parameters: [],
+            redactions: ['authentication-payload'],
+        })
     })
 
     it('retains only complete safe Canon records and omits opaque bulk event payloads', () => {
@@ -481,7 +478,7 @@ it('deep benchmark exports a sanitized profile on the owned session and preserve
 it('repeated protocol refreshes retain changed values and each new benchmark has its own inventory',async()=>{
     const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
     await camera.connect()
-    const instance=camera.getInstance(),seen:any[]=[]
+    const instance=protocolSession(camera).driver,seen:any[]=[]
     const detach=instance.observeProfile(crypto.randomUUID(),value=>seen.push(value))
     for(const current of [75,75,50,75])instance.recordProtocol({type:'descriptor',vendorId:0,property:0x5001,dataType:4,writable:false,current},0x1014)
     expect(seen.map(value=>value.current)).toEqual([75,50,75])
@@ -509,7 +506,7 @@ it('benchmark includes preexisting observations with age and never substitutes a
  const source=fixture(),camera=new Camera({transport:source.transport,logger:{renderInTerminal:false,captureConsole:false}})
  await camera.connect()
  try {
-  const instance=camera.getInstance()
+  const instance=protocolSession(camera).driver
   instance.recordProtocol({type:'property-value',vendorId:0,property:0x5001,dataType:4,current:63},0x1015)
   instance.recordProtocol({type:'property-write',vendorId:0,property:0x5001,dataType:4,requested:99,transactionId:8,outcome:'response',response:0x2001},0x1016)
   const result=await runCameraBenchmark(camera)

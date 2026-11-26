@@ -578,7 +578,7 @@ const DRIVEN_CALLS = [
         callout: 'iso',
         values: ['100', '200', '400', '800'],
         request: (value: string) => `ISO ${value}`,
-        call: (value: string) => `camera.setIso('${value}')`,
+        call: (value: string) => `camera.setIso('ISO ${value}')`,
     },
     {
         callout: 'focus',
@@ -590,7 +590,7 @@ const DRIVEN_CALLS = [
         callout: 'capture',
         values: ['', '', '', ''],
         request: () => 'Take the shot',
-        call: () => 'camera.captureImage()',
+        call: () => 'camera.takePhoto()',
     },
 ] as const
 

@@ -5,10 +5,11 @@
     "type": "module",
     "repository": { "type": "git", "url": "git+https://github.com/darkgrade/darkgrade.git", "directory": "packages/cli" },
     "bin": { "darkgrade": "dist/main.js" },
+    "man": ["dist/darkgrade.1"],
     "files": ["dist", "README.md"],
     "publishConfig": { "tag": "alpha", "access": "public" },
     "scripts": {
-        "build": "rm -rf dist && bun build src/main.ts --target node --format esm --splitting --production --keep-names --outdir dist -e usb -e ink -e ink-spinner -e react -e egoroof-blowfish",
+        "build": "rm -rf dist && bun build src/main.ts --target node --format esm --splitting --production --keep-names --outdir dist -e usb -e ink -e ink-spinner -e react -e egoroof-blowfish && node dist/main.js man > dist/darkgrade.1",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "npm run build && node --test tests/*.test.ts",
         "prepublishOnly": "npm run typecheck && npm test"

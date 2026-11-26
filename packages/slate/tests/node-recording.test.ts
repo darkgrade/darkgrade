@@ -89,7 +89,7 @@ describe('encrypted private recording bundle', () => {
             await rm(root, { recursive: true, force: true })
         }
     })
-    it('refuses missing encryption and oversized provenance before creating a recording', async () => {
+    it('refuses an encryption key that is not 32 bytes before creating a recording', async () => {
         await expect(
             createRecordingBundle(source, '/unused', provenance, { id: 'fixture', key: new Uint8Array(3) })
         ).rejects.toThrow('32-byte')

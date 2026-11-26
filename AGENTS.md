@@ -4,8 +4,33 @@ Before adding a primitive, command, property map, parser, retry loop, package or
 search its canonical name, aliases and existing consumers. State in the PR which existing
 implementation was reused and why a new abstraction is necessary. Consolidate an existing
 primitive and its callers together; do not add a parallel implementation for a new harness.
-Use the workflow in `.claude/commands/untangle-codebase.md` regardless of agent harness.
-Read `packages/slate/docs/pre-release-audit.md` for the measured audit and decisions.
+Follow the workflow below regardless of agent harness (Claude's `/untangle-codebase` command
+points here). Read `packages/slate/docs/pre-release-audit.md` for the measured audit and decisions.
+
+## The untangle workflow
+
+1. State the behavior to preserve and list its existing definitions, adapters,
+   workflows, UI consumers and tests. Search both canonical names and aliases.
+2. Check the current README promises against built package exports, strict consumer
+   types and actual behavior. Run the existing packed README-fragment check; update
+   root/package READMEs and quickstart together. Check current publication state and
+   distinguish static types, live choices, simulations and physical qualification.
+   Do not use source imports as package evidence.
+3. Measure the available history window and changes before attributing complexity.
+   Separate generated catalogs, tests, necessary vendor encodings and duplicated
+   application behavior.
+4. Trace reachability from exports, manifest commands, app/worker entrypoints and
+   private harnesses; inspect unreachable cycles and test-only consumers. Separate
+   generated-data counts from code and retain useful independent regression fixtures.
+5. Reuse the smallest existing primitive. Map camera settings in Slate, preserve
+   vendor units/mode/availability guards, and update all consumers together. Search
+   the operation table, canonical ids and `resolveCameraControl` aliases before adding
+   another operation or setting. Keep protocol names/codes in their vendor namespaces;
+   aliases do not invent support.
+6. Test different vendors/modes, absent/read-only/empty/ambiguous choices, failed
+   readback and genuine package consumers. Preserve failed evidence.
+7. Record decisions and prevention rules in the existing audit/AGENTS guidance.
+   Keep the requested work on one branch and one PR; do not merge without authorization.
 
 Before naming another setting, search `cameraControlDefinitions`, `resolveCameraControl`,
 the vendor property preferences, protocol definitions and the hosts that consume them.
@@ -22,12 +47,18 @@ hardware. Preserve its negative type assertions, ESM/CommonJS and browser-bounda
 Keep static parameter/value types separate from runtime body choices and physical evidence.
 Check current publication state before adding installation badges or claiming npm availability.
 
-Application controls use `Camera.getCapabilities()` and `Camera.setControl()`. Canonical
-ids/labels/search aliases are in `packages/slate/src/camera/controls.ts`; vendor property
-preference is in `src/vendors/control-properties.ts`. Studio and test harnesses consume
-Slate rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
-conversion requires the actual frame rate. Never guess units, switch modes implicitly,
-round a requested control to the nearest enum, or treat registry presence as availability.
+Application settings use `Camera.getCapabilities()`, the typed getter and setter for each
+setting (`getShutterSpeed()`/`setShutterSpeed()`, `setIso()`, `setWhiteBalance()` …) and, for UIs
+that list every setting, `Camera.setControl(id, value)`. Canonical ids, labels and search
+aliases are in `packages/slate/src/camera/controls.ts` and canonical value types in
+`src/camera/settings/values.ts`; each vendor's properties and words map to them in
+`src/vendors/<vendor>/control-properties.ts`, read through `src/vendors/control-properties.ts`. `getCapabilities().operations` says which operations the
+camera can do now, with the reason when it cannot. Studio and test harnesses consume Slate
+rather than adding vendor tables. `shutterSpeed` covers exposure duration and angle;
+conversion requires the actual frame rate. Never guess units, round a requested control to
+the nearest enum, or treat registry presence as availability. An operation may set up the
+state it needs and must restore it afterwards; a setting write never changes another setting
+or mode to make itself writable (recorded exception: Sony ISO switches gain mode).
 Preserve Bulb/Time/flash-sync, current read-only/empty/ambiguous choices, idle/session guards
 and failed readbacks. Different transports must not claim parity without adapter evidence.
 
@@ -53,6 +84,85 @@ promise rejections; verify this in isolated Node consumers, not by swallowing a 
 Keep the requested task on one branch and one PR. Historical PR numbers in technical
 notes are evidence, not instructions to append new work to an old branch or to merge.
 
+# Slate's public API
+
+One `Camera` works the same on every camera that supports an operation, with the same names in
+the library, the MCP tools and the CLI. The layers and what changed are in
+`packages/slate/docs/architecture.html`; open structural work is in `packages/slate/docs/untangle-preview.md`.
+
+**The public/private bar.** An operation or setting is public if a user would click a button or
+pick from a list to change it in Studio. Setup and mode changes (video mode, card destination,
+focus area for a focus point, the overlay output, keep-alive, live-view pacing) happen inside
+the operation that needs them and are undone afterwards. Everything else is protocol access:
+raw send/get/set, registries, driver classes and vendor diagnostics are on
+`protocolSession(camera)` from the unsupported `@darkgrade/slate/protocol` entry. There is no
+`getInstance()` and no vendor-named method or main-entry export. Use one name per concept, the
+word an operator would say on set (a vendor's word is only a search alias), and the units people
+use: millimetres, Kelvin, named speeds and sizes, 0–1 across the picture from the top-left.
+
+**Audit before any new public operation.** Before adding one, search Camera's methods
+(`packages/slate/src/camera/index.ts`), the driver contract (`src/camera/driver.ts`), each vendor's
+`control-properties.ts` and `resolveCameraControl` aliases, each brand's driver (`src/vendors/<brand>`), Studio's
+callers and `protocolSession`. State in the PR which existing operation or setting could not
+cover it and why it passes the bar above. A new operation is implemented for every vendor that
+can do it as a method of its driver, reports `getCapabilities().operations[name]` with a reason
+where it cannot, and fails with one of the three errors: `CameraUnsupportedError` (cannot do it
+now, nothing sent), `CameraRefusedError` (the camera said no, nothing changed) or
+`CameraOutcomeUnknownError` (sent but unconfirmed, never resent). It returns only once the
+camera shows the result; Stop is never blocked.
+
+**Camera drives every surface.** The MCP tools (`camera_` + the method in snake_case, from
+`src/runtime/mcp.ts`) and the CLI commands (`darkgrade camera ` + the method in kebab-case, from
+`src/cli/commands.ts`) are generated from Camera's own signatures and doc comments
+(`scripts/generate-camera-operations.ts`, committed as `src/runtime/camera-operations.ts` so `src`
+builds alone: Matrix and the bench CI never run a candidate's scripts) through
+`src/runtime/operations.ts`; never write a tool, command or table entry by hand, and run
+`bun run --cwd packages/slate generate:operations` after changing a Camera method. Every public
+method needs a doc comment (its first sentence is the summary) and `@param` text for positional
+inputs; options objects describe their properties. Results are exactly what the library returns,
+with bytes moved into files. Events are library only (the CLI streams them with `darkgrade camera
+watch`); `start-recording` and `start-zoom` hold the CLI until Ctrl-C or `--duration`.
+`darkgrade cameras` is the one exception to the naming rule, for `Camera.discover`. `check:guards`
+fails when the committed list is out of date, or a Camera method is missing from it or has no doc comment.
+
+**No type escapes.** Slate camera code adds no `any`, `as any`, `as never` or `as unknown as`.
+`check:guards` keeps a per-file budget (`packages/slate/scripts/guards/escape-budget.json`) that
+can only go down: fix the type rather than raise a budget, and lower budgets with
+`check:guards -- --update` after removing escapes. Setting value types come from the vendor
+codecs, never hand-written lists (the recorded exceptions are in `pre-release-audit.md`), and no
+typed setter takes a plain `string` (`test:package` asserts this on the packed types). Every
+typed setter must reject a value its codecs can't produce; a change that widens one to `string`
+is a bug, not a type fix.
+
+**Nothing vendor-specific is published outside `/protocol`.** No published entry (main,
+`/controls`, `/runtime`, `/cli`, `/contribute`) exports a vendor-named symbol, and no public type
+carries a vendor's own word as a value: vendors map their words to canonical ones in their
+`control-properties.ts`. `/protocol` is the one unsupported exception, for benches; don't add to
+it what a `Camera` method could do.
+
+**Shared code never asks which brand it has.** Code outside `src/vendors/<brand>/` does not import
+a brand folder or test `instanceof SonyCamera`/`CanonCamera`/`NikonCamera` or a vendor id; the
+driver answers instead. Dependencies point one way: surfaces → `Camera` → driver contract ← brand
+drivers → `ptp/` → `transport/`. Don't add an import cycle.
+
+**Organise by vendor and layer, never by how the work was split.** When agents work in parallel,
+give each existing files to own; don't create per-area modules, test files or scripts (settings
+groups, smoke areas) to keep them apart. Before adding a module, test file or script, search for
+the one it duplicates and extend that.
+
+**Tests.** Test each behaviour once, at the highest layer that can see it (the public `Camera`
+with a fake device, or a host behaviour), using `packages/slate/tests/fixtures/` rather than a new
+fake per file. Don't re-prove one shared path per setting or per vendor; use one table. A test
+must be able to fail on a real regression: no asserting a mock was called with what it was just
+told. Real cameras are checked by `camera:api-check` alone; extend it rather than adding another
+runner. Delete a test along with the code it covered.
+
+**Hosts don't re-implement Slate.** Studio, Test Bench and other hosts call Slate's public API
+and runtime: no second camera queue, vendor table, alias map or nearest-value snapping.
+
+**Say why a PR grows.** Report Slate's net source and test lines against `main` in the PR, and
+justify growth; moved code and generated data are reported separately.
+
 # The privacy policy is the source of truth
 
 What Darkgrade collects, why, which services receive it and the controls people have are stated
@@ -75,9 +185,13 @@ you are changing before you start, regardless of the agent harness:
 
 - `packages/slate/AGENTS.md`: where Slate's modules live, driver invariants, bench findings,
   private camera recordings and fuzz checks.
-- `apps/contribution-collector/AGENTS.md`: telemetry, the collector, its database rules,
+- `packages/slate/src/telemetry/AGENTS.md`: telemetry, the collector, its database rules,
   contributor identity and the Matrix export.
 - `packages/cli/AGENTS.md`: the thin `darkgrade` executable.
+
+This file is the one set of instructions for every agent harness. `CLAUDE.md` only imports it
+(`@AGENTS.md`) and `GEMINI.md` does the same (`@./AGENTS.md`); add a rule here or in the nested
+`AGENTS.md`, never in a model-specific file. Each nested `AGENTS.md` points back to this one.
 
 # Package boundaries
 
@@ -194,14 +308,26 @@ personal or project *API* key (`phx_`) in a client.
 
 This checkout uses the project-scoped `darkgrade_testbench` MCP server from `.codex/config.toml`.
 Before touching a camera, call `bench_status`, start a leased job with `agent_job_start`, and keep
-the job alive with `agent_job_heartbeat`. A camera is healthy only when `camera_probe` completes a
-PTP `GetDeviceInfo`; USB enumeration alone is insufficient.
+the job alive with `agent_job_heartbeat`. A camera is healthy only when the bench probe
+(`camera_probe`) completes a PTP `GetDeviceInfo`; USB enumeration alone is insufficient.
 
-If a transaction times out or the camera remains busy, call `camera_recover` with `strategy=auto`.
-It verifies the baseline, emulates a genuine USB unplug/replug on both hub halves, re-runs this
-checkout's `packages/slate/tests/bench-probe.ts`, and escalates to the camera's mapped Shelly power
-feed only if necessary. Always call `agent_job_finish`, including on failure, so the dashboard and
-blink(1) return to the correct state.
+Camera tools take Slate's names, generated from the operation table: `camera_get_capabilities`
+reads every setting, `camera_set_<setting>` writes one (`camera_set_iso`), and `camera_take_photo`,
+`camera_get_card_status`, `camera_run_benchmark` and the rest follow the methods. Slate's
+`camera_recover` is `Camera.recover()`: software-only (a fresh session, a PTP Device Reset, then
+a USB port reset, each proven by GetDeviceInfo), and its report says when only physical action
+is left. It closes the transport; connect again afterwards.
+
+Bench hardware tools are named `bench_`. If a transaction times out or the camera remains busy,
+call the hardware recovery `bench_recover_camera` with `strategy=auto`. (A Test Bench that has
+not yet moved onto Slate's names still calls it `camera_recover`; check its tool list.) It
+verifies the baseline,
+emulates a genuine USB unplug/replug on both hub halves, re-runs this checkout's
+`packages/slate/tests/bench-probe.ts`, and escalates to the camera's mapped Shelly power feed only
+if necessary. Power and USB-reconnect tools need approval in `.codex/config.toml`; when a bench
+tool is renamed, its approval follows in the same commit so nothing becomes auto-approved. Always
+call `agent_job_finish`, including on failure, so the dashboard and blink(1) return to the correct
+state.
 
 Run the same bounded health probe directly with:
 

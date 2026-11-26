@@ -1,8 +1,8 @@
-import { createPTPRegistry } from '@ptp/registry'
+import { createPTPRegistry } from '@vendors/registry'
 import { DevicePropDescCodec } from '@ptp/datasets/device-prop-desc-dataset'
-import { SDIExtDevicePropInfoCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { NikonEventListCodec } from '@ptp/datasets/vendors/nikon/nikon-event-list-dataset'
+import { SDIExtDevicePropInfoCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { NikonEventListCodec } from '@vendors/nikon/datasets/nikon-event-list-dataset'
 import { describe, expect, it } from 'vitest'
 
 // Independent wire seeds, not encoded by the implementation under test. Layouts:
@@ -60,6 +60,18 @@ describe('reproducible PTP input fuzzing', () => {
                 expect(() => codec.decode(input, offset), `${name} offset ${offset}`).toThrow()
             }
         }
+    })
+
+    it('rejects corrupt standard descriptor access/form flags and header offsets, keeping unknown enum values', () => {
+        const seed = seeds[0]
+        const data = Uint8Array.from(seed.bytes)
+        expect(new DevicePropDescCodec(registry).decode(data).value.supportedValuesRaw).toEqual([100, 200])
+        for (const [position, invalid] of [[4, 2], [9, 3], [9, 255]]) {
+            const malformed = data.slice()
+            malformed[position] = invalid
+            expect(() => seed.codec.decode(malformed), `byte ${position} = ${invalid}`).toThrow('flag')
+        }
+        for (const offset of [-1, 1.5, data.length - 4]) expect(() => seed.codec.decode(data, offset)).toThrow('header')
     })
 
     it('rejects all reserved Sony descriptor form flags', () => {

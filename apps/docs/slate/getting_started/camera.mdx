@@ -1,7 +1,14 @@
 ---
 title: "Cameras"
-description: "The Camera class provides a high-level interface for interacting with PTP-compatible cameras. It automatically selects the appropriate vendor-specific implementation (Sony, Nikon, Canon, or Generic) based on the connected device."
+description: "One Camera that works the same on every camera that supports an operation: connection, settings, focus, zoom, photo, live view, video, card and body."
 ---
+
+`Camera` picks the Sony, Nikon, Canon or standard PTP driver when it connects; no method is named
+after a vendor. Every method has the same name as an MCP tool (`camera_` and the method in
+snake_case) and a command (`darkgrade camera` and the method in kebab-case), all generated from one
+operation table. [Feature compatibility](/slate/getting_started/feature-compatibility) lists which
+cameras support each operation; `getCapabilities().operations` says whether the attached one can
+do it now.
 
 ## Import
 
@@ -15,255 +22,232 @@ import { Camera } from '@darkgrade/slate'
 constructor(options?: CameraOptions)
 ```
 
-### Parameters
-
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
 | **options** | `CameraOptions` |  | Optional configuration for the camera instance. |
 | **options.logger** | `Partial&lt;LoggerConfig&gt;` |  | Optional logger configuration; console capture and terminal rendering are off by default for `Camera`. |
-| **options.device** | `DeviceDescriptor` |  | Device descriptor for the camera. If provided, the appropriate vendor-specific implementation will be selected automatically. |
+| **options.device** | `DeviceDescriptor` |  | The body to open, for example a USB filter when several are attached. |
+| **options.transport** | `TransportInterface` |  | A transport other than USB, such as an `IPTransport` (see [PTP/IP](/slate/getting_started/ptp-ip)). |
+| **options.transactionPolicy** | `Partial&lt;TransactionPolicy&gt;` |  | Timeouts and DeviceBusy retries for every transaction. |
+| **options.keepAlive** | `boolean` |  | Default `true`: a Canon session sends its advertised KeepDeviceOn every ten seconds. |
 
-## Methods
+## Errors
 
-### getCapabilities, getExposureTime, setExposureTime, setControl
+Every operation fails in one of three ways, each carrying the `operation` that failed:
 
-Use the [shared control model](/slate/getting_started/controls) for application
-settings. It exposes only observed properties and re-checks current choices before
-writes. Shutter speed and shutter angle share the `shutterSpeed` id (`exposureTime`
-is a search alias); converting units requires the actual frame rate. Native angle
-mode is preserved.
+| Error | Meaning |
+| ----- | ------- |
+| `CameraUnsupportedError` | This camera cannot do it right now; `getCapabilities()` says why. Nothing was sent. |
+| `CameraRefusedError` | The camera said no, or the value is not one it offers now. Nothing changed. |
+| `CameraOutcomeUnknownError` | The command was sent but its result could not be confirmed. It is never resent, so a photo or a Stop is never repeated by accident. `CameraConfirmationError` (a setting that did not read back) and `CameraClipNotFoundError` (stopped, but no new clip appeared) are kinds of it. |
+
+A value the camera does not offer is `CameraRefusedError` whatever the control's state, so the same
+input always gets the same answer; an offered value on a control that is read-only right now is
+`CameraUnsupportedError`. An input no camera could take (a malformed options object, a compensation
+that is not a number of stops) throws `TypeError` or `RangeError` before anything is sent. The MCP
+tools and CLI commands check their inputs against the operation table first and answer
+`OperationInputError` (a usage error on the CLI) without touching the camera.
+
+## Connection
+
+### discover
+
+List attached USB cameras without opening one. `camera_discover`, `darkgrade cameras`. The list
+comes from USB descriptors, so a body already open in this process, or claimed by another, is
+still listed, without its strings.
 
 ```typescript
-const { controls } = await camera.getCapabilities()
-const exposure = await camera.getExposureTime()
-await camera.setExposureTime('180°', { framesPerSecond: 25 })
-await camera.setControl('colorTemperature', 5600)
+static async discover(): Promise&lt;DiscoveredCamera[]&gt;
 ```
-
-These writes require writable, advertised values; the examples do not establish
-support on every camera or in every shooting mode.
 
 ### connect
 
-Connect to a camera device.
+Open the camera: select the attached body, its driver and a session.
 
 ```typescript
-async connect(device?: DeviceDescriptor): Promise&lt;void&gt;
+async connect(options?: ConnectOptions): Promise&lt;void&gt;
 ```
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **device** | `DeviceDescriptor` |  | Optional device descriptor. If not provided, uses the device from the constructor options. |
+| Option | Type | Required | Description |
+| ------ | ---- | -------- | ----------- |
+| **observeOnly** | `boolean` |  | Read without changing any setting. Sony keeps its dial priority and saved image destination. Default `false`. |
+| **device** | `DeviceDescriptor` |  | The body to open. If not provided, uses the device from the constructor options; with neither, opens the one attached PTP camera of any vendor. |
 
 ### disconnect
 
-Disconnect from the camera device.
+Close the camera and put it back the way it was.
 
 ```typescript
 async disconnect(): Promise&lt;void&gt;
 ```
 
-### send
+### recover
 
-Send a PTP operation to the camera.
+Unstick a camera that stopped answering, in software: a fresh session, a PTP Device Reset, then a
+USB port reset, each proven by GetDeviceInfo. The report says whether it worked and when only
+unplugging or a power cycle is left. The transport is closed afterwards; call `connect()` again.
 
 ```typescript
-async send<Op extends OperationDefinition>(
-  operation: Op,
-  params: OperationParams<Op>,
-  data?: Uint8Array,
-  maxDataLength?: number
-): Promise&lt;OperationResponse<Op>&gt;
+async recover(): Promise&lt;RecoveryReport&gt;
+```
+
+### getInfo
+
+What the body reports about itself: manufacturer (`'Sony'`), model, firmware, serial number when
+reported, the lens mount where the model implies it, and the connection (`'usb'`, `'wifi'` or `'ip'`).
+
+```typescript
+async getInfo(): Promise&lt;CameraInfo&gt;
+```
+
+## Settings
+
+### getCapabilities
+
+Every setting's current value and choices (`controls`), which operations this camera can do right
+now with the reason when not (`operations`), and the lens and its focal length (`lens`). It is an
+observation of this body in its current mode, not a model-level guarantee.
+
+```typescript
+async getCapabilities(): Promise&lt;CameraCapabilities&gt;
+```
+
+### setControl
+
+Set any setting by id, for UIs that list every setting. Resolves to the confirmed observation.
+See the [shared control model](/slate/getting_started/controls).
+
+```typescript
+async setControl(id: CameraControlId, value: string | number | ExposureTime, context?: { framesPerSecond: number }): Promise&lt;CameraControlState&gt;
+```
+
+### Typed getters and setters
+
+Each setting has `get<Setting>()` and `set<Setting>(value)`. The setter is `setControl` for that id:
+it takes only canonical values (a compile error otherwise), refuses a value this camera does not
+offer now before sending anything, writes once and resolves to the value read back.
+
+| Setting | Methods | Example values |
+| ------- | ------- | -------------- |
+| Shutter speed | `getShutterSpeed` / `setShutterSpeed` | `'1/250'` `'30"'` `'180°'` `'Bulb'` |
+| Aperture | `getAperture` / `setAperture` | `'f/2.8'` `'Auto'` |
+| ISO | `getIso` / `setIso` | `'ISO 800'` `'Auto'` |
+| Exposure mode | `getExposureMode` / `setExposureMode` | `'Manual'` `'Aperture priority'`; `M` `A` `S` `P` `Av` `Tv` accepted |
+| Exposure compensation | `getExposureCompensation` / `setExposureCompensation` | `'+0.7'` `'-1.0'` `'0.0'` |
+| Metering | `getMeteringMode` / `setMeteringMode` | `'Multi'` `'Spot'` |
+| Photo / video | `getPhotoVideoMode` / `setPhotoVideoMode` | `'photo'` `'video'` |
+| Drive mode | `getDriveMode` / `setDriveMode` | `'Single'` `'Continuous high'` |
+| White balance | `getWhiteBalance` / `setWhiteBalance` | `'Daylight'` `'Shade'` |
+| Colour temperature | `getColorTemperature` / `setColorTemperature` | `5600` (Kelvin, a number) |
+| Look | `getPictureStyle` / `setPictureStyle` | `'Standard'` `'Portrait'` |
+| Picture profile | `getPictureProfile` / `setPictureProfile` | `'PP8'` |
+| Focus mode | `getFocusMode` / `setFocusMode` | `'AF-S'` `'AF-C'` `'MF'` |
+| Focus area | `getFocusArea` / `setFocusArea` | `'Wide'` `'Zone'` `'Spot M'` |
+| Subject detection | `getSubjectDetection` / `setSubjectDetection` | `'On'` `'Off'` |
+| Continuous AF | `getContinuousAutofocus` / `setContinuousAutofocus` | `'On'` `'Off'` |
+| Detection subject | `getDetectionSubject` / `setDetectionSubject` | `'People'` `'Animals'` |
+| Eye selection | `getEyeSelection` / `setEyeSelection` | `'Auto'` `'Left'` |
+| Photo format | `getPhotoFormat` / `setPhotoFormat` | `'RAW'` `'RAW+JPEG'` `'HEIF'` |
+| Photo size | `getPhotoSize` / `setPhotoSize` | `'Large'` |
+| Aspect ratio | `getAspectRatio` / `setAspectRatio` | `'3:2'` `'16:9'` |
+| JPEG quality | `getJpegQuality` / `setJpegQuality` | `'Fine'` |
+| RAW compression | `getRawCompression` / `setRawCompression` | `'Lossless'` |
+| Flash | `getFlashMode` / `setFlashMode` | `'Off'` `'Fill'` |
+| Video format | `getVideoFormat` / `setVideoFormat` | `'XAVC S'` `'H.265'` |
+| Video quality | `getVideoQuality` / `setVideoQuality` | resolution and bit rate |
+| Frame rate | `getFrameRate` / `setFrameRate` | `'24p'` `'60p'` |
+| Audio recording | `getAudioRecording` / `setAudioRecording` | `'On'` `'Off'` |
+| Digital zoom | `getDigitalZoom` / `setDigitalZoom` | `'Off'` `'Clear Image Zoom'` |
+| Live-view quality | `getLiveViewQuality` / `setLiveViewQuality` | `'High'` `'Low'` |
+
+The examples are illustrative; the exact lists come from the vendor codecs, and
+`getCapabilities().controls.<setting>.allowedValues` lists only what this camera offers now.
+A shutter angle and a duration convert to each other only with the actual frame rate:
+
+```typescript
+async setShutterSpeed(value: ShutterSpeed | ExposureTime, context?: { framesPerSecond: number }): Promise&lt;ShutterSpeed&gt;
+```
+
+`setIso` on a Sony body with a separate auto/manual gain switch switches it as part of the write
+(the one recorded exception to "a setting write never changes another setting"). Sony's extended
+and Multi Frame NR sensitivities keep their own names (`'ISO 51200 (extended)'`,
+`'Multi Frame NR ISO 800'`). A Sony body in movie mode reads `'Manual'` for Movie Manual and
+offers only its movie modes.
+
+## Focus
+
+```typescript
+async autofocus(): Promise&lt;'acquired' | 'not-acquired' | 'unknown'&gt;
+async setFocusPoint(x: number, y: number, options?: { autofocus?: boolean }): Promise&lt;void&gt;
+async resetFocusPoint(): Promise&lt;void&gt;
+async nudgeFocus(direction: 'near' | 'far', size: 'small' | 'medium' | 'large'): Promise&lt;{ atLimit: boolean }&gt;
+```
+
+`autofocus` focuses once and says whether the camera confirmed focus; only `'acquired'` means it
+did. `setFocusPoint` takes 0–1 from the top-left of the picture and focuses there unless
+`autofocus: false`; switching to a movable focus area happens inside (on Sony it also pauses
+subject detection), and `resetFocusPoint` or `disconnect` puts back the centre and what it changed,
+also from a later `Camera` on the same body, unless the area was changed since. `nudgeFocus` moves manual focus a little, like the
+`<` `<<` `<<<` buttons in vendor remote apps; `atLimit` says the lens reached the end of its focus
+travel that way (it moved less than the step, or not at all), which is a completed nudge, not an error.
+
+## Zoom
+
+```typescript
+async zoomTo(focalLengthMillimetres: number): Promise&lt;number&gt;
+async startZoom(direction: 'in' | 'out', options: { speed: 'slow' | 'medium' | 'fast' }): Promise&lt;void&gt;
+async stopZoom(): Promise&lt;void&gt;
+```
+
+`zoomTo` zooms to a focal length ("go to 35") and resolves to where the lens landed, read back.
+`startZoom` zooms until `stopZoom`, like holding a zoom rocker; Slate stops it by itself after
+10 seconds. `stopZoom` is always allowed; on Sony, after a zoom Slate started, it resolves once
+the focal length holds still, so the next read is where the lens rests. On the command line,
+`start-zoom` stays in the foreground like `start-recording` and stops on Ctrl-C or after `--duration`.
+
+## Photo and live view
+
+### takePhoto
+
+Takes one photo and resolves only once the camera shows the new file. Photo or video mode is
+prepared inside and undone afterwards; the shutter command is never resent.
+
+```typescript
+async takePhoto(options?: { autofocus?: boolean; destination?: 'card' | 'computer' }): Promise&lt;Photo&gt;
 ```
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
-| **operation** | `OperationDefinition` | ✓ | The operation definition to send. |
-| **params** | `OperationParams&lt;Op&gt;` | ✓ | Parameters inferred from the concrete definition. |
-| **data** | `Uint8Array` |  | Optional data payload. |
-| **maxDataLength** | `number` |  | Optional maximum data length. |
+| **options.autofocus** | `boolean` |  | Focus before the release. Defaults to `true`. |
+| **options.destination** | `'card' \| 'computer'` |  | `card` (the default) keeps it on the card; `computer` also returns its bytes as `data`. |
 
-### get
+The photo carries its `mediaId`, `name` and `sizeBytes`, the same id `listMedia()` reports.
 
-Get a camera property value.
+On Sony, a photo taken in a movie program switches to that program's photo counterpart, or to the
+first still mode the body offers when there is none (Movie Flexible Exposure becomes Program Auto),
+and switches back afterwards. Slate waits 15 seconds plus twice the shutter speed the body reports
+with the shutter half-pressed for the image, which covers a long exposure's noise-reduction dark
+frame; Bulb keeps the plain 15 seconds. A body that announces card-index changes has a photo to
+the card confirmed from its card index.
 
-```typescript
-async get<P extends PropertyDefinition>(property: P): Promise&lt;CodecType<P['codec']>&gt;
-```
+### getLiveViewFrame
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **property** | `PropertyDefinition` | ✓ | The property definition to get. |
-
-### set
-
-Set a camera property value.
+The current picture as a JPEG, with the camera's focus frames (0–1 from the top-left) and, with
+`overlay`, the camera's on-screen info as a PNG (where `operations.getLiveViewFrame.options.overlay`
+is supported). Each call waits for the camera's next frame; turning live view and the overlay
+output on and off happens inside.
 
 ```typescript
-async set<P extends PropertyDefinition>(
-  property: P,
-  value: CodecType<P['codec']>
-): Promise&lt;void&gt;
+async getLiveViewFrame(options?: { overlay?: boolean }): Promise&lt;LiveViewFrame&gt;
 ```
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **property** | `PropertyDefinition` | ✓ | The property definition to set. |
-| **value** | `CodecType&lt;P['codec']&gt;` | ✓ | The concrete property's decoded value type. |
-
-### getStandardPropertyStates
-
-Read the standard PTP properties advertised by the connected body and current USB mode. Each state includes `code`, `codeHex`, `name`, decoded `value`, raw value, `writable`, form (`none`, `range`, or `enum`), and any advertised choices/range.
-
-```typescript
-async getStandardPropertyStates(): Promise&lt;StandardPropertyState[]&gt;
-```
-
-Use this method before building controls for a generic or Olympus camera. Vendor recognition alone does not prove that a body publishes ISO, aperture, focus, or capture operations.
-
-### setStandardProperty
-
-Set one recognized standard property. Darkgrade re-reads the live property descriptors, rejects absent and read-only properties, and rejects enum values the body did not advertise.
-
-```typescript
-async setStandardProperty(
-  propertyNameOrCode: string | number,
-  value: string | number
-): Promise&lt;void&gt;
-```
-
-```typescript
-const properties = await camera.getStandardPropertyStates()
-if (properties.find(property => property.name === 'ExposureIndex')?.writable) {
-  await camera.setStandardProperty('ExposureIndex', 'ISO 400')
-}
-```
-
-The physically tested Olympus E-PL5 MTP mode publishes battery level and writable date/time, but no exposure, focus, or remote-capture control. Newer Olympus bodies automatically expose any standard properties they actually advertise.
-
-### on
-
-Register an event handler.
-
-```typescript
-on(
-  event: EventDefinition,
-  handler: function
-): void
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **event** | `EventDefinition` | ✓ | The event definition to listen for. |
-| **handler** | `function` | ✓ | The handler function to call when the event occurs. |
-
-### off
-
-Unregister an event handler.
-
-```typescript
-off(
-  event: EventDefinition,
-  handler?: function
-): void
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **event** | `EventDefinition` | ✓ | The event definition to stop listening for. |
-| **handler** | `function` |  | Optional handler function. If not provided, all handlers for the event are removed. |
-
-### getAperture
-
-Get the current aperture value.
-
-```typescript
-async getAperture(): Promise&lt;string&gt;
-```
-
-### setAperture
-
-Set the aperture value.
-
-```typescript
-async setAperture(value: string): Promise&lt;void&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The aperture value to set. |
-
-### getShutterSpeed
-
-Get the current shutter speed value.
-
-```typescript
-async getShutterSpeed(): Promise&lt;string&gt;
-```
-
-### setShutterSpeed
-
-Set the shutter speed value.
-
-```typescript
-async setShutterSpeed(value: string): Promise&lt;void&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The shutter speed value to set. |
-
-### getIso
-
-Get the current ISO value.
-
-```typescript
-async getIso(): Promise&lt;string&gt;
-```
-
-### setIso
-
-Set the ISO value.
-
-```typescript
-async setIso(value: string): Promise&lt;void&gt;
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **value** | `string` | ✓ | The ISO value to set. |
-
-### captureImage
-
-Capture an image from the camera.
-
-```typescript
-async captureImage(params?: object)
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **params** | `object` |  | Capture parameters. |
-| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
-| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
-
-### captureLiveView
-
-Capture a live view frame from the camera.
-
-```typescript
-async captureLiveView(params?: object)
-```
-
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **params** | `object` |  | Live view capture parameters. |
-| **params.includeInfo** | `boolean` |  | Whether to include object info in the response. Defaults to `true`. |
-| **params.includeData** | `boolean` |  | Whether to include image data in the response. Defaults to `true`. |
+## Video
 
 ### startRecording
 
-Start video recording.
+Gets the camera ready (video mode, card destination), starts, and resolves once the camera reports
+recording. Record is sent once and never repeated. On the command line, `start-recording` stays in
+the foreground and stops on Ctrl-C or after `--duration`.
 
 ```typescript
 async startRecording(): Promise&lt;void&gt;
@@ -271,48 +255,78 @@ async startRecording(): Promise&lt;void&gt;
 
 ### stopRecording
 
-Stop video recording.
+Stops, waits until a finished clip is on the card, puts the camera back, and resolves to the clip.
+Always allowed, never waits behind another operation, and never resent.
 
 ```typescript
-async stopRecording(): Promise&lt;void&gt;
+async stopRecording(): Promise&lt;Clip&gt;
 ```
 
-### listObjects
-
-List all objects stored on the camera.
+### getRecordingState
 
 ```typescript
-async listObjects(): Promise&lt;object&gt;
+async getRecordingState(): Promise&lt;'idle' | 'starting' | 'recording' | 'stopping' | 'unknown'&gt;
 ```
 
-### getObject
+What the camera reports now. Unknown never counts as idle.
 
-Retrieve an object from the camera.
+## Card and media
 
 ```typescript
-async getObject(
-  objectHandle: number,
-  objectSize: number
+async getCardStatus(): Promise&lt;CardStatus[]&gt;
+async listMedia(): Promise&lt;MediaItem[]&gt;
+async getMediaPreview(id: string, size?: 'thumbnail' | 'preview'): Promise&lt;Uint8Array&gt;
+async downloadMedia(
+  id: string,
+  options?: { onProgress?: (receivedBytes: number, totalBytes: number) => void; signal?: AbortSignal }
 ): Promise&lt;Uint8Array&gt;
 ```
 
-| Parameter | Type | Required | Description |
-| --------- | ---- | -------- | ----------- |
-| **objectHandle** | `number` | ✓ | The handle of the object to retrieve. |
-| **objectSize** | `number` | ✓ | The size of the object in bytes. |
+`getCardStatus` reports each card slot's free space, photos left and recording time left, as far as
+the camera reports them. `listMedia` lists photos and clips newest first. Media ids survive a
+reconnect while the file stays on the card. Nothing on the card is ever deleted or changed.
 
-## Exports
-
-The module also exports the vendor-specific camera implementations:
-
-- `CanonCamera`
-- `GenericCamera`
-- `NikonCamera`
-- `SonyCamera`
-
-These can be imported directly if you need vendor-specific functionality:
+## Body
 
 ```typescript
-import { SonyCamera } from '@packages/slate/src/camera'
-import { GenericCamera } from '@packages/slate/src/camera'
+async getBattery(): Promise&lt;Battery&gt;
+async setClock(moment?: Date): Promise&lt;void&gt;
+```
+
+`getBattery` gives the level, minutes left and whether the camera is on battery, USB or DC power,
+for the fields the camera reports. `setClock` sets the camera's date and time, now by default.
+
+## Events
+
+```typescript
+on(event: 'settingsChanged' | 'mediaAdded', handler: () => void): void
+off(event: 'settingsChanged' | 'mediaAdded', handler?: () => void): void
+```
+
+`settingsChanged` fires when a setting changes on the camera and `mediaAdded` when a new photo or
+clip lands; read `getCapabilities()` or `listMedia()` for what changed. `off` without a handler
+removes every handler of the event. Events are library only: callbacks cannot cross a process.
+A raw `EventDefinition` from `protocolSession(camera).registry.events` is accepted too, for bench
+work.
+
+## Workflows
+
+`runBenchmark(camera, { photo, liveView })` reads everything the camera reports and, when asked,
+tries a photo and a live-view frame (`camera_run_benchmark`, `darkgrade telemetry benchmark`).
+Workflows are functions that take a `Camera` rather than methods on it.
+
+## Protocol access
+
+Raw PTP operations, property reads and writes, the registries and the vendor driver classes are
+not part of `Camera`. For bench work they are on `protocolSession(camera)` from the unsupported
+`@darkgrade/slate/protocol` entry: `send`, `get`, `set`, `readValue`,
+`getStandardPropertyStates`, `setStandardProperty`, Sony buttons and menu sessions, Canon network
+state, magnification and pan, and the driver itself. They share the Camera's session, follow the
+vendors' own names and are not confirmed the way `Camera` operations are.
+
+```typescript
+import { protocolSession, SonyCamera } from '@darkgrade/slate/protocol'
+
+const driver = protocolSession(camera).driver
+if (driver instanceof SonyCamera) console.log(driver.registry.properties.PositionKeySetting.name)
 ```

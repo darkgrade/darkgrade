@@ -133,6 +133,7 @@ SDK connection/authentication remains advanced transport-specific behavior. Do n
 advertise pairing/recording/media parity merely because settings share the contract.
 Likewise, low-level vendor classes, registries and `getInstance()` remain protocol
 escape hatches. New application code must use the generic control contract.
+(Reversed on 2026-11-24: `getInstance()` is removed; see "Public API" below.)
 
 Concrete protocol definitions provide static parameter/value types. Body-specific
 choices, writability and physical switch positions are runtime facts. “Full type
@@ -234,3 +235,71 @@ and 66 tests, its actual main/preload/renderer bundles, the basic Test Bench bui
 21 host tests, seven Chrome fixture HTTP/UI checks, strict packed ESM/CommonJS types,
 fatal-exit injection checks, and security checks. Existing physical-test skips remain
 explicit; fixture browser runs and type checks do not establish hardware reliability.
+
+## Exposure vocabulary exceptions — 2026-11-24
+
+The exposure settings (`aperture`, `iso`, `exposureMode`, `exposureCompensation`,
+`meteringMode`) read and write canonical names. Three recorded exceptions remain:
+
+- Canon's AE mode, metering and compensation properties are plain UINT16 codecs, so their
+  canonical tables live in `src/vendors/canon/control-properties.ts` (attributed to
+  libgphoto2 and EDSDK) rather than in `createEnumCodec` names. Moving them into the codec
+  would change the numeric AE codes the transitional `exposureProgram` control, recording
+  preparation and Studio still compare. The tables are covered by simulated Canon replies
+  only; no Canon body has confirmed them on this branch.
+- `exposureProgram` stays a public control carrying the camera's own shooting-mode word
+  until photoVideoMode replaces its consumers (Sony photo-mode, Studio's RecordingPanel,
+  CameraPill, counterpartMode and the assistant). Until it is deleted, `exposure program`
+  resolves to that id by name instead of being an alias of `exposureMode`.
+- A ranged property keeps a range behind a canonical name only when the name is an exact
+  number on its wire scale: ExposureIndex and NikonMovieISO (`ISO 800` is 800), FNumber and
+  NikonMovieFNumber (`f/2.8` is 280 hundredths). Writes off the step or outside the range
+  are refused, never rounded. Other ranged canonical controls stay read-only.
+
+Canon's codec names its 0x0000, 0xffff and 0x00b0 apertures `auto`; Slate reads them as
+`Auto` but never offers or writes Auto, because a write by that name could send a code the
+camera did not advertise. Aperture input accepts only exact spellings: `F4.0` is `f/4`, and
+`f/2.83` is refused on a body that offers f/2.8. The Sony SDK session writes a setting once
+and polls the canonical readback, so an ignored write is a `CameraConfirmationError`.
+
+## Public API — 2026-11-24
+
+The public API plan (decisions settled 2026-11-24; the result is drawn in `architecture.html`) replaces the
+escape-hatch position recorded above. On `slate/generic-camera-api`:
+
+- **`getInstance()` is reversed.** It is removed from `Camera`, and `check:guards` fails on any
+  Camera member named `getInstance` or after a vendor. Raw access to the driver, registries and
+  send/get/set is `protocolSession(camera)` from the unsupported `@darkgrade/slate/protocol`
+  entry, which shares the Camera's session and never opens its own. The vendor driver classes
+  (`SonyCamera`, `CanonCamera`, `NikonCamera`, `GenericCamera`) left the main entry for that one.
+- **One Camera for every vendor.** The 89 Camera methods the operation table marked protocol,
+  replaced-by or private are gone; Camera holds the plan's operations and a typed getter and
+  setter for each of 29 settings, built on `setControl`. `getExposureTime()`/`setExposureTime()`
+  went with them: `setShutterSpeed()` takes the same duration, angle or label and frame-rate
+  context. Recording preparation (`prepareRecordingMode`, Canon card destination) happens inside
+  `startRecording()`/`stopRecording()`.
+- **One table, three surfaces.** The MCP tools (`camera_` + snake_case, one `camera_set_<setting>`
+  per typed setting, no getter tools) and `darkgrade camera <kebab-case>` commands are generated
+  from the operation table; `darkgrade cameras` stays the command for `Camera.discover`. Old MCP
+  names changed: `camera_controls` is `camera_get_capabilities`, `camera_storage` is
+  `camera_get_card_status`, `camera_benchmark` is `camera_run_benchmark`.
+- **Errors are three types**: `CameraUnsupportedError`, `CameraRefusedError` and
+  `CameraOutcomeUnknownError` (with `CameraConfirmationError` and `CameraClipNotFoundError` as
+  kinds of the last).
+- **Escape budget.** `any`, `as never` and `as unknown as` are counted per file in `src/`;
+  a budget may never exceed the current count. This revision's `test:package` measured 96 in
+  use of 96 allowed.
+
+The root README, Slate and CLI READMEs, the docs (quickstart, camera, controls, feature
+compatibility, PTP/IP), this package's `camera-controls.md` and the homepage code strings were
+updated together; `test:package` compiles 21 of their TypeScript fragments against the tarball,
+now including the controls and feature-compatibility pages. The vendor-features page was folded
+into feature compatibility (operations and settings by camera) and redirects there. Agent
+guidance is one root `AGENTS.md` with nested ones that point to it; `CLAUDE.md` and
+`GEMINI.md` only import it, and the untangle workflow moved into it.
+
+Still open: `exposureProgram` stays a public transitional control until `photoVideoMode` and
+`exposureMode` replace its consumers (Sony recording preparation, Studio, the smoke steps), and
+`Camera.on/off` still accept a raw `EventDefinition` beside the named events. Test Bench and
+Fleet Bench move onto these names separately; this documentation does not establish hardware
+qualification of the new surface on any body beyond the recorded bench runs.

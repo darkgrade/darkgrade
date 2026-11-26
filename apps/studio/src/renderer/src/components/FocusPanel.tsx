@@ -28,35 +28,35 @@ export function FocusPanel({ cameraState, locked, onChange }: FocusPanelProps): 
                         disabled={disabled}
                         onChange={value => onChange('focusArea', value)}
                     />
-                    {controls.subjectRecognition && (
+                    {controls.subjectDetection && (
                         <label className="flex items-center justify-between gap-2 leading-none">
                             <span className="text-muted-foreground">Eye tracking</span>
                             <Switch
-                                checked={controls.subjectRecognition.value === 'On'}
-                                disabled={disabled || !controls.subjectRecognition.enabled}
-                                onCheckedChange={checked => onChange('subjectRecognition', checked ? 'On' : 'Off')}
+                                checked={controls.subjectDetection.value === 'On'}
+                                disabled={disabled || !controls.subjectDetection.enabled}
+                                onCheckedChange={checked => onChange('subjectDetection', checked ? 'On' : 'Off')}
                             />
                         </label>
                     )}
-                    {controls.subjectRecognition?.value === 'On' && (
+                    {controls.subjectDetection?.value === 'On' && (
                         <>
                             <ControlRow
                                 label="Subject"
-                                control={controls.recognitionTarget}
+                                control={controls.detectionSubject}
                                 disabled={disabled}
-                                onChange={value => onChange('recognitionTarget', value)}
+                                onChange={value => onChange('detectionSubject', value)}
                             />
                             <ControlRow
                                 label="Eye"
-                                control={controls.eyeSelect}
+                                control={controls.eyeSelection}
                                 disabled={disabled}
-                                onChange={value => onChange('eyeSelect', value)}
+                                onChange={value => onChange('eyeSelection', value)}
                             />
                         </>
                     )}
                     <p className="pt-1 text-[11px] text-muted-foreground">
-                        Click the picture to focus there. Wide, Zone and Center switch to your last Flexible Spot until
-                        you press Focus.
+                        Click the picture to focus there. Wide, Zone and Center switch to your last spot until you
+                        press Focus.
                     </p>
                 </div>
             ) : (

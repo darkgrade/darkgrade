@@ -1,4 +1,5 @@
 import { Logger } from '@core/logger'
+import { concatenateBytes } from '@ptp/datasets/codecs/byte-sequence'
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
@@ -51,17 +52,6 @@ export class PTPIPTransactionCancelledError extends Error {
     }
 }
 
-function concatenate(parts: Bytes[]): Bytes {
-    const length = parts.reduce((total, part) => total + part.length, 0)
-    const result = new Uint8Array(length)
-    let offset = 0
-    for (const part of parts) {
-        result.set(part, offset)
-        offset += part.length
-    }
-    return result
-}
-
 function stableClientGuid(clientName: string): Uint8Array {
     const guid = new Uint8Array(16)
     const name = new TextEncoder().encode(clientName)
@@ -73,17 +63,6 @@ function stableClientGuid(clientName: string): Uint8Array {
     guid[6] = ((guid[6] ?? 0) & 0x0f) | 0x40
     guid[8] = ((guid[8] ?? 0) & 0x3f) | 0x80
     return guid
-}
-
-function buildUSBContainer(type: USBContainerType, code: number, transactionId: number, payload: Uint8Array) {
-    const result = new Uint8Array(12 + payload.length)
-    const view = new DataView(result.buffer)
-    view.setUint32(0, result.length, true)
-    view.setUint16(4, type, true)
-    view.setUint16(6, code, true)
-    view.setUint32(8, transactionId, true)
-    result.set(payload, 12)
-    return result
 }
 
 class PTPIPConnection {
@@ -105,7 +84,7 @@ class PTPIPConnection {
     private accept(bytes: Bytes): void {
         if (this.failure) return
         try {
-            const input = concatenate([this.bufferedBytes, bytes])
+            const input = concatenateBytes([this.bufferedBytes, bytes])
             this.checkPacketLengths(input)
             const parsed = takePTPIPPackets(input)
             this.bufferedBytes = parsed.remainder
@@ -153,9 +132,9 @@ class PTPIPConnection {
 
     async write(bytes: Uint8Array): Promise<void> {
         if (this.failure) throw this.failure
-        await new Promise<void>((resolve, reject) => {
+        await new Promise<void>((resolve, reject) =>
             this.socket.write(bytes, error => (error ? reject(error) : resolve()))
-        })
+        )
     }
 
     async nextPacket(timeoutMilliseconds = this.timeoutMilliseconds): Promise<PTPIPPacket> {
@@ -202,11 +181,9 @@ export class IPTransport implements TransportInterface {
      * The default logger stays out of the terminal: a transport is a library object, and a
      * rendering logger would take over the console and install process-wide exception handlers.
      */
-    constructor(
-        options: IPTransportOptions,
-        _logger?: Logger
-    ) {
-        this.telemetryEvidence = options.telemetryEvidence ??
+    constructor(options: IPTransportOptions, _logger?: Logger) {
+        this.telemetryEvidence =
+            options.telemetryEvidence ??
             (/^(?:localhost\.?|127\.\d+\.\d+\.\d+|\[?::1\]?)$/i.test(options.address) ? 'synthetic' : 'hardware')
         this.options = {
             address: options.address,
@@ -217,11 +194,8 @@ export class IPTransport implements TransportInterface {
             clientGuid: options.clientGuid,
             dataPacketSize: options.dataPacketSize ?? DEFAULT_DATA_PACKET_SIZE,
         }
-        if (
-            !Number.isSafeInteger(this.options.dataPacketSize) ||
-            this.options.dataPacketSize < 1 ||
-            this.options.dataPacketSize > 1024 * 1024 * 1024 - 12
-        )
+        const { dataPacketSize } = this.options
+        if (!Number.isSafeInteger(dataPacketSize) || dataPacketSize < 1 || dataPacketSize > 1024 * 1024 * 1024 - 12)
             throw new Error('PTP/IP data packet size must be a positive bounded integer')
         if (!Number.isSafeInteger(this.options.timeout) || this.options.timeout < 1)
             throw new Error('PTP/IP timeout must be a positive integer')
@@ -258,11 +232,10 @@ export class IPTransport implements TransportInterface {
                 eventConnection.setMaximumPacketBytes(32)
                 await eventConnection.write(buildInitEventRequest(acknowledgement.connectionNumber))
                 const eventAcknowledgement = await eventConnection.nextPacket()
-                if (eventAcknowledgement.type !== PTPIPPacketType.InitEventAck) {
+                if (eventAcknowledgement.type !== PTPIPPacketType.InitEventAck)
                     throw new Error(
                         `Expected PTP/IP event acknowledgement, received packet type ${eventAcknowledgement.type}`
                     )
-                }
                 this.commandConnection = commandConnection
                 this.eventConnection = eventConnection
                 this.connected = true
@@ -322,7 +295,7 @@ export class IPTransport implements TransportInterface {
         this.operationCodes.clear()
     }
 
-    async send(data: Uint8Array, sessionId: number, transactionId: number): Promise<void> {
+    async send(data: Uint8Array, _sessionId: number, transactionId: number): Promise<void> {
         const connection = this.requireCommandConnection()
         const container = USBContainerBuilder.parseContainer(data)
         if (container.length !== data.length) throw new Error('PTP/IP USB container length does not match its bytes')
@@ -350,7 +323,6 @@ export class IPTransport implements TransportInterface {
             await this.disconnect()
             throw error
         }
-        void sessionId
     }
 
     private async writeData(connection: PTPIPConnection, transactionId: number, payload: Uint8Array): Promise<void> {
@@ -369,11 +341,11 @@ export class IPTransport implements TransportInterface {
      * transactions; a matching Cancel only terminates that transaction. Idle event channels have no
      * command deadline, but every command/data receive phase has a total deadline, including pings.
      */
-    async receive(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
+    async receive(maxLength: number, _sessionId: number, transactionId: number): Promise<Uint8Array> {
         if (!Number.isSafeInteger(maxLength) || maxLength < 12)
             throw new Error('PTP/IP receive length must include the 12-byte USB container header')
         try {
-            return await this.receiveContainer(maxLength, sessionId, transactionId)
+            return await this.receiveContainer(maxLength, transactionId)
         } catch (error) {
             this.operationCodes.delete(transactionId)
             if (!(error instanceof PTPIPTransactionCancelledError)) await this.disconnect()
@@ -381,7 +353,7 @@ export class IPTransport implements TransportInterface {
         }
     }
 
-    private async receiveContainer(maxLength: number, sessionId: number, transactionId: number): Promise<Uint8Array> {
+    private async receiveContainer(maxLength: number, transactionId: number): Promise<Uint8Array> {
         const connection = this.requireCommandConnection()
         const deadline = Date.now() + this.options.timeout
         connection.setMaximumPacketBytes(Math.max(maxLength, 32))
@@ -403,44 +375,37 @@ export class IPTransport implements TransportInterface {
             }
             if (packet.type === PTPIPPacketType.StartData) {
                 const data = await this.readData(connection, packet, transactionId, maxLength - 12, deadline)
-                if(!(data instanceof Uint8Array)){
-                    const response=parseResponse(data)
-                    if(12+response.parameters.length>maxLength)throw new Error('PTP/IP response exceeds receive limit')
-                    this.operationCodes.delete(transactionId)
-                    return buildUSBContainer(USBContainerType.RESPONSE,response.code,response.transactionId,response.parameters)
-                }
+                if (!(data instanceof Uint8Array)) return this.responseContainer(data, transactionId, maxLength)
                 const code = this.operationCodes.get(transactionId)
                 if (code === undefined)
                     throw new Error(`No operation is registered for PTP/IP transaction ${transactionId}`)
-                void sessionId
-                return buildUSBContainer(USBContainerType.DATA, code, transactionId, data)
+                return USBContainerBuilder.build(USBContainerType.DATA, code, transactionId, data)
             }
             if (packet.type === PTPIPPacketType.OperationResponse) {
                 const response = parseResponse(packet)
-                if (response.transactionId !== transactionId) {
+                if (response.transactionId !== transactionId)
                     throw new Error(
                         `Received response for PTP/IP transaction ${response.transactionId}, expected ${transactionId}`
                     )
-                }
-                this.operationCodes.delete(transactionId)
-                if (
-                    12 + response.parameters.length > maxLength ||
-                    response.parameters.length % 4 ||
-                    response.parameters.length > 20
-                )
-                    throw new Error('Invalid or oversized PTP/IP response parameters')
-                return buildUSBContainer(
-                    USBContainerType.RESPONSE,
-                    response.code,
-                    response.transactionId,
-                    response.parameters
-                )
+                return this.responseContainer(packet, transactionId, maxLength)
             }
-            if (packet.type === PTPIPPacketType.Cancel) {
-                return this.cancelledTransaction(packet, transactionId)
-            }
+            if (packet.type === PTPIPPacketType.Cancel) return this.cancelledTransaction(packet, transactionId)
             throw new Error(`Unexpected PTP/IP command packet type ${packet.type}`)
         }
+    }
+
+    /** A response packet as a USB-style container; its parameters are validated in readData or here. */
+    private responseContainer(packet: PTPIPPacket, transactionId: number, maxLength: number): Uint8Array {
+        const response = parseResponse(packet)
+        this.operationCodes.delete(transactionId)
+        if (12 + response.parameters.length > maxLength || response.parameters.length > 20)
+            throw new Error('Invalid or oversized PTP/IP response parameters')
+        return USBContainerBuilder.build(
+            USBContainerType.RESPONSE,
+            response.code,
+            response.transactionId,
+            response.parameters
+        )
     }
 
     private async nextTransactionPacket(connection: PTPIPConnection, deadline: number): Promise<PTPIPPacket> {
@@ -472,11 +437,10 @@ export class IPTransport implements TransportInterface {
         const start = parseStartData(startPacket)
         if (startPacket.payload.length !== 12 || start.totalLength > maximumBytes)
             throw new Error(`PTP/IP data exceeds receive limit ${maximumBytes} bytes or has an invalid declaration`)
-        if (start.transactionId !== expectedTransactionId) {
+        if (start.transactionId !== expectedTransactionId)
             throw new Error(
                 `Received data for PTP/IP transaction ${start.transactionId}, expected ${expectedTransactionId}`
             )
-        }
         const chunks: Uint8Array[] = []
         let receivedLength = 0
         for (;;) {
@@ -486,31 +450,36 @@ export class IPTransport implements TransportInterface {
                 await connection.write(buildPong())
                 continue
             }
-            if(packet.type===PTPIPPacketType.OperationResponse){
-                const response=parseResponse(packet)
-                if(response.transactionId!==expectedTransactionId||response.parameters.length%4||response.parameters.length>20)throw new Error('Invalid PTP/IP data-phase rejection')
+            if (packet.type === PTPIPPacketType.OperationResponse) {
+                const response = parseResponse(packet)
+                if (
+                    response.transactionId !== expectedTransactionId ||
+                    response.parameters.length % 4 ||
+                    response.parameters.length > 20
+                )
+                    throw new Error('Invalid PTP/IP data-phase rejection')
                 // A camera may reject card access after opening an empty data phase.
                 // Deliver its actual refusal without treating it as a broken connection.
-                if(response.code!==0x2001)return packet
+                if (response.code !== 0x2001) return packet
             }
             if (packet.type !== PTPIPPacketType.Data && packet.type !== PTPIPPacketType.EndData) {
-                throw new Error(`Expected PTP/IP data packet, received type ${packet.type} after ${receivedLength}/${start.totalLength} bytes${packet.type===PTPIPPacketType.OperationResponse?'; response=0x'+parseResponse(packet).code.toString(16):''}`)
+                throw new Error(
+                    `Expected PTP/IP data packet, received type ${packet.type} after ${receivedLength}/${start.totalLength} bytes${packet.type === PTPIPPacketType.OperationResponse ? '; response=0x' + parseResponse(packet).code.toString(16) : ''}`
+                )
             }
             const part = parseTransactionPayload(packet)
-            if (part.transactionId !== expectedTransactionId) {
+            if (part.transactionId !== expectedTransactionId)
                 throw new Error(
                     `Received data for PTP/IP transaction ${part.transactionId}, expected ${expectedTransactionId}`
                 )
-            }
             chunks.push(part.data)
             receivedLength += part.data.length
             if (receivedLength > start.totalLength) throw new Error('PTP/IP camera sent more data than declared')
             if (packet.type === PTPIPPacketType.EndData) break
         }
-        if (receivedLength !== start.totalLength) {
+        if (receivedLength !== start.totalLength)
             throw new Error(`PTP/IP data ended after ${receivedLength} bytes; camera declared ${start.totalLength}`)
-        }
-        return concatenate(chunks)
+        return concatenateBytes(chunks)
     }
 
     private async readEvents(connection: PTPIPConnection): Promise<void> {
@@ -544,9 +513,8 @@ export class IPTransport implements TransportInterface {
         if (!command) throw new Error('PTP/IP data phase has no pending command')
         if (command.transactionId !== transactionId)
             throw new Error('PTP/IP data phase transaction does not match its command')
-        if (operationCode !== undefined && command.code !== operationCode) {
+        if (operationCode !== undefined && command.code !== operationCode)
             throw new Error('PTP/IP data phase operation does not match its command')
-        }
         return command
     }
 

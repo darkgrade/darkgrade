@@ -9,7 +9,7 @@ import { resolveCameraControl } from '@darkgrade/slate/controls'
 
 const camera = new Camera()
 try {
-    await camera.connect() // Requires one matching USB body, or an explicit device filter.
+    await camera.connect() // Finds the one attached PTP camera of any vendor, or pass a device filter.
     const { controls } = await camera.getCapabilities()
     const iso = controls.iso
     if (iso?.writable && iso.allowedValues?.length) {
@@ -22,16 +22,22 @@ try {
 }
 ```
 
-The ids, display labels and search aliases live in `src/camera/controls.ts`.
-Per-vendor protocol names live in `src/vendors/control-properties.ts`.
+Code that sets a known setting uses its typed setter (`setIso('ISO 800')`,
+`setWhiteBalance('Daylight')`); a UI that lists every setting uses `setControl(id, value)`.
+Each of the 30 typed settings is `setControl` for its id: `src/camera/settings/typed-settings.ts`
+declares and installs the getter and setter pairs once, over the generic control API, on Camera
+and on every `CameraControlSession`.
+
+The ids, display labels and search aliases live in `src/camera/controls.ts`; each setting's
+canonical values live in `src/camera/settings/values.ts`. Per-vendor protocol properties and the
+mapping from each vendor's words to the canonical values live in
+`src/vendors/<vendor>/control-properties.ts` (`generic` for standard PTP), read through
+`src/vendors/control-properties.ts`.
 An alias resolves a name; it does not change units, choose a camera mode or bypass a
 write guard. Native property names/codes remain in each observation's `source`
-for debugging. Low-level vendor classes and raw `get`/`set` are retained for
-protocol work; their presence is not a capability advertisement.
-Existing `getShutterSpeed()`/`setShutterSpeed()` keep their compact native protocol
-requests for compatibility with scoped camera profiles. Use `getExposureTime()`/
-`setExposureTime()` or `setControl('shutterSpeed', ...)` for unit conversion and
-native angle mode; the old methods do not infer a capture frame rate.
+for debugging. Vendor driver classes and raw `get`/`set` are protocol access through
+`protocolSession(camera)` from `@darkgrade/slate/protocol`; their presence is not a capability
+advertisement. `getInstance()` no longer exists.
 When vendor initialization is refused, a partial session stays caller-owned for
 standard diagnostics. Always close the attempt with `disconnect()` in `finally`.
 
@@ -39,8 +45,9 @@ standard diagnostics. Always close the attempt with `disconnect()` in `finally`.
 
 The canonical id and display name are `shutterSpeed` / “Shutter speed.”
 `exposureTime`, “exposure time,” `shutterAngle` and “shutter angle” are searchable
-aliases, not additional control ids. `ExposureTime` describes the physical value
-and its units; `getExposureTime()` is the quantitative accessor.
+aliases, not additional control ids. `getShutterSpeed()` returns the canonical label
+(`'1/250'`, `'30"'`, `'180°'`, `'Bulb'`); the control state's `exposureTime` field is the
+physical value and its units, as an `ExposureTime`.
 
 | Observed value | Meaning |
 | --- | --- |
@@ -51,13 +58,14 @@ and its units; `getExposureTime()` is the quantitative accessor.
 | `{ kind: 'flash-sync' }` | Camera's distinct flash-sync setting |
 | `{ kind: 'auto' }` | Camera's advertised automatic shutter state |
 
-`getExposureTime()` returns this union. `setExposureTime()` accepts it or a label
-such as `1/50`, `0.02s` or `180°`. A bare numeric string is seconds, never an angle.
-Converting angle and duration requires an explicit `framesPerSecond`:
+`getCapabilities().controls.shutterSpeed.exposureTime` is this union. `setShutterSpeed()`
+(and `setControl('shutterSpeed', …)`) accepts it or a label such as `1/50`, `0.02s` or `180°`.
+A bare numeric string is seconds, never an angle. Converting angle and duration requires an
+explicit `framesPerSecond`:
 
 ```ts
-await camera.setExposureTime('180°', { framesPerSecond: 25 })
-await camera.setExposureTime({ kind: 'duration', seconds: 1 / 48 }, { framesPerSecond: 24 })
+await camera.setShutterSpeed('180°', { framesPerSecond: 25 })
+await camera.setShutterSpeed({ kind: 'duration', seconds: 1 / 48 }, { framesPerSecond: 24 })
 ```
 
 The conversion is `seconds = degrees / (360 * framesPerSecond)`. Supply the actual
@@ -74,8 +82,13 @@ required for that write. Camera mode changes between discovery and writing fail.
 
 ## Capability observations and writes
 
-`getCapabilities()` returns `observedAt`, `controls` and `advertisedOperations`.
-The operation list is `null` on the licensed SDK bridge, which has no standard
+`getCapabilities()` returns `observedAt`, `controls`, `advertisedOperations`, the `lens`
+(name and current focal length in millimetres) and `operations`: for each public operation,
+whether the camera can do it now and, when not, the reason in words a user can act on
+(`options.overlay` covers the live-view overlay). Each brand's driver (`src/vendors/<brand>`)
+supplies its operations' availability through `availability()`; a call the camera
+cannot make throws `CameraUnsupportedError` with the same reason.
+The `advertisedOperations` list is `null` on the licensed SDK bridge, which has no standard
 PTP DeviceInfo inventory; unknown is not an empty supported-operation list.
 Controls only appear after a recognized property is observed. Vendor recognition,
 an SDK enum table or a definition in a registry cannot create a control.
@@ -102,12 +115,15 @@ record, not a guessed enum. Duplicate labels disable that write instead of
 selecting an arbitrary raw format. Nikon movie ISO/focus/aperture/white balance
 reuse the owned-session shot controller and its idle checks. Automatic exposure
 preparation, physical mode changes, transport recovery and camera ownership remain
-explicit host/workflow responsibilities.
+explicit host/workflow responsibilities; the mode an operation needs (video mode for a
+recording, a movable focus area for a focus point) is set up inside that operation and undone
+afterwards.
 
 Nikon movie ISO under Auto ISO is reported as Auto rather than as a dormant fixed value.
 Its fixed ISO writes through the generic control API are unavailable until the current
-manual/Auto-ISO state supports them. Existing specialized preparation/ISO APIs can
-be used explicitly; capability discovery never turns Auto ISO off.
+manual/Auto-ISO state supports them. The specialized preparation in
+`@darkgrade/slate/protocol` (`prepareNikonManualExposure`) can be used explicitly for bench
+work; capability discovery never turns Auto ISO off.
 
 On native Sony bodies with an advertised writable Auto/Manual gain switch, an explicit
 ISO write may use that switch. Slate retains only manual sensitivities actually observed
@@ -121,9 +137,9 @@ Canon common exposure/focus/white-balance and structured formats, and standard P
 Sony's licensed SDK bridge also implements `CameraControlSession` with the same
 ids and exposure union, adapting its existing SDK control mapping. SDK angles use
 thousandths of degrees while Nikon uses hundredths; adapters retain that distinction.
-Connect the SDK bridge through its existing advanced transport API, then use
-`getCapabilities()`/`setControl()`/`getExposureTime()`/`setExposureTime()` on either
-kind of connected session.
+Connect the SDK bridge through its existing advanced transport API (`SonyWifiCamera` in
+`@darkgrade/slate/protocol`), then use `getCapabilities()`, `setControl()` and the typed
+getters and setters on either kind of connected session.
 An absent control is unobserved in this session, not proof the body can never do it.
 The shared setting contract does not claim parity of pairing, recording, media or
 other operations between SDK/Wi-Fi and native PTP.
@@ -145,8 +161,10 @@ Native Sony movie-button transitions wait at least 1.5 seconds after the precedi
 write attempt completes: a body can acknowledge an earlier release or press while
 ignoring it. The driver delays that single command; readback still determines success
 and a refusal still raises an error.
-`prepareRecordingMode()` explicitly selects Sony's advertised corresponding movie
-mode and returns a restoration handle. It checks camera-reported movie capacity,
+`startRecording()` prepares the camera itself: on Sony it selects the advertised
+corresponding movie mode (`openSonyRecordingMode`, internal) and `stopRecording()` restores
+the original mode; Canon prepares its card destination and movie mode the same way. There is
+no public preparation method. The preparation checks camera-reported movie capacity,
 without inferring free space from Sony's zero-capacity, read-only host storage.
 A readable zero in an observed movie mode prevents Start and reports no remaining
 recording time; unavailable values and photo-mode zero remain unknown.
@@ -160,7 +178,9 @@ failures abort. Generic `setControl()`, Record, Stop and capture are never repla
 by this reconciliation. Sony video-take workflows use this same preparation.
 These bounds govern observation polling; the configured transport bounds still apply.
 The shared host operation queue serializes rapid control and recording changes within
-one Camera object. Hosts still own physical leases and mode preparation/restoration.
+one Camera object. The runtime's per-camera host queue (MCP tools, HTTP hosts) runs
+`stopRecording` and `stopZoom` without waiting behind other camera work, so Stop is never
+blocked. Hosts still own physical leases.
 
 Studio applies state updates inside its queue, displays pending/unconfirmed recording
 separately, and retains Stop and the connection if stop cannot be confirmed.

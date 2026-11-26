@@ -28,14 +28,9 @@ export function cameraControlContract(state: Awaited<ReturnType<QualificationCam
     return Object.fromEntries(qualificationSettings.map(setting => {
         const control = state.controls?.[setting]
         const choices = (control?.allowedValues || []).filter(scalar).slice(0, 512)
-        const writable = control?.enabled !== false &&
-            (control?.writable === true || control?.writable === undefined && control?.access === 'GetSet')
-        return [setting, {
-            present: Boolean(control), writable, ...(scalar(control?.value) && { value: control.value }),
-            choices,
-            status: !control ? 'absent' : !writable ? 'read-only-in-current-mode' :
-                choices.length < 2 ? 'no-alternative-advertised' : 'ready',
-        }]
+        const writable = control?.enabled !== false && (control?.writable === true || control?.writable === undefined && control?.access === 'GetSet')
+        const status = !control ? 'absent' : !writable ? 'read-only-in-current-mode' : choices.length < 2 ? 'no-alternative-advertised' : 'ready'
+        return [setting, { present: Boolean(control), writable, ...(scalar(control?.value) && { value: control.value }), choices, status }]
     }))
 }
 /** Caller owns the camera throughout. A failed/ambiguous write still triggers restoration. */

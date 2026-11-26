@@ -3,65 +3,31 @@ import { decodeSonyMonitoringFormat, sonyPreviewCapabilities } from '@vendors/so
 import { describe, expect, it } from 'vitest'
 
 function packed(quality: number, codec: number, resolution: number, rate: number, bitrate = 800) {
-    return (
-        BigInt(quality) |
-        (BigInt(codec) << 8n) |
-        (BigInt(resolution) << 16n) |
-        (BigInt(rate) << 24n) |
-        (BigInt(bitrate) << 32n)
-    ).toString()
+    const fields = [quality, codec, resolution, rate, bitrate]
+    return fields.reduce((value, field, index) => value | (BigInt(field) << BigInt(index * 8)), 0n).toString()
 }
 function property(code: number, value: string, allowedValues?: string[]): SonySdkProperty {
     return { code, name: String(code), type: 4, value, writable: false, allowedValues }
 }
 describe('Sony SDK preview capabilities', () => {
-    it('decodes JPEG dimensions, rate and bitrate from the SDK format', () => {
-        expect(decodeSonyMonitoringFormat(packed(1, 1, 3, 1))).toMatchObject({
-            qualityLevel: 1,
-            codec: 'jpeg',
-            width: 640,
-            height: 360,
-            framesPerSecond: 7.5,
-            megabitsPerSecond: 8,
-            variableResolution: false,
-        })
-    })
-    it('preserves codec distinctions and the variable-resolution bit', () => {
-        const value = (BigInt(packed(3, 2, 7, 6)) | (1n << 47n)).toString()
-        expect(decodeSonyMonitoringFormat(value)).toMatchObject({
-            codec: 'h264',
-            width: 1920,
-            height: 1080,
-            framesPerSecond: 30,
-            variableResolution: true,
-        })
-        expect(decodeSonyMonitoringFormat(packed(5, 3, 6, 5))?.codec).toBe('h265')
+    it.each([
+        [packed(1, 1, 3, 1), { qualityLevel: 1, codec: 'jpeg', width: 640, height: 360, framesPerSecond: 7.5, megabitsPerSecond: 8, variableResolution: false }],
+        [(BigInt(packed(3, 2, 7, 6)) | (1n << 47n)).toString(), { codec: 'h264', width: 1920, height: 1080, framesPerSecond: 30, variableResolution: true }],
+        [packed(5, 3, 6, 5), { codec: 'h265' }],
+    ])('decodes SDK monitoring format %s with its codec, size, rate and variable-resolution bit', (value, expected) => {
+        expect(decodeSonyMonitoringFormat(value)).toMatchObject(expected)
     })
     it('rejects invalid, unknown and oversized descriptors', () => {
-        for (const value of [
-            '-1',
-            '0',
-            '1.5',
-            '1e9',
-            '18446744073709551616',
-            packed(1, 4, 3, 1),
-            packed(6, 1, 3, 1),
-            packed(1, 1, 99, 1),
-        ])
+        const invalid = ['-1', '0', '1.5', '1e9', '18446744073709551616']
+        for (const value of [...invalid, packed(1, 4, 3, 1), packed(6, 1, 3, 1), packed(1, 1, 99, 1)])
             expect(decodeSonyMonitoringFormat(value)).toBeUndefined()
     })
     it('does not infer support or delivery from missing properties', () => {
-        expect(sonyPreviewCapabilities([])).toMatchObject({
-            monitoring: 'not-advertised',
-            delivering: null,
-            preferredJpegFormat: null,
-            formats: [],
-        })
+        const none = { monitoring: 'not-advertised', delivering: null, preferredJpegFormat: null, formats: [] }
+        expect(sonyPreviewCapabilities([])).toMatchObject(none)
     })
     it('prefers the best advertised JPEG without treating H264 as JPEG', () => {
-        const low = packed(1, 1, 3, 1),
-            high = packed(2, 1, 5, 6),
-            h264 = packed(3, 2, 7, 6)
+        const [low, high, h264] = [packed(1, 1, 3, 1), packed(2, 1, 5, 6), packed(3, 2, 7, 6)]
         const result = sonyPreviewCapabilities([
             property(1928, '1'),
             property(1956, low, [low, high, h264]),
@@ -78,9 +44,7 @@ describe('Sony SDK preview capabilities', () => {
         expect(result.preferredJpegFormat).toBeNull()
     })
     it('does not invent enumerated formats from a numeric range', () => {
-        expect(
-            sonyPreviewCapabilities([{ ...property(1956, packed(1, 1, 3, 1), ['1', '2', '3']), valueForm: 'range' }])
-                .formats
-        ).toEqual([])
+        const range = { ...property(1956, packed(1, 1, 3, 1), ['1', '2', '3']), valueForm: 'range' as const }
+        expect(sonyPreviewCapabilities([range]).formats).toEqual([])
     })
 })

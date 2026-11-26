@@ -1,5 +1,6 @@
-import {readCameraObjectHandles} from '@camera/storage'
-import type {Camera} from '@camera/index'
+import { protocolAccess } from '@camera/protocol-session'
+import {readCameraObjectHandles} from '@vendors/generic/storage'
+import {stopCameraRecording} from '@camera/video-recording'
 import type {TakeMedia} from '@workflows/video-take'
 
 const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
@@ -14,12 +15,11 @@ export class SonyPtpVideoRecording {
     private baseline=new Set<number>()
     private attempted=false
     private prepared=false
-    private movieMode?: Awaited<ReturnType<Camera['prepareRecordingMode']>>
     private stoppedResult?:{stopped:boolean;media:TakeMedia[];warning?:string}
     constructor(private readonly camera:any){}
-    private get operations(){return this.camera.getInstance().registry.operations}
+    private get operations(){return protocolAccess(this.camera).driver.registry.operations}
     async state(){
-        const value=await readSonyPtpRecordingState(this.camera)
+        const value=await readSonyPtpRecordingState(protocolAccess(this.camera))
         if(value === undefined)throw new Error('Sony did not report a valid native movie state')
         return value
     }
@@ -28,14 +28,8 @@ export class SonyPtpVideoRecording {
         this.prepared=false
         this.stoppedResult=undefined
         if(await this.state()!==0)throw new Error('Sony is already recording or finalizing a movie')
-        await this.movieMode?.restore()
-        this.movieMode=await this.camera.prepareRecordingMode()
-        try{this.baseline=await readCameraObjectHandles(this.camera)}
-        catch(error){
-            try{await this.movieMode?.restore();this.movieMode=undefined}
-            catch(cleanup){throw new AggregateError([error,cleanup],'Sony recording preparation and restoration failed')}
-            throw error
-        }
+        // Camera.startRecording selects the movie mode; its stopRecording restores it after idle.
+        this.baseline=await readCameraObjectHandles(this.camera)
         this.prepared=true
     }
     async start(){
@@ -52,7 +46,7 @@ export class SonyPtpVideoRecording {
         throw new Error('Sony did not confirm native movie recording started')
     }
     private async confirmStopped(){
-        await this.camera.stopRecording()
+        await stopCameraRecording(this.camera)
         const deadline=Date.now()+15000
         do{if(await this.state()===0)return;await sleep(200)}while(Date.now()<deadline)
         throw new Error('Sony did not confirm recording stopped; preserve camera power')
@@ -72,7 +66,7 @@ export class SonyPtpVideoRecording {
         // 02d92fea8a269eb94330a4eade204ba799433606: MTP object properties can
         // override ObjectInfo with a UINT64 size. Bind to this exact handle,
         // never infer identity from a matching filename in a content list.
-        const inventory=await this.camera.send(this.operations.GetDeviceInfo,{})
+        const inventory=await protocolAccess(this.camera).send(this.operations.GetDeviceInfo,{})
         // DeviceInfo carries the numeric codes in operationsSupportedRaw; the decoded list holds names.
         const supported=inventory.data?.operationsSupportedRaw
         const has=(code:number)=>Array.isArray(supported)&&supported.includes(code)
@@ -80,14 +74,14 @@ export class SonyPtpVideoRecording {
             throw new Error('Sony did not advertise a 64-bit original-size query; copy this original from its card')
         let size:number|undefined
         if(has(0x9802)&&has(0x9803)){
-            const descriptor=await this.camera.send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
+            const descriptor=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropDesc,{ObjectPropertyCode:0xdc04,ObjectFormatCode:Number.isInteger(format)&&format>=0&&format<=0xffff?format:0})
             const data=descriptor.data
             if(descriptor.code===0x2001){
                 if(!(data instanceof Uint8Array)||data.length<18)throw new Error('Sony original-size descriptor is unavailable')
                 const view=new DataView(data.buffer,data.byteOffset,data.byteLength)
                 if(view.getUint16(0,true)!==0xdc04||view.getUint16(2,true)!==8)
                     throw new Error('Sony did not describe original size as UINT64')
-                const result=await this.camera.send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
+                const result=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropValue,{ObjectHandle:handle,ObjectPropertyCode:0xdc04})
                 if(result.code!==0x2001||!(result.data instanceof Uint8Array)||result.data.length!==8)
                     throw new Error('Sony did not return a complete 64-bit original size')
                 size=Number(new DataView(result.data.buffer,result.data.byteOffset,8).getBigUint64(0,true))
@@ -99,7 +93,7 @@ export class SonyPtpVideoRecording {
             // MTP GetObjectPropList for one handle and one property returns the value with its
             // data type: count, then handle, property code, data type, value. The same FX2 answered
             // this with UINT64 (type 8). Require the exact handle, property and type.
-            const list=await this.camera.send(this.operations.MtpGetObjectPropList,{ObjectHandle:handle,ObjectFormatCode:0,ObjectPropertyCode:0xdc04,GroupCode:0,Depth:0})
+            const list=await protocolAccess(this.camera).send(this.operations.MtpGetObjectPropList,{ObjectHandle:handle,ObjectFormatCode:0,ObjectPropertyCode:0xdc04,GroupCode:0,Depth:0})
             const data=list.data
             if(list.code!==0x2001||!(data instanceof Uint8Array)||data.length!==20)
                 throw new Error('Sony did not return a complete 64-bit original size')
@@ -113,7 +107,7 @@ export class SonyPtpVideoRecording {
         return size
     }
     private async info(handle:number):Promise<TakeMedia|undefined>{
-        const response=await this.camera.send(this.operations.GetObjectInfo,{ObjectHandle:handle})
+        const response=await protocolAccess(this.camera).send(this.operations.GetObjectInfo,{ObjectHandle:handle})
         if(response.code!==0x2001||!response.data)throw new Error('Sony original information unavailable')
         const info=response.data
         // Card indexing may create a directory or sidecar before the new movie.
@@ -125,13 +119,12 @@ export class SonyPtpVideoRecording {
     }
     async stop(){
         if(!this.attempted){
-            await this.movieMode?.restore();this.movieMode=undefined;this.prepared=false
+            this.prepared=false
             return this.stoppedResult??{stopped:true,media:[] as TakeMedia[]}
         }
         await this.confirmStopped();this.attempted=false
         const deadline=Date.now()+15000
         let lastError:unknown
-        try{
         do{
             try{
                 const media:TakeMedia[]=[]
@@ -145,7 +138,6 @@ export class SonyPtpVideoRecording {
             await sleep(300)
         }while(Date.now()<deadline)
         return this.stoppedResult={stopped:true,media:[] as TakeMedia[],warning:'Sony stopped; its new original is not yet available. '+(lastError instanceof Error?lastError.message:'Original remains on the card.')}
-        }finally{await this.movieMode?.restore();this.movieMode=undefined}
     }
     async transfer(file:TakeMedia,write:(bytes:Uint8Array)=>Promise<void>,progress:(bytes:number,total:number)=>void){
         if(await this.state()!==0)throw new Error('Stop Sony recording before transferring footage')
@@ -161,13 +153,13 @@ export class SonyPtpVideoRecording {
         let offset=0
         while(offset<file.bytes){
             const count=Math.min(2*1024*1024,file.bytes-offset)
-            const response=await this.camera.send(this.operations.SDIO_GetPartialLargeObject,{ObjectHandle:handle,OffsetLower:offset>>>0,OffsetUpper:Math.floor(offset/0x100000000),MaxBytes:count},undefined,count+12)
+            const response=await protocolAccess(this.camera).send(this.operations.SDIO_GetPartialLargeObject,{ObjectHandle:handle,OffsetLower:offset>>>0,OffsetUpper:Math.floor(offset/0x100000000),MaxBytes:count},undefined,count+12)
             if(response.code!==0x2001||!(response.data instanceof Uint8Array)||!response.data.length||response.data.length>count)throw new Error('Sony returned an incomplete original chunk')
             await write(response.data);offset+=response.data.length;progress(offset,file.bytes)
         }
     }
     async cleanup(){
         if(this.attempted)await this.stop()
-        else{await this.movieMode?.restore();this.movieMode=undefined;this.prepared=false}
+        else this.prepared=false
     }
 }

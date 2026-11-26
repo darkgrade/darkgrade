@@ -19,6 +19,7 @@ export default defineConfig({
         // rewritten to relative paths so consumers can resolve them.
         dts({
             include: ['src'],
+            exclude: ['src/telemetry/server/**'],
             entryRoot: 'src',
             compilerOptions: { stripInternal: true },
             beforeWriteFile(filePath, content) {
@@ -35,7 +36,10 @@ export default defineConfig({
                                       : path + '.js'
                             }${quote}`
                     )
-                if (filePath.endsWith('/index.d.ts') && !/\/(?:cli|runtime|contribute)\//.test(filePath))
+                const cameraEntry =
+                    (filePath.endsWith('/index.d.ts') && !/\/(?:cli|runtime|contribute)\//.test(filePath)) ||
+                    /\/dist\/protocol\.d\.ts$/.test(filePath)
+                if (cameraEntry)
                     content = '/// <reference types="w3c-web-usb" />\n' + content
                 return { filePath, content }
             },
@@ -57,6 +61,8 @@ export default defineConfig({
             entry: {
                 index: resolve(__dirname, 'src/index.ts'),
                 controls: resolve(__dirname, 'src/controls.ts'),
+                // Raw PTP access, vendor drivers and diagnostics, unsupported, for bench work.
+                protocol: resolve(__dirname, 'src/protocol.ts'),
                 'cli/index': resolve(__dirname, 'src/cli/index.ts'),
                 'runtime/index': resolve(__dirname, 'src/runtime/index.ts'),
                 'runtime/browser': resolve(__dirname, 'src/runtime/browser.ts'),

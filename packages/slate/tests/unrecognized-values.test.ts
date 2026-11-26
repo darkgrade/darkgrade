@@ -1,16 +1,17 @@
-import { CanonCamera } from '@camera/canon-camera'
-import { GenericCamera } from '@camera/generic-camera'
+import { CanonCamera } from '@vendors/canon/canon-camera'
+import { GenericCamera } from '@vendors/generic/generic-camera'
 import { Camera } from '@camera/index'
-import { SonyCamera } from '@camera/sony-camera'
+import { SonyCamera } from '@vendors/sony/sony-camera'
 import { validateProtocol, type ProtocolEvidence } from '@contribute/protocol'
 import { Logger } from '@core/logger'
 import { DeviceInfoCodec } from '@ptp/datasets/device-info-dataset'
-import { CanonEventDataCodec } from '@ptp/datasets/vendors/canon/canon-event-data-dataset'
-import { SDIDevicePropInfoArrayCodec } from '@ptp/datasets/vendors/sony/sdi-ext-device-prop-info-dataset'
+import { CanonEventDataCodec } from '@vendors/canon/datasets/canon-event-data-dataset'
+import { SDIDevicePropInfoArrayCodec } from '@vendors/sony/datasets/sdi-ext-device-prop-info-dataset'
 import type { OperationDefinition } from '@ptp/types/operation'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
 import { readCameraCapabilities } from '@vendors/camera-controls'
 import { describe, expect, it, vi } from 'vitest'
+import { protocolSession } from '@camera/protocol-session'
 
 const logger = () => new Logger({ expanded: false, captureConsole: false, renderInTerminal: false })
 
@@ -45,7 +46,7 @@ describe('Canon values outside the codec tables', () => {
             vendorId: 0x04a9,
             transport: { isLittleEndian: () => true, isConnected: () => true, on: () => undefined } as unknown as TransportInterface,
         })
-        const driver = camera.getInstance() as CanonCamera
+        const driver = protocolSession(camera).driver as CanonCamera
         const property = driver.registry.properties.CanonFocusMode
         const deviceInfo = new DeviceInfoCodec(driver.registry)
         const send = async (operation: OperationDefinition) => {
@@ -72,7 +73,7 @@ describe('Canon values outside the codec tables', () => {
         const focus = (await camera.getCapabilities()).controls.focusMode!
         expect(focus).toMatchObject({
             value: 'Unrecognized (0x3e7)',
-            allowedValues: ['one-shot', 'manual'],
+            allowedValues: ['AF-S', 'MF'],
             writable: false,
             unrecognized: { value: '0x3e7' },
         })
@@ -80,7 +81,7 @@ describe('Canon values outside the codec tables', () => {
         expect(state.value).toBeUndefined()
         expect(state.unrecognized).toEqual({ value: '0x3e7' })
         expect(driver.listUnknownPropertyStates().find(item => item.code === 0xd108)?.rawValue).toBe(999)
-        await expect(camera.setControl('focusMode', 'manual')).rejects.toThrow('not writable')
+        await expect(camera.setControl('focusMode', 'MF')).rejects.toThrow('not writable')
         expect(unrecognized(evidence)).toEqual([
             { type: 'unrecognized-value', vendorId: 0x04a9, property: 0xd108, dataType: 6, raw: 999, choice: false },
         ])
@@ -90,8 +91,8 @@ describe('Canon values outside the codec tables', () => {
         const { camera, driver, evidence } = canon(3, [0, 0x77, 3])
         const focus = (await camera.getCapabilities()).controls.focusMode!
         expect(focus).toMatchObject({
-            value: 'manual',
-            allowedValues: ['one-shot', 'manual'],
+            value: 'MF',
+            allowedValues: ['AF-S', 'MF'],
             writable: true,
             unrecognized: { choices: ['0x77'] },
         })

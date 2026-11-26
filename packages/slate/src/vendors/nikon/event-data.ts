@@ -19,12 +19,7 @@ export class NikonEventDataCodec extends CustomCodec<NikonQueuedEvent[]> {
         view.setUint32(0, events.length, true)
         let offset = 4
         for (const event of events) {
-            if (
-                !Number.isInteger(event.code) ||
-                event.code < 0 ||
-                event.code > 0xffff ||
-                event.parameters.length > 0xffff
-            )
+            if (!Number.isInteger(event.code) || event.code < 0 || event.code > 0xffff || event.parameters.length > 0xffff)
                 throw new Error('Invalid Nikon event code or parameter count')
             view.setUint16(offset, event.code, true)
             view.setUint16(offset + 2, event.parameters.length, true)

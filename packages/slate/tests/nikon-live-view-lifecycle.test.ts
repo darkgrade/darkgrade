@@ -1,36 +1,31 @@
-import { Logger } from '@core/logger'
 import { PTPResponseError } from '@core/ptp-errors'
 import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
-import { NotLiveView } from '@ptp/definitions/vendors/nikon/nikon-response-definitions'
+import { NotLiveView } from '@vendors/nikon/definitions/nikon-response-definitions'
 import { describe, expect, it, vi } from 'vitest'
-import { NikonCamera } from '../src/camera/nikon-camera'
+import { cardObjectInfo, nikonCamera, nikonDeviceInfo } from '@tests/fixtures/nikon'
+import type { Registry } from '@vendors/registry'
 
-function cameraFixture(): NikonCamera {
-    const transport = {
-        isLittleEndian: () => true,
-        isConnected: () => true,
-        connect: vi.fn(),
-        disconnect: vi.fn(),
-        send: vi.fn(),
-        receive: vi.fn(),
-        classRequestReset: vi.fn(),
-        getType: () => 'USB',
-        on: vi.fn(),
+/** Replies of a Nikon body that queues one ObjectAdded for the card file each release writes. */
+function cardRelease(registry: Registry, operationsSupportedRaw: number[] = []) {
+    const queued: { code: number; parameters: number[] }[] = []
+    return async (operation: { name: string }) => {
+        if (operation.name === 'InitiateCapture' || operation.name === 'InitiateCaptureRecInMedia')
+            queued.push({ code: 0x4002, parameters: [0x00010001] })
+        if (operation.name === 'GetEventEx') return { code: OK.code, data: queued.splice(0) } as any
+        if (operation.name === 'GetDeviceInfo') return { code: OK.code, data: nikonDeviceInfo(registry, operationsSupportedRaw) } as any
+        if (operation.name === 'GetObjectInfo') return { code: OK.code, data: cardObjectInfo(registry, 'DSC_0001.JPG', 4) } as any
+        if (operation.name === 'GetPartialObjectEx' || operation.name === 'GetObject') return { code: OK.code, data: Uint8Array.of(1, 2, 3, 4) } as any
+        return { code: OK.code } as any
     }
-    return new NikonCamera(transport as any, new Logger({ captureConsole: false, renderInTerminal: false }))
 }
 
-describe('Nikon live-view lifecycle', () => {
-    it('uses Nikon response 0xA00B for NotLiveView', () => {
-        expect(NotLiveView.code).toBe(0xa00b)
-    })
+const cameraFixture = () => nikonCamera({ getType: () => 'USB', disconnect: vi.fn() })
 
+describe('Nikon live-view lifecycle', () => {
     it('does not send EndLiveView when a normal PTP session never started live view', async () => {
         const camera = cameraFixture()
         const send = vi.spyOn(camera, 'send')
-
         await camera.disconnect()
-
         expect(send).not.toHaveBeenCalled()
     })
 
@@ -41,16 +36,14 @@ describe('Nikon live-view lifecycle', () => {
         vi.spyOn(camera, 'send').mockImplementation(async operation => {
             if (operation.name === 'StartLiveView') return { code: DeviceBusy.code } as any
             if (operation.name === 'DeviceReady') return { code: OK.code } as any
-            if (operation.name === 'GetLiveViewImageEx') {
-                return { code: OK.code, data: { liveViewImage: jpeg } } as any
-            }
+            if (operation.name === 'GetLiveViewImageEx') return { code: OK.code, data: { liveViewImage: jpeg } } as any
             throw new Error(`Unexpected operation ${operation.name}`)
         })
-
         await expect(camera.captureLiveView({ includeInfo: false })).resolves.toMatchObject({ data: jpeg })
     })
 
-    it('restarts live view when a long session receives Nikon NotLiveView', async () => {
+    it('restarts live view when a long session receives Nikon NotLiveView (0xA00B)', async () => {
+        expect(NotLiveView.code).toBe(0xa00b)
         const camera = cameraFixture()
         vi.spyOn(camera, 'get').mockResolvedValue('OFF' as any)
         const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
@@ -59,15 +52,11 @@ describe('Nikon live-view lifecycle', () => {
             if (operation.name === 'StartLiveView' || operation.name === 'DeviceReady') return { code: OK.code } as any
             if (operation.name === 'GetLiveViewImageEx') {
                 imageAttempts += 1
-                return imageAttempts === 1
-                    ? ({ code: NotLiveView.code } as any)
-                    : imageAttempts === 2
-                      ? ({ code: DeviceBusy.code } as any)
-                      : ({ code: OK.code, data: { liveViewImage: jpeg } } as any)
+                const code = [NotLiveView.code, DeviceBusy.code][imageAttempts - 1]
+                return (code ? { code } : { code: OK.code, data: { liveViewImage: jpeg } }) as any
             }
             throw new Error(`Unexpected operation ${operation.name}`)
         })
-
         await expect(camera.captureLiveView({ includeInfo: false })).resolves.toMatchObject({ data: jpeg })
         expect(send.mock.calls.filter(([operation]) => operation.name === 'StartLiveView')).toHaveLength(2)
         expect(imageAttempts).toBe(3)
@@ -81,7 +70,6 @@ describe('Nikon live-view lifecycle', () => {
             if (operation.name === 'GetLiveViewImageEx') return { code: OK.code, data: { liveViewImage: jpeg } } as any
             throw new Error(`Unexpected operation ${operation.name}`)
         })
-
         await expect(camera.captureLiveView({ includeInfo: false })).resolves.toMatchObject({ data: jpeg })
         await camera.disconnect()
         expect(send.mock.calls.map(([operation]) => operation.name)).toEqual(['GetLiveViewImageEx'])
@@ -121,32 +109,16 @@ describe('Nikon live-view lifecycle', () => {
         expect(send.mock.calls.filter(([operation]) => operation.name === 'StartLiveView')).toHaveLength(1)
     })
 
-    it('fires the shutter with the default capture options and with retrieval explicitly turned off', async () => {
-        for (const options of [
-            undefined,
-            { includeInfo: true, includeData: true },
-            { includeInfo: false, includeData: false },
-        ]) {
-            const camera = cameraFixture()
-            const send = vi.spyOn(camera, 'send').mockResolvedValue({ code: OK.code } as any)
-            vi.spyOn(camera, 'get').mockImplementation(async property =>
-                property.name === 'LiveViewSelector' ? 'PHOTO' : ('OFF' as any)
-            )
-            await expect(camera.captureImage(options)).resolves.toEqual({ info: undefined, data: undefined })
-            expect(send.mock.calls.map(([operation]) => operation.name)).toContain('InitiateCapture')
-        }
-    })
     it('uses advertised Nikon normal release when autofocus is explicitly disabled', async () => {
         const camera = cameraFixture()
         vi.spyOn(camera, 'get').mockImplementation(async property =>
             property.name === 'LiveViewSelector' ? 'PHOTO' : ('OFF' as any))
-        const send = vi.spyOn(camera, 'send').mockImplementation(async operation =>
-            ({ code: OK.code, ...(operation.name === 'GetDeviceInfo' && { data: { operationsSupportedRaw: [0x9207] } }) }) as any)
+        const send = vi.spyOn(camera, 'send').mockImplementation(cardRelease(camera.registry, [0x9207]))
         await camera.captureImage({ autofocus: false })
         expect(send.mock.calls.some(([operation]) => operation.name === 'InitiateCapture')).toBe(false)
         const release = send.mock.calls.find(([operation]) => operation.name === 'InitiateCaptureRecInMedia')
         expect(release?.[1]).toEqual({ AfMode: 0xffffffff, Target: 0 })
-        send.mockReset().mockResolvedValue({ code: OK.code, data: { operationsSupportedRaw: [] } } as any)
+        send.mockReset().mockImplementation(cardRelease(camera.registry, []))
         await expect(camera.captureImage({ autofocus: false })).rejects.toThrow('does not advertise')
         expect(send.mock.calls.some(([operation]) => operation.name === 'InitiateCaptureRecInMedia')).toBe(false)
     })

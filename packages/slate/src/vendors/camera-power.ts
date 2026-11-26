@@ -1,4 +1,8 @@
 import type { Camera } from '@camera/index'
+import type { Battery } from '@camera/driver'
+import { CameraUnsupportedError } from '@camera/errors'
+import { isCamera } from '@camera/camera-context'
+import { protocolAccess, protocolSession, type ProtocolSession } from '@camera/protocol-session'
 import {GetDevicePropDesc} from '@ptp/definitions/operation-definitions'
 import type { CameraPower } from '@workflows/camera-power'
 
@@ -50,7 +54,8 @@ export function normalizeCameraPower(vendor: 'sony' | 'canon' | 'standard', prop
 }
 
 /** Read one standard battery descriptor on an already-owned PTP session. Never write or reconnect. */
-export async function readStandardCameraPower(camera:Pick<Camera,'send'>):Promise<CameraPower|undefined>{
+export async function readStandardCameraPower(target:Camera|Pick<ProtocolSession,'send'>):Promise<CameraPower|undefined>{
+    const camera=protocolAccess(target)
     try{
         const response=await camera.send(GetDevicePropDesc,{DevicePropCode:0x5001})
         const descriptor=response.data
@@ -59,15 +64,32 @@ export async function readStandardCameraPower(camera:Pick<Camera,'send'>):Promis
     }catch{return undefined}
 }
 
-/** Reuse an owned camera session for battery telemetry over USB or Sony SDK Wi-Fi. */
-export async function readCameraPower(camera:Pick<Camera,'send'> & {
+type PowerSession=Pick<ProtocolSession,'send'> & {
     getSonyPropertyStates?:()=>Promise<PowerProperty[]>
     getCanonPropertyStates?:()=>Promise<PowerProperty[]>
     getCanonUnknownPropertyStates?:()=>Promise<PowerProperty[]>
-},vendor:'sony'|'canon'|'standard'):Promise<CameraPower|undefined>{
+}
+
+/** Reuse an owned camera session for battery telemetry over USB or Sony SDK Wi-Fi. */
+export async function readCameraPower(target:Camera|PowerSession,vendor:'sony'|'canon'|'standard'):Promise<CameraPower|undefined>{
+    const camera:PowerSession=isCamera(target)?protocolSession(target):target
     if(vendor==='sony'&&camera.getSonyPropertyStates)return normalizeCameraPower('sony',await camera.getSonyPropertyStates())
     const standard=await readStandardCameraPower(camera)
     if(standard?.percent!==undefined||vendor==='standard')return standard
     if(vendor==='canon')return normalizeCameraPower('canon',[...await camera.getCanonPropertyStates?.()||[],...await camera.getCanonUnknownPropertyStates?.()||[]])
     return undefined
+}
+
+/** The public battery reading; telemetry provenance (`source`, `raw`) stays in CameraPower. */
+export function batteryFromPower(power: CameraPower | undefined): Battery {
+    const battery: Battery = {
+        powerSource: power?.powerSource ?? 'unknown',
+        ...(power?.percent !== undefined && { percent: power.percent }),
+        ...(power?.level !== undefined && { level: power.level }),
+        ...(power?.remainingMinutes !== undefined && { minutesRemaining: power.remainingMinutes }),
+        ...(power?.batteryPresent !== undefined && { batteryPresent: power.batteryPresent }),
+    }
+    if (Object.keys(battery).length === 1 && battery.powerSource === 'unknown')
+        throw new CameraUnsupportedError('getBattery', 'This camera does not report its battery')
+    return battery
 }
