@@ -2,8 +2,10 @@ import { describeDone, resolveFollowUp } from '@main/assistant/follow-ups'
 import { INTENT_GRAMMAR, INTENT_INSTRUCTIONS, intentHasStarted, parseIntentLine, type FoundRequest } from '@main/assistant/intent-schema'
 import { toolCallsWrittenAsText } from '@main/assistant/text-tool-calls'
 import { cameraService } from '@main/camera-service'
-import { llamaServerBinary, LlamaServerProcess } from '@main/models/llama-server-process'
-import { ModelCache, NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
+import { llamaServerBinary, llamaServerProcess } from '@main/models/llama-server-process'
+import type { LocalServerProcess } from '@main/models/local-server'
+import { studioModelCache } from '@main/models/studio-models'
+import { NEMOTRON_ASSISTANT, totalModelBytes } from '@main/models/model-cache'
 import { beginChangeGroup, cameraStatus, endChangeGroup, findTool, STUDIO_TOOLS } from '@main/tools/studio-tools'
 import {
     CAMERA_CONTROL_LABELS,
@@ -219,8 +221,8 @@ export interface AgentProgress {
  */
 class AssistantService {
     private broadcast: Broadcast = () => {}
-    private cache = new ModelCache(join(app.getPath('userData'), 'models'))
-    private server: LlamaServerProcess | null = null
+    private cache = studioModelCache()
+    private server: LocalServerProcess | null = null
     private preparing: Promise<number> | null = null
     private status: LocalModelStatus = { phase: 'idle', receivedBytes: 0, totalBytes: 0, port: null, message: null }
     private nextIntentId = 1
@@ -768,7 +770,7 @@ class AssistantService {
                 this.setStatus({ phase: 'downloading', ...progress })
             })
             this.setStatus({ phase: 'starting', message: null })
-            const server = new LlamaServerProcess({
+            const server = llamaServerProcess({
                 binaryPath: llamaServerBinary(),
                 modelPath,
                 projectorPath,

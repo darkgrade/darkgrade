@@ -1,14 +1,14 @@
 import {
     DEPTH_PRO_2_FOCAL,
     depthPro2Model,
-    ModelCache,
     SAM_3,
     totalModelBytes,
     type CachedModel,
 } from '@main/models/model-cache'
 import { preferences } from '@main/preferences'
-import { ensureVisionEnvironment, VisionSidecarProcess } from '@main/vision/vision-sidecar-process'
-import { PythonRuntime } from '@main/voice/python-runtime'
+import { ensureVisionEnvironment, visionSidecarProcess } from '@main/vision/vision-sidecar-process'
+import type { LocalServerProcess } from '@main/models/local-server'
+import { studioModelCache, studioPythonRuntime } from '@main/models/studio-models'
 import { IPC_EVENTS, type LogEntry, type Preferences } from '@shared/ipc'
 import {
     DEFAULT_SEGMENTATION_PROMPT,
@@ -48,7 +48,7 @@ function isWanted(id: VisionModelId, current: Preferences): boolean {
 
 /** One vision model's server: downloaded once, then kept loaded until it is turned off. */
 class VisionEngine {
-    private server: VisionSidecarProcess | null = null
+    private server: LocalServerProcess | null = null
     private preparing: Promise<number> | null = null
     private releasing: Promise<void> | null = null
     private loadedKey: string | null = null
@@ -101,7 +101,7 @@ class VisionEngine {
                     : ['--model', 'depth-pro-2', '--path', directories[0], '--focal-path', directories[1]]
             this.setStatus({ phase: 'starting', message: null })
             this.host.writeEngineLog(`[studio] loading ${name} (${key})`)
-            const server = new VisionSidecarProcess({
+            const server = visionSidecarProcess({
                 pythonPath,
                 modelArguments,
                 onLog: line => this.host.writeEngineLog(`[${this.id}] ${line}`),
@@ -174,7 +174,7 @@ class VisionEngine {
  * the speech engine and the assistant, so all four can be loaded at once.
  */
 class VisionService {
-    readonly cache = new ModelCache(join(app.getPath('userData'), 'models'))
+    readonly cache = studioModelCache()
     private broadcast: Broadcast = () => {}
     private engineLog: WriteStream | null = null
     private environmentReady: Promise<string> | null = null
@@ -262,7 +262,7 @@ class VisionService {
     environment(engine: VisionEngine): Promise<string> {
         this.environmentReady ??= ensureVisionEnvironment({
             directory: join(app.getPath('userData'), 'vision-sidecar-environment'),
-            pythonRuntime: new PythonRuntime({ directory: join(app.getPath('userData'), 'python-runtime') }),
+            pythonRuntime: studioPythonRuntime(),
             onSetupProgress: ({ receivedBytes, totalBytes }) =>
                 engine.setStatus({ phase: 'starting', receivedBytes, totalBytes }),
             onLog: line => this.writeEngineLog(line),

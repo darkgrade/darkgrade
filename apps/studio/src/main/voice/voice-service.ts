@@ -1,7 +1,8 @@
-import { ModelCache, SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
+import type { LocalServerProcess } from '@main/models/local-server'
+import { SPEECH_MODEL_FILES, SPEECH_MODEL_REVISIONS, totalModelBytes } from '@main/models/model-cache'
+import { studioModelCache, studioPythonRuntime } from '@main/models/studio-models'
 import { preferences } from '@main/preferences'
-import { BarkSidecarProcess } from '@main/voice/bark-sidecar-process'
-import { PythonRuntime } from '@main/voice/python-runtime'
+import { barkSidecarProcess, ensureBarkEnvironment } from '@main/voice/bark-sidecar-process'
 import { IPC_EVENTS, type LogEntry, type VoiceEngineStatus } from '@shared/ipc'
 import { speechModel, type SpeechModelId } from '@shared/speech-models'
 import { wavFile } from '@shared/wav'
@@ -19,8 +20,8 @@ const KEPT_SESSION_RECORDINGS = 5
 /** Downloads the speech model once, then runs it in the Bark sidecar while voice is in use. */
 class VoiceService {
     private broadcast: Broadcast = () => {}
-    private cache = new ModelCache(join(app.getPath('userData'), 'models'))
-    private server: BarkSidecarProcess | null = null
+    private cache = studioModelCache()
+    private server: LocalServerProcess | null = null
     private preparing: Promise<number> | null = null
     private engineLog: WriteStream | null = null
     private status: VoiceEngineStatus = {
@@ -93,18 +94,26 @@ class VoiceService {
         try {
             const model = this.chosenModel
             const files = SPEECH_MODEL_FILES[model]
-            const server = new BarkSidecarProcess({
+            const runner = speechModel(model).runner
+            const pythonPath = await ensureBarkEnvironment(
+                {
+                    directory: join(app.getPath('userData'), 'bark-sidecar-environment'),
+                    pythonRuntime: studioPythonRuntime(),
+                    onSetupProgress: ({ step, receivedBytes, totalBytes }) =>
+                        this.setStatus({
+                            phase: step === 'python' ? 'downloading' : 'starting',
+                            setupStep: step,
+                            receivedBytes,
+                            totalBytes,
+                        }),
+                    onLog: line => this.writeEngineLog(line),
+                },
+                runner
+            )
+            const server = barkSidecarProcess({
+                pythonPath,
                 modelDirectory: this.cache.modelDirectory(files),
-                runner: speechModel(model).runner,
-                environmentDirectory: join(app.getPath('userData'), 'bark-sidecar-environment'),
-                pythonRuntime: new PythonRuntime({ directory: join(app.getPath('userData'), 'python-runtime') }),
-                onSetupProgress: ({ step, receivedBytes, totalBytes }) =>
-                    this.setStatus({
-                        phase: step === 'python' ? 'downloading' : 'starting',
-                        setupStep: step,
-                        receivedBytes,
-                        totalBytes,
-                    }),
+                runner,
                 onLog: line => this.writeEngineLog(line),
                 onUnexpectedExit: description => {
                     this.server = null
@@ -117,7 +126,6 @@ class VoiceService {
                     })
                 },
             })
-            await server.ensureEnvironment()
             await this.downloadModel(model)
             this.setStatus({ phase: 'starting', setupStep: 'loading', message: null })
             this.writeEngineLog(

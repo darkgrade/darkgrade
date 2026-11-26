@@ -44,7 +44,12 @@ describe('python runtime', () => {
             },
             fetchArchive: serving(archive, requests),
         })
-        const pythonPath = await runtime.ensure(update => progress.push(update.receivedBytes))
+        // Speech and vision asking at once share one download.
+        const [pythonPath] = await Promise.all([
+            runtime.ensure(update => progress.push(update.receivedBytes)),
+            runtime.ensure(() => {}),
+        ])
+        expect(requests).toHaveLength(1)
         expect(pythonPath).toBe(join(workDirectory, 'runtime', 'python', 'bin', 'python3.11'))
         expect(execFileSync(pythonPath).toString()).toContain('Python 3.11')
         expect(progress.at(-1)).toBe(archive.length)
