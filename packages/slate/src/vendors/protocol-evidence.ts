@@ -7,21 +7,23 @@ import {
 } from '@contribute/protocol'
 import type { DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import type { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { createCanonRegistry, createNikonRegistry, createSonyRegistry, type Registry } from '@vendors/registry'
+import type { Registry } from '@vendors/registry'
+import { vendorEntry, vendorOfManufacturer } from '@vendors/vendors'
 
-const definitionsByVendor = new Map<number, Registry>([
-    [0x04a9, createCanonRegistry(true)],
-    [0x04b0, createNikonRegistry(true)],
-    [0x054c, createSonyRegistry(true)],
-])
+/** Each dedicated vendor's definitions, built once: they judge which codes of an inventory are known. */
+const definitionsByVendor = new Map<number, Registry>()
+function vendorDefinitions(vendorId: number): Registry | undefined {
+    const vendor = vendorEntry(vendorId)
+    if (vendor?.driver !== 'dedicated') return
+    let registry = definitionsByVendor.get(vendorId)
+    if (!registry) definitionsByVendor.set(vendorId, (registry = vendor.registry(true)))
+    return registry
+}
 
 /** The USB vendor of a DeviceInfo's manufacturer, for the vendors whose definitions judge an inventory. */
 function deviceInfoVendor(data: unknown): number | undefined {
     const manufacturer = (data as { manufacturer?: unknown } | undefined)?.manufacturer
-    if (typeof manufacturer !== 'string') return
-    if (/^\s*canon\b/i.test(manufacturer)) return 0x04a9
-    if (/^\s*nikon\b/i.test(manufacturer)) return 0x04b0
-    if (/^\s*sony\b/i.test(manufacturer)) return 0x054c
+    return typeof manufacturer === 'string' ? vendorOfManufacturer(manufacturer)?.vendorId : undefined
 }
 
 export interface CachedDiagnosticSetting { property: number; dataType: number; current: number | string; observedAt: number }
@@ -179,7 +181,7 @@ export function protocolEvidence(vendorId: number, registry: Registry, operation
     if (vendorId === 0 && operation === 0x1001) vendorId = deviceInfoVendor(data) ?? 0
     // Discovery starts through GenericCamera before it creates the vendor camera.
     // Judge known codes against the vendor definitions, not that temporary registry.
-    registry = definitionsByVendor.get(vendorId) ?? registry
+    registry = vendorDefinitions(vendorId) ?? registry
     const result: ProtocolEvidence[] = []
     /** Unscoped or invalid evidence is excluded; reports whether the item was kept. */
     const add = (item: ProtocolEvidence): boolean => {

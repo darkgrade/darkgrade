@@ -52,6 +52,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { vendorEntry } from '@vendors/vendors'
 import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
@@ -1405,9 +1406,10 @@ export class GenericCamera {
                 )
             if (!response.data) throw new PTPDecodeError('GetDeviceInfo returned no device dataset')
             const { manufacturer, model, deviceVersion, serialNumber } = response.data
-            const lensMount = lensMountForModel(this.vendorId, model)
+            const vendor = vendorEntry(this.vendorId)
+            const lensMount = vendor?.lensMount?.(model.trim())
             const info: CameraInfo = {
-                manufacturer: (this.vendorId !== null && MAKES[this.vendorId]) || manufacturer.trim(),
+                manufacturer: vendor?.make || manufacturer.trim(),
                 model: model.trim(),
                 firmware: deviceVersion.trim(),
                 ...(serialNumber && { serialNumber }),
@@ -1514,34 +1516,6 @@ export class GenericCamera {
             }
         return this.#clockCheck.reason ? { supported: false, reason: this.#clockCheck.reason } : undefined
     }
-}
-
-/** The make people use for each USB vendor; another vendor keeps the name its DeviceInfo gives. */
-const MAKES: Record<number, string> = {
-    [VendorIDs.SONY]: 'Sony',
-    [VendorIDs.CANON]: 'Canon',
-    [VendorIDs.NIKON]: 'Nikon',
-    [VendorIDs.FUJIFILM]: 'Fujifilm',
-    [VendorIDs.PANASONIC]: 'Panasonic',
-    [VendorIDs.OLYMPUS]: 'Olympus',
-    [VendorIDs.OM_DIGITAL]: 'OM System',
-    [VendorIDs.LEICA]: 'Leica',
-    [VendorIDs.SIGMA]: 'Sigma',
-}
-
-/** The lens mount where the model name implies it (Sony ILCE/ILME/ILCA, Nikon Z/D, Canon EOS R); otherwise none, never a guess. */
-function lensMountForModel(vendorId: number | null, model: string): string | undefined {
-    const name = model.trim()
-    if (vendorId === VendorIDs.SONY) {
-        if (/^IL(CE|ME)-/i.test(name)) return 'E'
-        if (/^ILCA-/i.test(name)) return 'A'
-    }
-    if (vendorId === VendorIDs.NIKON) {
-        if (/^Z\s?[0-9fc]/i.test(name)) return 'Z'
-        if (/^D\d/i.test(name)) return 'F'
-    }
-    if (vendorId === VendorIDs.CANON && /\bEOS R(\d|P\b|\b)/i.test(name)) return 'RF'
-    return undefined
 }
 
 /** Event names, across the standard and vendor registries, that mean each public event. */
