@@ -35,6 +35,7 @@ try {
     if (notice.version !== NOTICE_VERSION) throw new Error('Notice version mismatch')
     const enrollment = await expect(await call('/v2/installations', 'POST', { noticeVersion: NOTICE_VERSION }), 201)
     key = enrollment.installKey
+    const sessionId = randomUUID(), callId = randomUUID(), occurredAt = new Date().toISOString()
     const batch = {
         schema: BATCH_SCHEMA,
         id: randomUUID(),
@@ -60,6 +61,21 @@ try {
                         bytes: 12,
                         durationMilliseconds: 1,
                         failed: false,
+                        sessionId, callId, occurredAt,
+                    },
+                    {
+                        kind: 'response', direction: 'in', code: 0x2001, commandCode: 0x1001,
+                        bytes: 12, durationMilliseconds: 1, failed: false,
+                        sessionId, callId, occurredAt,
+                    },
+                    {
+                        kind: 'call', direction: 'lifecycle', bytes: 0, durationMilliseconds: 1, failed: false,
+                        sessionId, callId, occurredAt,
+                        call: {
+                            operation: 'getCapabilities', tool: 'camera_get_capabilities',
+                            command: 'darkgrade camera get-capabilities', surface: 'library',
+                            outcome: 'ok', attribution: 'async-context',
+                        },
                     },
                 ],
                 droppedEntries: 0,

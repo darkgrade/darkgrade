@@ -68,6 +68,12 @@ Collector rules learned the hard way on 2026-11-14:
 - Triggers must stay cheap for bulk deletes: never search events from inside them. A summary row
   that needs a new source is listed in `telemetry_unknown_code_repairs` and repaired by
   maintenance within a time budget; it is hidden from the queue until then.
+The v1-to-v2 summary upgrade uses the existing stale-session queue, not a global raw-event
+table lock or another identity backfill. `sessions-v2-queued` records admitted work;
+`sessions-v2` is written only after that queue drains. Refresh session and signal summaries
+in the same short transaction, holding their summary rows before reading raw events, and
+skip rows held by uploads. Preserve the writer-lock and interrupted-upgrade Postgres test:
+an HTTP health response does not prove ingestion is available during maintenance.
 A connection that fails before any identity read (body asleep or off) is attributed to the
 camera that last reported itself at the requested USB identity, from `known-cameras.json` in the
 settings directory: manufacturer and model only, firmware `unknown`, and a body fingerprint only

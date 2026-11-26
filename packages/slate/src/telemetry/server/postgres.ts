@@ -336,6 +336,90 @@ async function purgeUnidentified(connection: PoolClient, purge: { marker: string
  * counting as errors, Nikon's busy DeviceReady poll and Canon's ObjectNotReady got signals of their
  * own, and a signal's `latest` became its events' occurrence time; v1 summaries are rebuilt once. */
 const rebuilt = new WeakSet<Pool>()
+/** Reuse the stale-session queue for a v1 upgrade; never lock the raw event table. */
+async function upgradeSessionRollups(pool: Pool) {
+    const connection = await pool.connect()
+    try {
+        await connection.query('BEGIN')
+        await connection.query('SET LOCAL statement_timeout=5000')
+        await connection.query("SET LOCAL lock_timeout='250ms'")
+        const lock = await connection.query("SELECT pg_try_advisory_xact_lock(hashtext('darkgrade.telemetry.rollup')) AS acquired")
+        if (!lock.rows[0].acquired) {
+            await connection.query('ROLLBACK')
+            return
+        }
+        const queued = await connection.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v2-queued'")
+        if (!queued.rowCount) {
+            await connection.query('UPDATE telemetry_sessions SET stale=true WHERE NOT stale')
+            await connection.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v2-queued',now())")
+        }
+        await connection.query('COMMIT')
+    } catch (error) {
+        await connection.query('ROLLBACK').catch(() => {})
+        throw error
+    } finally {
+        connection.release()
+    }
+    await refreshSessions(pool)
+    await pool.query(`INSERT INTO telemetry_rollup_state
+        SELECT 'sessions-v2',now() WHERE NOT EXISTS (SELECT 1 FROM telemetry_sessions WHERE stale)
+        ON CONFLICT DO NOTHING`)
+}
+
+/** Refresh only leased summary rows, so concurrent inserts/deletes cannot be counted twice. */
+async function refreshSessions(pool: Pool) {
+    let refreshed = 0
+    const started = performance.now()
+    for (let page = 0; page < 50 && performance.now() - started < 5000; page++) {
+        const connection = await pool.connect()
+        try {
+            await connection.query('BEGIN')
+            await connection.query('SET LOCAL statement_timeout=5000')
+            await connection.query("SET LOCAL lock_timeout='250ms'")
+            const picked = await connection.query(`SELECT installation_id,session_id FROM telemetry_sessions
+                WHERE stale ORDER BY installation_id,session_id LIMIT 25 FOR UPDATE SKIP LOCKED`)
+            if (!picked.rowCount) {
+                await connection.query('COMMIT')
+                break
+            }
+            const parameters = [JSON.stringify(picked.rows)]
+            const keys = `jsonb_to_recordset($1::jsonb) AS p(installation_id uuid,session_id uuid)`
+            // Preserve both columns of the session index; coalesce(e.session_id,...) scans
+            // an installation's entire history for each page on a large deployed database.
+            const events = `${keys} JOIN LATERAL (
+                SELECT * FROM telemetry_events WHERE installation_id=p.installation_id AND session_id=p.session_id
+                UNION ALL
+                SELECT * FROM telemetry_events WHERE installation_id=p.installation_id
+                    AND p.session_id=${sessionless} AND session_id IS NULL
+                ) e ON true`
+            await connection.query(`WITH fresh AS (
+                SELECT e.installation_id,coalesce(e.session_id,${sessionless}) AS session_id,${sessionAggregate}
+                FROM ${events} GROUP BY 1,2)
+                UPDATE telemetry_sessions s SET (${sessionColumns})=
+                    (f.events,f.errors,f.signals,f.started_at,f.ended_at,f.latest_received_at,f.manufacturer,f.model,
+                     f.transports,f.evidence,f.backends,f.revisions,f.hardware_fingerprints,f.truncated)
+                FROM fresh f WHERE s.installation_id=f.installation_id AND s.session_id=f.session_id`, parameters)
+            await connection.query(`DELETE FROM telemetry_session_signals g USING ${keys}
+                WHERE g.installation_id=p.installation_id AND g.session_id=p.session_id`, parameters)
+            await connection.query(`INSERT INTO telemetry_session_signals (installation_id,session_id,signal,events,latest)
+                SELECT e.installation_id,coalesce(e.session_id,${sessionless}),
+                    telemetry_event_signal(e.failed,e.kind,e.code,e.properties,e.manufacturer),
+                    count(*),max(coalesce(e.occurred_at,e.received_at))
+                FROM ${events} GROUP BY 1,2,3`, parameters)
+            await connection.query(`UPDATE telemetry_sessions s SET stale=false FROM ${keys}
+                WHERE s.installation_id=p.installation_id AND s.session_id=p.session_id`, parameters)
+            await connection.query('COMMIT')
+            refreshed += picked.rowCount
+        } catch (error) {
+            await connection.query('ROLLBACK').catch(() => {})
+            throw error
+        } finally {
+            connection.release()
+        }
+    }
+    return refreshed
+}
+
 async function backfillRollups(pool: Pool) {
     if (rebuilt.has(pool)) return
     const done = await pool.query(
@@ -344,6 +428,12 @@ async function backfillRollups(pool: Pool) {
     )
     if (done.rowCount === 2 + unidentifiedPurges.length) {
         rebuilt.add(pool)
+        return
+    }
+    const legacy = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v1'")
+    const current = await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v2'")
+    if (legacy.rowCount && !current.rowCount) {
+        await upgradeSessionRollups(pool)
         return
     }
     const connection = await pool.connect()
@@ -714,33 +804,7 @@ export async function postgresDatabase(connectionString: string, options: { defe
             return updated
         },
         rebuildSummaries: () => backfillRollups(pool),
-        async refreshSessions() {
-            // Deletions and relabeling keep counts exact but leave time bounds and label sets stale.
-            // Recompute a bounded number per pass; rows another upload holds are skipped until the next.
-            let refreshed = 0
-            const started = performance.now()
-            for (let page = 0; page < 50 && performance.now() - started < 5000; page++) {
-                const result = await pool.query(`
-                    WITH picked AS MATERIALIZED (SELECT installation_id,session_id FROM telemetry_sessions
-                        WHERE stale ORDER BY installation_id LIMIT 25 FOR UPDATE SKIP LOCKED),
-                    fresh AS (SELECT e.installation_id, e.session_id, ${sessionAggregate}
-                        FROM telemetry_events e JOIN picked p ON e.installation_id=p.installation_id AND e.session_id=p.session_id
-                        GROUP BY 1,2),
-                    renewed AS (UPDATE telemetry_sessions s SET (${sessionColumns})=
-                        (f.events,f.errors,f.signals,f.started_at,f.ended_at,f.latest_received_at,f.manufacturer,f.model,
-                         f.transports,f.evidence,f.backends,f.revisions,f.hardware_fingerprints,f.truncated), stale=false
-                        FROM fresh f WHERE s.installation_id=f.installation_id AND s.session_id=f.session_id)
-                    UPDATE telemetry_sessions s SET stale=false FROM picked p
-                    WHERE s.installation_id=p.installation_id AND s.session_id=p.session_id
-                      AND NOT EXISTS (SELECT 1 FROM fresh f WHERE f.installation_id=p.installation_id AND f.session_id=p.session_id)
-                    RETURNING 1`)
-                const remaining = await pool.query('SELECT 1 FROM telemetry_sessions WHERE stale LIMIT 1')
-                refreshed += 25
-                void result
-                if (!remaining.rowCount) break
-            }
-            return refreshed
-        },
+        refreshSessions: () => refreshSessions(pool),
         async refreshUnknownCodeSources() {
             // A summary row whose source upload was removed is hidden until it points at a remaining one.
             const started = performance.now()
