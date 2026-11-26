@@ -1,4 +1,4 @@
-import { animate, configureCanvas, currentFrameTexture, fitCanvas, getGpu, passTimer } from '@renderer/gpu/device'
+import { currentFrameTexture, fitCanvas, startGpuLoop } from '@renderer/gpu/device'
 import type { ScopeShader } from '@renderer/gpu/scope-shaders'
 import { useEffect, useRef } from 'react'
 
@@ -35,12 +35,9 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
     activeRef.current = active
 
     useEffect(() => {
-        let stop = (): void => {}
-        let cancelled = false
-        void getGpu().then(gpu => {
-            const canvas = canvasRef.current
-            const context = gpu && canvas && configureCanvas(gpu, canvas)
-            if (cancelled || !gpu || !canvas || !context) return
+        const canvas = canvasRef.current
+        if (!canvas) return
+        return startGpuLoop(canvas, `Scope: ${label}`, (gpu, context, timer) => {
             const { device } = gpu
             const computeModule = device.createShaderModule({ code: shader.compute })
             const pipeline = (entryPoint: string): GPUComputePipeline =>
@@ -81,9 +78,8 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
             let lastMeasureMs = 0
             const values = new Float32Array(4)
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-            const timer = passTimer(gpu, `Scope: ${label}`)
 
-            stop = animate(`Scope: ${label}`, now => {
+            const tick = (now: number): void => {
                 if (now - lastDrawMs < DRAW_INTERVAL_MS) return
                 lastDrawMs = now
                 const { width, height } = fitCanvas(canvas)
@@ -159,18 +155,9 @@ export function GpuScope({ shader, active, className, label, children }: GpuScop
                 timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
                 timer.collect()
-            })
-            const previous = stop
-            stop = () => {
-                previous()
-                for (const buffer of [uniforms, bins, goal, shown]) buffer.destroy()
-                timer.destroy()
             }
+            return { draw: tick, resources: [uniforms, bins, goal, shown] }
         })
-        return () => {
-            cancelled = true
-            stop()
-        }
     }, [shader, label])
 
     return (

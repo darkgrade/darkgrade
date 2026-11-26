@@ -1,13 +1,10 @@
 import type { PreviewAssistSettings } from '@renderer/gpu/assists'
 import {
-    animate,
-    configureCanvas,
     currentFrameTexture,
     currentOsdTexture,
     fitCanvas,
-    getGpu,
     onFrameTexture,
-    passTimer,
+    startGpuLoop,
     type FrameTexture,
 } from '@renderer/gpu/device'
 import { NOISE_SHADER, PICTURE_SHADER } from '@renderer/gpu/picture-shader'
@@ -66,13 +63,9 @@ export function LivePicture({
     if (!recording) recordingSince.current = null
 
     useEffect(() => {
-        let stop = (): void => {}
-        let cancelled = false
-        void getGpu().then(gpu => {
-            const canvas = canvasRef.current
-            if (cancelled || !canvas) return
-            const context = gpu && configureCanvas(gpu, canvas)
-            if (!gpu || !context) return setUnavailable(true)
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const setup: Parameters<typeof startGpuLoop>[2] = (gpu, context, timer) => {
             const { device } = gpu
             const module = device.createShaderModule({ code: PICTURE_SHADER })
             const pipeline = device.createRenderPipeline({
@@ -150,8 +143,7 @@ export function LivePicture({
             }
 
             const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-            const timer = passTimer(gpu, 'Live picture')
-            stop = animate('Live picture', now => {
+            const draw = (now: number): void => {
                 const frame = currentFrameTexture()
                 if (!frame) return
                 const { assists: settings, recording: tallyOn, cameraDisplay: showDisplay } = live.current
@@ -229,25 +221,13 @@ export function LivePicture({
                 timer.resolve(encoder)
                 device.queue.submit([encoder.finish()])
                 timer.collect()
-            })
+            }
             const unsubscribe = onFrameTexture(frame => {
                 if (frame) live.current.onAspect(frame.width / frame.height)
             })
-            const previous = stop
-            stop = () => {
-                previous()
-                unsubscribe()
-                uniforms.destroy()
-                noDisplay.destroy()
-                timer.destroy()
-                bins.destroy()
-                noise.destroy()
-            }
-        })
-        return () => {
-            cancelled = true
-            stop()
+            return { draw, resources: [{ destroy: unsubscribe }, uniforms, noDisplay, bins, noise] }
         }
+        return startGpuLoop(canvas, 'Live picture', setup, () => setUnavailable(true))
     }, [])
 
     // Only the fallback image follows frames through React; the GPU path never re-renders per frame.

@@ -1,4 +1,4 @@
-import { FULLSCREEN_VERTEX } from '@renderer/gpu/device'
+import { FULLSCREEN_VERTEX, wgslFloat as f } from '@renderer/gpu/device'
 
 /** The recording red and the tally's shades of it (deeper, brighter or warmer, never yellow or pink). */
 const RED = [232, 52, 64]
@@ -31,7 +31,6 @@ const PATCHES: Array<[number, number, number, number]> = [
     [3, 13, 0.35, 56],
 ]
 
-const f = (value: number): string => (Number.isInteger(value) ? `${value}.0` : String(value))
 const patchColor = (index: number): string =>
     `vec3f(${RED.map((value, channel) => f(Math.min(255, Math.round(value * SHADES[index % SHADES.length][channel])) / 255)).join(', ')})`
 
