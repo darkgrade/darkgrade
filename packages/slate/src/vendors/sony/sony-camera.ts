@@ -78,6 +78,9 @@ import { parseOsdImageDataset, type OsdImageMetaInfo } from '@vendors/sony/datas
 import { SonyExposureProgramCodec, sonyAdvertisedCounterpart, sonyExposureProgramKind } from '@vendors/sony/exposure-program'
 import { parseSonyFocalFrameInfo, type SonyFocalFrame } from '@vendors/sony/focal-frame-info'
 import { sonyFocalLengthMillimetres, sonyLens } from '@vendors/sony/lens'
+import { sonyControlProperties } from '@vendors/sony/control-properties'
+import { sonyPhotoVideoModeState } from '@vendors/photo-video-mode'
+import { propertyWithCode, writeObservedProperty, type ControlObservation, type ControlWrite } from '@vendors/generic/control-observation'
 import { minimumZoomTravel, SONY_ZOOM_MOTION, ZoomMovement, type ZoomMotion } from '@vendors/sony/zoom-motion'
 import { findSonyCardItem, sonyMediaCapability, type SonyNewestContent } from '@vendors/sony/media'
 import { openSonyRecordingMode, sonyPhotoModeDriver, withSonyPhotoMode } from '@vendors/sony/photo-mode'
@@ -1095,6 +1098,27 @@ export class SonyCamera extends GenericCamera {
     }
 
     override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: false }
+
+    /** Sony publishes one authoritative live inventory; ISO is composed with its gain mode. */
+    override async observeControlStates(): Promise<ControlObservation> {
+        const observed = await this.refreshPropertyStates()
+        const iso = this.isoControlState(observed)
+        return {
+            states: observed.map(state => (state.name === 'Iso' && iso ? iso : state)),
+            mappings: sonyControlProperties,
+            inventory: 'sony',
+            composed: { photoVideoMode: sonyPhotoVideoModeState(observed) },
+            lens: sonyLens(observed),
+        }
+    }
+
+    /** ISO goes through the gain-mode composite; every other control is the observed property. */
+    override async writeControlValue(write: ControlWrite): Promise<void> {
+        if (write.id !== 'iso') return writeObservedProperty(this, write)
+        if (!propertyWithCode(this, write.state.source.code))
+            throw new CameraUnsupportedError(write.id, 'Camera control property disappeared')
+        await this.setIso(write.vendorLabel)
+    }
 
     /** Selects the same program in the other half (Manual ↔ Movie Manual), only when the body advertises it. */
     override async sendPhotoVideoMode(requested: PhotoVideoMode, state: CameraControlState): Promise<void> {

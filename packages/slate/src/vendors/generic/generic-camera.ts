@@ -53,6 +53,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { batteryFromPower, readStandardPower } from '@vendors/power-reading'
+import { observeStandardControls, type ControlObservation, type ControlWrite } from '@vendors/generic/control-observation'
 import type { CameraPower } from '@workflows/camera-power'
 import { vendorEntry } from '@vendors/vendors'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
@@ -1165,6 +1166,19 @@ export class GenericCamera {
      */
     readonly captureOptions: CaptureOptions = { memory: false, withoutAutofocus: false, rawCompression: false }
 
+    /**
+     * controls(), observe: the property states behind each canonical control. Standard PTP reads
+     * each mapped descriptor; brands read their own inventory. A full read is given its DeviceInfo.
+     */
+    async observeControlStates(requested?: CameraControlId, deviceInfo?: DeviceInfo): Promise<ControlObservation> {
+        return observeStandardControls(this, requested, deviceInfo)
+    }
+
+    /** controls(), write: send one admitted control write once; the caller confirms it by readback. */
+    async writeControlValue(write: ControlWrite): Promise<void> {
+        await this.setStandardProperty(write.state.source.code, write.vendorLabel)
+    }
+
     /** Sends the vendor's photo/video switch once; the caller confirms it by polled readback. */
     async sendPhotoVideoMode(_requested: PhotoVideoMode, _state: CameraControlState): Promise<void> {
         throw new CameraUnsupportedError('photoVideoMode', 'Photo / video is not supported by this camera')
@@ -1452,7 +1466,7 @@ export class GenericCamera {
         context?: ExposureContext
     ): Promise<CameraControlState> {
         const { writeCameraControl } = await import('@vendors/camera-controls')
-        return writeCameraControl(this.requireOwner(), this, id, value, context)
+        return writeCameraControl(this, id, value, context)
     }
 
     /** A card object's full size when ObjectInfo reports 0xffffffff; a vendor with a 64-bit query overrides this. */

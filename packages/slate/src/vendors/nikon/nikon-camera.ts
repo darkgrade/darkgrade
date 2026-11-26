@@ -59,6 +59,8 @@ import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { nikonStorageCanRecord } from '@vendors/nikon/card-storage'
+import { observeNikonControls, writeNikonControl } from '@vendors/nikon/controls'
+import type { ControlWrite } from '@vendors/generic/control-observation'
 import { decodeNikonVendorCodes, NIKON_VENDOR_CODES_MAXIMUM } from '@vendors/nikon/vendor-codes'
 import { matchesNikonShutter, nikonShutterLabel } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
@@ -1024,6 +1026,14 @@ export class NikonCamera extends GenericCamera {
      * PC-camera mode are restored afterwards, whether or not the camera took the selector. The
      * caller confirms the readback; the selector is sent once.
      */
+    override async observeControlStates(requested?: CameraControlId, deviceInfo?: DeviceInfo) {
+        return observeNikonControls(this, requested, deviceInfo)
+    }
+
+    override async writeControlValue(write: ControlWrite): Promise<void> {
+        return writeNikonControl(this, write)
+    }
+
     override async sendPhotoVideoMode(requested: PhotoVideoMode): Promise<void> {
         return this.selectPhotoVideoMode(requested === 'video' ? 'VIDEO' : 'PHOTO')
     }

@@ -35,6 +35,8 @@ import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { standardClockUnavailable } from '@vendors/generic/standard-clock'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
 import { normalizeCameraPower, readStandardPower } from '@vendors/power-reading'
+import { observeCanonControls, writeCanonControl } from '@vendors/canon/controls'
+import type { ControlWrite } from '@vendors/generic/control-observation'
 import {
     cardObjectFile,
     cardSteps,
@@ -532,6 +534,14 @@ export class CanonCamera extends GenericCamera {
     /** @internal Whether this session's DeviceInfo advertised an operation; unknown before connect. */
     advertisesOperation(code: number): boolean {
         return this.supportedOperations?.has(code) === true
+    }
+
+    override async observeControlStates(requested?: CameraControlId) {
+        return observeCanonControls(this, requested)
+    }
+
+    override async writeControlValue(write: ControlWrite): Promise<void> {
+        return writeCanonControl(this, write)
     }
 
     override async sendPhotoVideoMode(requested: PhotoVideoMode): Promise<void> {
