@@ -231,14 +231,22 @@ export class CameraService {
         this.phase = 'recovering'
         this.log('system', `Camera session lost (${errorMessage(cause)}) — reconnecting…`, 'error')
         this.broadcastState()
+        this.reconnect('Recovery failed', 'Camera session recovered')
+    }
+
+    /**
+     * Disconnects and connects once more, for recovery and for a change of USB transport. The caller
+     * has set `recoveryInProgress`; a failure asks for a replug, and a camera left unconnected shows idle.
+     */
+    reconnect(failure: string, recovered?: string): void {
         void (async () => {
             try {
                 await this.disconnect()
                 await delay(RECOVERY_RECONNECT_DELAY_MS)
                 await this.connect()
-                this.log('system', 'Camera session recovered')
+                if (recovered) this.log('system', recovered)
             } catch (error) {
-                this.log('system', `Recovery failed: ${errorMessage(error)} — replug the camera`, 'error')
+                this.log('system', `${failure}: ${errorMessage(error)} — replug the camera`, 'error')
             } finally {
                 this.recoveryInProgress = false
                 if (!this.connected) this.phase = 'idle'
@@ -275,6 +283,13 @@ export class CameraService {
         return swiftLiveViewJpeg() ?? this.latestNodeFrame
     }
     latestNodeFrame: Uint8Array | null = null
+
+    /** The newest live-view picture; refused while live view is off. `hint` ends the refusal. */
+    requireLiveFrame(hint = ''): Uint8Array {
+        const jpeg = this.latestLiveViewFrame
+        if (!jpeg || !this.liveViewRunning) throw new Error(`Live view is off, so there is no picture${hint}`)
+        return jpeg
+    }
 
     // ------------------------------------------------------------------ files
 

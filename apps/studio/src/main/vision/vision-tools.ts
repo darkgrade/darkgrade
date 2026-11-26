@@ -20,10 +20,7 @@ async function picture(imagePath: unknown): Promise<Uint8Array> {
         if (!PICTURE_EXTENSIONS.has(extname(imagePath).toLowerCase())) throw new Error('Name a .jpg or .png file')
         return readFile(imagePath)
     }
-    const jpeg = cameraService.latestLiveViewFrame
-    if (!jpeg || !cameraService.getState().liveView)
-        throw new Error('Live view is off, so there is no picture; start live view or name an imagePath')
-    return jpeg
+    return cameraService.requireLiveFrame('; start live view or name an imagePath')
 }
 
 function toToolResult({ imagePng, ...data }: VisionResult): ToolResult {

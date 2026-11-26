@@ -233,9 +233,7 @@ async function adjustExposure(stops: number, using: string): Promise<unknown> {
 }
 
 function decodedFrame(width: number) {
-    const jpeg = cameraService.latestLiveViewFrame
-    if (!jpeg || !cameraService.getState().liveView)
-        throw new Error('Live view is off, so there is no picture to look at')
+    const jpeg = cameraService.requireLiveFrame(' to look at')
     const image = nativeImage.createFromBuffer(Buffer.from(jpeg))
     const size = image.getSize()
     return size.width > width ? image.resize({ width, quality: 'good' }) : image

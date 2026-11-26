@@ -96,9 +96,7 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null): void
     visionService.setBroadcast(broadcast)
     handle('visionGetStatus', () => visionService.getStatus())
     handle('visionOverlay', (model: VisionModelId, jpeg: Uint8Array | null, prompt: string) => {
-        const picture = jpeg ?? cameraService.latestLiveViewFrame
-        if (!picture) throw new Error('No live picture yet')
-        return visionService.overlay(model, picture, prompt)
+        return visionService.overlay(model, jpeg ?? cameraService.requireLiveFrame(), prompt)
     })
     handle('voiceGetStatus', () => voiceService.getStatus())
     handle('voicePrepare', () => voiceService.prepare())
