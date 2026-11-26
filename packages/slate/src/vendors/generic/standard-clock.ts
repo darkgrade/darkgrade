@@ -3,26 +3,18 @@ import type { GenericCamera } from '@vendors/generic/generic-camera'
 import { DateTime } from '@ptp/definitions/property-definitions'
 import { GetDeviceInfo, GetDevicePropDesc, SetDevicePropValue } from '@ptp/definitions/operation-definitions'
 import { OK } from '@ptp/definitions/response-definitions'
+import { ptpDateTimeFields, ptpDateTimeString } from '@ptp/datasets/codecs/date-time'
 
 /** How far the clock read back may differ from the time written, beyond the time the write took. */
 const CLOCK_TOLERANCE_MILLISECONDS = 2_000
 
 type ClockDriver = Pick<GenericCamera, 'send' | 'registry'>
 
-/** PTP's DateTime (ISO 8601 basic, `YYYYMMDDThhmmss`) in the host's local wall time. */
-export function ptpDateTimeString(moment: Date): string {
-    const pad = (value: number) => String(value).padStart(2, '0')
-    return (
-        `${moment.getFullYear()}${pad(moment.getMonth() + 1)}${pad(moment.getDate())}` +
-        `T${pad(moment.getHours())}${pad(moment.getMinutes())}${pad(moment.getSeconds())}`
-    )
-}
-
 /** The local wall time a PTP DateTime names, or undefined when it is not one. */
 export function parsePtpDateTime(value: unknown): Date | undefined {
-    const match = typeof value === 'string' ? /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/.exec(value) : null
-    if (!match) return undefined
-    const [year, month, day, hour, minute, second] = match.slice(1).map(Number) as [number, number, number, number, number, number]
+    const fields = ptpDateTimeFields(value)
+    if (!fields) return undefined
+    const [year, month, day, hour, minute, second] = fields.map(Number) as [number, number, number, number, number, number]
     const moment = new Date(year, month - 1, day, hour, minute, second)
     return Number.isNaN(moment.getTime()) ? undefined : moment
 }
