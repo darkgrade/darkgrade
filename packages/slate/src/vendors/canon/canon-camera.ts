@@ -1114,10 +1114,6 @@ export class CanonCamera extends GenericCamera {
             if (this.propertyCache.size > 0 || ++emptyRounds >= 6) break
             await wait(100)
         }
-        const withChoices = [...this.propertyCache.values()].filter(state => state.allowed).length
-        console.log(
-            `Initial flush complete: ${this.propertyCache.size} properties cached, ${withChoices} properties with allowed values`
-        )
     }
 
     private async enableLiveView(): Promise<void> {
