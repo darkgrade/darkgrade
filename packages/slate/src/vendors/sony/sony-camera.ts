@@ -52,6 +52,7 @@ import { controlValueNames } from '@vendors/control-properties'
 import type { MediaCapability, VideoCapability } from '@vendors/generic/capability-groups'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { GenericCamera } from '@vendors/generic/generic-camera'
+import { normalizeCameraPower } from '@vendors/power-reading'
 import {
     cardSteps,
     classified,
@@ -519,6 +520,12 @@ export class SonyCamera extends GenericCamera {
             writable: true,
             allowedValues: choices.includes('ISO AUTO') ? [...choices] : ['ISO AUTO', ...choices],
         }
+    }
+
+    /** Sony reports its battery among its own properties, read fresh. */
+    override async readPower() {
+        await this.refreshPropertyStates()
+        return normalizeCameraPower('sony', this.listPropertyStates())
     }
 
     listPropertyStates(): SonyPropertyState[] {

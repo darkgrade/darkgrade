@@ -11,10 +11,9 @@ import { messageOf } from '@vendors/generic/typed-failure'
 
 /*
  * TRANSITIONAL (consolidation setup): the small helpers each brand's operations share. Standard
- * PTP behaviour itself is in GenericCamera; the capture and battery helpers are re-exported from
- * their own modules until the brands import them from there.
+ * PTP behaviour itself is in GenericCamera; the capture helpers are re-exported from their own
+ * module until the brands import them from there.
  */
-export { batteryFromPower } from '@vendors/camera-power'
 export { cardObjectFile, classified, describedFile, type DriverCapture } from '@vendors/generic/shutter-outcome'
 
 

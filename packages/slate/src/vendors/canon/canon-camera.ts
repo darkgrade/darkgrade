@@ -33,6 +33,7 @@ import { canonControlProperties } from '@vendors/control-properties'
 import { FocusPointChanges } from '@vendors/generic/focus-point-changes'
 import { standardClockUnavailable } from '@vendors/generic/standard-clock'
 import { GenericCamera, type CameraRecoveryOptions, type CameraRecoveryReport } from '@vendors/generic/generic-camera'
+import { normalizeCameraPower, readStandardPower } from '@vendors/power-reading'
 import {
     cardObjectFile,
     cardSteps,
@@ -920,6 +921,13 @@ export class CanonCamera extends GenericCamera {
 
     getPropertyAllowedValues<P extends PropertyDefinition>(property: P): CodecType<P['codec']>[] | undefined {
         return this.propertyCache.get(property)?.allowed as CodecType<P['codec']>[] | undefined
+    }
+
+    /** EOS bodies report a level (0xd111) where the standard BatteryLevel gives no percentage. */
+    override async readPower() {
+        const standard = await readStandardPower(this)
+        if (standard?.percent !== undefined) return standard
+        return normalizeCameraPower('canon', [...this.listPropertyStates(), ...this.listUnknownPropertyStates()])
     }
 
     listPropertyStates(): CanonPropertyState[] {

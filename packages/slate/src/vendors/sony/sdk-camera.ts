@@ -16,8 +16,7 @@ import { kelvinInput } from '@camera/settings/values'
 import { canonicalControlInput, installTypedSettings, type TypedSettingMethods } from '@camera/settings/typed-settings'
 import type { Battery } from '@camera/driver'
 import type { CardStatus } from '@camera/driver'
-import { batteryFromPower } from '@vendors/generic/generic-operations'
-import { normalizeCameraPower } from '@vendors/camera-power'
+import { batteryFromPower, normalizeCameraPower } from '@vendors/power-reading'
 import { sonySdkCardStatus } from '@vendors/sony/media'
 
 /** Local stdio bridge around Sony's licensed, documented Camera Remote SDK API. */

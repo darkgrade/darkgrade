@@ -51,7 +51,8 @@ import { EventParams, OperationParams, OperationResponse } from '@ptp/types/type
 import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import { VendorIDs } from '@ptp/definitions/vendor-ids'
+import { batteryFromPower, readStandardPower } from '@vendors/power-reading'
+import type { CameraPower } from '@workflows/camera-power'
 import { vendorEntry } from '@vendors/vendors'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
@@ -1475,11 +1476,13 @@ export class GenericCamera {
         return { writable: accessCapability === 0 }
     }
 
-    /** Sony's property snapshot, Canon's EOS level after the standard BatteryLevel, the standard BatteryLevel elsewhere. */
+    /** The battery as the body reports it: the standard BatteryLevel, unless a brand reads more. */
+    async readPower(): Promise<CameraPower | undefined> {
+        return readStandardPower(this)
+    }
+
     async getBattery(): Promise<Battery> {
-        const { batteryFromPower, readCameraPower } = await import('@vendors/camera-power')
-        const vendor = this.vendorId === VendorIDs.SONY ? 'sony' : this.vendorId === VendorIDs.CANON ? 'canon' : 'standard'
-        return reportingRefusals('getBattery', async () => batteryFromPower(await readCameraPower(this.requireOwner(), vendor)))
+        return reportingRefusals('getBattery', async () => batteryFromPower(await this.readPower()))
     }
 
     /** The standard DateTime property; Sony overrides this with its Date/Time Setting. */
