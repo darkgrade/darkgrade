@@ -24,7 +24,7 @@ try {
 
 Code that sets a known setting uses its typed setter (`setIso('ISO 800')`,
 `setWhiteBalance('Daylight')`); a UI that lists every setting uses `setControl(id, value)`.
-Each of the 29 typed settings is `setControl` for its id: `src/camera/settings/typed-settings.ts`
+Each of the 30 typed settings is `setControl` for its id: `src/camera/settings/typed-settings.ts`
 declares and installs the getter and setter pairs once, over the generic control API, on Camera
 and on every `CameraControlSession`.
 

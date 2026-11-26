@@ -151,6 +151,7 @@ access and event polling fall back to legacy operations only on `OperationNotSup
 - **Canon keep-alive.** A Canon session sends `KeepDeviceOn` every ten seconds when the body advertises it, so the camera does not sleep mid-session. Pass `new Camera({ keepAlive: false })` to turn this off. No power setting saved on the body is changed.
 - **Canon HDMI output.** The tested EOS 80D resets its HDMI live-view mode when its PTP session closes; Slate manages live-view output itself.
 - **EOS R6 Mark III movie lever.** With the lever at Movie, the body cannot be put in still mode over PTP (firmware 1.0.1). Set the lever on the camera.
+- **Sony photos in movie mode and long exposures.** `takePhoto` from a movie program selects its photo counterpart, or the first still mode the body offers (the FX2 went from Movie Flexible Exposure to Program Auto), and restores the movie program afterwards. In a dim room that Program Auto chose a 10" exposure; Slate waits for the image 15 seconds plus twice the shutter speed the body reports, so a long exposure's noise-reduction dark frame is not mistaken for a lost capture.
 - **Sony files over 4 GiB.** `ObjectInfo` reports the size as `0xffffffff` for these. Slate reads the real size from the object's `ObjectSize` property; a 5.1 GB FX2 original transferred and decoded in full. The α6700 splits recordings at 4 GB instead.
 
 ## Notes

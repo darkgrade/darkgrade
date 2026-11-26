@@ -104,11 +104,14 @@ Every setting has `get-<setting>` and `set-<setting>` (`get-iso`, `set-photo-vid
 names (`'f/2.8'`, `'ISO 800'`, `Manual`), and a value the camera does not offer now is refused
 before anything is sent. A command is sent once: an unconfirmed result is reported and exits
 non-zero, never resent. `start-recording` stays in the foreground holding the session and stops
-on Ctrl-C or after `--duration`. When a stop cannot be confirmed, `start-recording` and
-`stop-recording` report the error and do not close the session, because closing it under a take
-that may still be running can leave the camera in another mode. `start-zoom`/`stop-zoom` are library and MCP only (use `zoom-to`), as are `connect` and
-`disconnect`: every command connects itself. `recover` is the software recovery and does not
-connect first.
+on Ctrl-C or after `--duration`; `start-zoom` holds the same way and then runs `stop-zoom`. When a
+stop cannot be confirmed, `start-recording` and `stop-recording` report the error and do not close
+the session, because closing it under a take that may still be running can leave the camera in
+another mode. Every command connects itself, so `connect` and `disconnect` only open and close the
+camera. `recover` is the software recovery and does not connect first. `watch` streams the
+library's events, a line each time a setting changes on the camera or a new photo or clip lands,
+until Ctrl-C or `--duration`; it only reads. Inputs are checked against the operation table before
+the camera is opened; a wrong one is a usage error.
 
 ### `darkgrade telemetry`
 

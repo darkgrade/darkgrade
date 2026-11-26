@@ -206,6 +206,18 @@ this Slate candidate. Preserve real versus simulated evidence.
 A Z5 II nudge in AF-A (acceptance, 2026-11-25) drove the lens to its end stop: MfDrive answered OK and
 DeviceReady then MfDriveStepEnd (0xA00C). That is a completed nudge, `{ atLimit: true }`, as is 0xA00C
 straight from MfDrive (already at that end); the AF-S hint goes only with InvalidStatus (0xA004).
+Sony takePhoto to the card, on a body whose DeviceInfo advertises SDIE_ContentInfoListChanged
+(0xC234), waits for that announcement and then reads SDIO_GetContentInfoList (0x923C) for the new
+file; no announcement in time is CameraOutcomeUnknownError, and the card is never scanned instead.
+From a movie program it selects that program's photo counterpart, or the first advertised still
+mode when there is none (Movie Flexible Exposure became Program Auto on the FX2), and puts the movie
+program back afterwards (`withSonyPhotoMode`, `vendors/sony/photo-mode.ts`). In a dim room that
+Program Auto chose 10" at ISO 1250 (darkgrade02 FX2, Matrix CI 929eafe3, DSC00245.JPG), and with
+the long-exposure noise-reduction dark frame the image came after the fixed 15 s wait, so every
+restoration ran while the body was still exposing. captureImage now reads ShutterSpeed with S1
+held and waits 15 s plus twice that exposure; Bulb or an unreadable value keeps 15 s, and the
+timeout names the wait it used. A Sony stopZoom after a zoom Slate started resolves once the focal
+length holds still (the lens coasts on and ZoomDistance trails it by up to 0.4 s).
 
 ## Private camera recordings
 

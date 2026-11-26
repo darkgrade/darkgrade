@@ -59,7 +59,13 @@ Failures are three types. `CameraUnsupportedError`: this camera cannot do it rig
 or the value is not one it offers, and nothing changed. `CameraOutcomeUnknownError` (and its
 `CameraConfirmationError`): the command was sent but its result could not be confirmed; it is
 never resent, so a photo or a Stop is never repeated by accident. `stopRecording()` and
-`stopZoom()` are always allowed.
+`stopZoom()` are always allowed. A value the camera does not offer is refused before writability
+is judged, so the same input gets the same answer; an offered value on a control that is read-only
+right now is `CameraUnsupportedError`. An input no camera could take (a malformed options object,
+a compensation that is not a number of stops) throws `TypeError` or `RangeError` before anything is
+sent. The MCP tools and CLI commands check inputs against the operation table first and answer
+`OperationInputError` (from `@darkgrade/slate/runtime`; a usage error on the CLI) without
+touching the camera.
 
 A value or choice Slate cannot name keeps its raw value in `unrecognized` (`value`,
 `choices`); such a control reads `Unrecognized (0x3e7)` and is read-only, and unrecognized
@@ -69,7 +75,11 @@ The same operations are MCP tools (`camera_` and the method in snake_case: `came
 `camera_set_iso`, `camera_get_capabilities`) from `@darkgrade/slate/runtime/mcp`, and
 `darkgrade camera <command>` commands (the method in kebab-case: `darkgrade camera set-iso
 'ISO 800'`). `darkgrade cameras` lists attached cameras. All three surfaces are generated from
-one operation table.
+one operation table, `src/runtime/camera-operations.ts` (85 operations), which
+`scripts/generate-camera-operations.ts` writes from Camera's own signatures and doc comments; its
+summaries and input descriptions are the tools' and commands' help. `nudgeFocus` resolves to
+`{ atLimit }`: true when the lens reached the end of its travel that way, a completed nudge rather
+than an error.
 
 Vendor drivers, registries, raw send/get/set and vendor diagnostics (Sony buttons and menu
 session, Canon network state and magnify/pan, property dumps, wireless pairing) are in the

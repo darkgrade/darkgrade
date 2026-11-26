@@ -41,11 +41,20 @@ Every operation fails in one of three ways, each carrying the `operation` that f
 | `CameraRefusedError` | The camera said no, or the value is not one it offers now. Nothing changed. |
 | `CameraOutcomeUnknownError` | The command was sent but its result could not be confirmed. It is never resent, so a photo or a Stop is never repeated by accident. `CameraConfirmationError` (a setting that did not read back) and `CameraClipNotFoundError` (stopped, but no new clip appeared) are kinds of it. |
 
+A value the camera does not offer is `CameraRefusedError` whatever the control's state, so the same
+input always gets the same answer; an offered value on a control that is read-only right now is
+`CameraUnsupportedError`. An input no camera could take (a malformed options object, a compensation
+that is not a number of stops) throws `TypeError` or `RangeError` before anything is sent. The MCP
+tools and CLI commands check their inputs against the operation table first and answer
+`OperationInputError` (a usage error on the CLI) without touching the camera.
+
 ## Connection
 
 ### discover
 
-List attached USB cameras without opening one. `camera_discover`, `darkgrade cameras`.
+List attached USB cameras without opening one. `camera_discover`, `darkgrade cameras`. The list
+comes from USB descriptors, so a body already open in this process, or claimed by another, is
+still listed, without its strings.
 
 ```typescript
 static async discover(): Promise&lt;DiscoveredCamera[]&gt;
@@ -176,8 +185,9 @@ async nudgeFocus(direction: 'near' | 'far', size: 'small' | 'medium' | 'large'):
 
 `autofocus` focuses once and says whether the camera confirmed focus; only `'acquired'` means it
 did. `setFocusPoint` takes 0–1 from the top-left of the picture and focuses there unless
-`autofocus: false`; switching to a movable focus area happens inside and `resetFocusPoint` puts
-back the centre and the previous focus area. `nudgeFocus` moves manual focus a little, like the
+`autofocus: false`; switching to a movable focus area happens inside (on Sony it also pauses
+subject detection), and `resetFocusPoint` or `disconnect` puts back the centre and what it changed,
+also from a later `Camera` on the same body, unless the area was changed since. `nudgeFocus` moves manual focus a little, like the
 `<` `<<` `<<<` buttons in vendor remote apps; `atLimit` says the lens reached the end of its focus
 travel that way (it moved less than the step, or not at all), which is a completed nudge, not an error.
 
@@ -191,7 +201,9 @@ async stopZoom(): Promise&lt;void&gt;
 
 `zoomTo` zooms to a focal length ("go to 35") and resolves to where the lens landed, read back.
 `startZoom` zooms until `stopZoom`, like holding a zoom rocker; Slate stops it by itself after
-10 seconds. `stopZoom` is always allowed. On the command line, use `zoom-to`.
+10 seconds. `stopZoom` is always allowed; on Sony, after a zoom Slate started, it resolves once
+the focal length holds still, so the next read is where the lens rests. On the command line,
+`start-zoom` stays in the foreground like `start-recording` and stops on Ctrl-C or after `--duration`.
 
 ## Photo and live view
 
@@ -210,6 +222,13 @@ async takePhoto(options?: { autofocus?: boolean; destination?: 'card' | 'compute
 | **options.destination** | `'card' \| 'computer'` |  | `card` (the default) keeps it on the card; `computer` also returns its bytes as `data`. |
 
 The photo carries its `mediaId`, `name` and `sizeBytes`, the same id `listMedia()` reports.
+
+On Sony, a photo taken in a movie program switches to that program's photo counterpart, or to the
+first still mode the body offers when there is none (Movie Flexible Exposure becomes Program Auto),
+and switches back afterwards. Slate waits 15 seconds plus twice the shutter speed the body reports
+with the shutter half-pressed for the image, which covers a long exposure's noise-reduction dark
+frame; Bulb keeps the plain 15 seconds. A body that announces card-index changes has a photo to
+the card confirmed from its card index.
 
 ### getLiveViewFrame
 

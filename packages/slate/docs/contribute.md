@@ -38,6 +38,16 @@ retry. An active process checks shared preferences before upload.
 Decoded protocol evidence is validated by `@darkgrade/slate/telemetry/protocol`; numeric
 values must fit the declared PTP type.
 
+Each public `Camera` call a caller makes, through the library, the MCP tools, the CLI or Studio,
+is one `call` entry (`kind: 'call'`): the operation table's name and its tool and command, the
+surface, the outcome (`ok`, `unsupported`, `refused`, `outcome-unknown`, `invalid-input` for a
+`TypeError` or `RangeError`, or `error`), the typed error's class with its PTP response, and its
+inputs, reduced by the rules in `src/telemetry/AGENTS.md`. Every protocol entry made during the
+call carries its `callId`; calls Slate makes inside a call are part of it. One wrapper on
+`Camera.prototype` (`instrumentCameraOperations` in `src/core/telemetry.ts`) does this and never
+changes a call's result. A collector that predates call entries rejects their batch; the client
+sends it again without them for the rest of the process.
+
 `darkgrade telemetry benchmark` finds the attached USB PTP camera and reads a deep camera
 profile through the existing Slate camera implementation. With several cameras attached it
 uses the only camera-maker device, asks on a terminal, or lists them for `--camera VVVV:PPPP`
