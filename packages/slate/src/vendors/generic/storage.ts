@@ -1,30 +1,34 @@
 import { CameraClipNotFoundError } from '@camera/errors'
-import { protocolAccess } from '@camera/protocol-session'
+import type { GenericCamera } from '@vendors/generic/generic-camera'
 import {PTPDecodeError, PTPResponseError} from '@core/ptp-errors'
 import { cardSlotNumbers } from '@vendors/generic/media-id'
 
+/** What the card readings need from a driver; Sony also switches to content transfer first. */
+export type StorageDriver = Pick<GenericCamera, 'registry' | 'send' | 'storageCanRecord'> & { prepareStorageRead?(): Promise<void> }
+type HandleDriver = Pick<StorageDriver, 'registry' | 'send' | 'prepareStorageRead'>
+
 /** Read current card capacity and camera recording capability, independently of host upload access. */
-export async function readCameraStorages(camera: any) {
-    await protocolAccess(camera).driver.prepareStorageRead?.()
-    const operations = protocolAccess(camera).driver.registry.operations
-    const response = await protocolAccess(camera).send(operations.GetStorageIDs, {})
+export async function readCameraStorages(driver: StorageDriver) {
+    await driver.prepareStorageRead?.()
+    const operations = driver.registry.operations
+    const response = await driver.send(operations.GetStorageIDs, {})
     if (response.code !== 0x2001) throw new PTPResponseError(response.code, 'Camera storage could not be read (GetStorageIDs: 0x' + response.code.toString(16) + ')')
     const summaries = []
     const slots = cardSlotNumbers((response.data || []).map(Number))
     for (const storageId of response.data || []) {
         if ((Number(storageId) & 0xffff) === 0) continue
-        const storage = await protocolAccess(camera).send(operations.GetStorageInfo, {StorageID: storageId})
+        const storage = await driver.send(operations.GetStorageInfo, {StorageID: storageId})
         if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera card information could not be read (GetStorageInfo: 0x' + storage.code.toString(16) + ')')
         const info = storage.data || {}
-        const access = Number(info.accessCapability ?? info.AccessCapability ?? -1)
-        const recording = await protocolAccess(camera).driver.storageCanRecord(Number(storageId), access)
+        const access = Number(info.accessCapability ?? -1)
+        const recording = await driver.storageCanRecord(Number(storageId), access)
         summaries.push({
             storageId: Number(storageId),
             slot: slots.get(Number(storageId)) ?? Number(storageId) >>> 16,
-            description: String(info.storageDescription ?? info.StorageDescription ?? ''),
-            volumeLabel: String(info.volumeLabel ?? info.VolumeLabel ?? ''),
-            capacityBytes: Number(info.maxCapacity ?? info.MaxCapacity ?? 0),
-            freeBytes: Number(info.freeSpaceInBytes ?? info.FreeSpaceInBytes ?? 0),
+            description: String(info.storageDescription ?? ''),
+            volumeLabel: String(info.volumeLabel ?? ''),
+            capacityBytes: Number(info.maxCapacity ?? 0),
+            freeBytes: Number(info.freeSpaceInBytes ?? 0),
             freeImages: info.freeSpaceInImages === undefined ? undefined : Number(info.freeSpaceInImages),
             hostAccessCapability: access,
             ...recording,
@@ -34,16 +38,16 @@ export async function readCameraStorages(camera: any) {
 }
 
 /** Enumerate populated card slots only; an empty-slot placeholder is not a readable storage. */
-export async function readCameraObjectHandles(camera: any): Promise<Set<number>> {
-    await protocolAccess(camera).driver.prepareStorageRead?.()
-    const operations = protocolAccess(camera).driver.registry.operations
-    const storage = await protocolAccess(camera).send(operations.GetStorageIDs, {})
+export async function readCameraObjectHandles(driver: HandleDriver): Promise<Set<number>> {
+    await driver.prepareStorageRead?.()
+    const operations = driver.registry.operations
+    const storage = await driver.send(operations.GetStorageIDs, {})
     if (storage.code !== 0x2001) throw new PTPResponseError(storage.code, 'Camera storage could not be read (GetStorageIDs: 0x' + storage.code.toString(16) + ')')
     if (!Array.isArray(storage.data)) throw new PTPDecodeError('GetStorageIDs returned no storage dataset')
     const handles = new Set<number>()
     for (const storageId of storage.data) {
         if ((Number(storageId) & 0xffff) === 0) continue
-        const result = await protocolAccess(camera).send(operations.GetObjectHandles, {StorageID: storageId})
+        const result = await driver.send(operations.GetObjectHandles, {StorageID: storageId})
         if (result.code !== 0x2001) throw new PTPResponseError(result.code, 'Camera files could not be listed: 0x' + result.code.toString(16))
         if (!Array.isArray(result.data)) throw new PTPDecodeError('GetObjectHandles returned no object dataset')
         for (const handle of result.data) handles.add(Number(handle))
@@ -52,17 +56,17 @@ export async function readCameraObjectHandles(camera: any): Promise<Set<number>>
 }
 
 /** Wait for a newly recorded card movie, tolerating the body's temporary index rejection while it finalizes. */
-export async function waitForNewCameraMovie(camera: any, baseline: Set<number>, timeoutMilliseconds = 12000) {
+export async function waitForNewCameraMovie(driver: HandleDriver, baseline: Set<number>, timeoutMilliseconds = 12000) {
     if (!Number.isInteger(timeoutMilliseconds) || timeoutMilliseconds < 1 || timeoutMilliseconds > 60000)
         throw new Error('Movie finalization timeout must be 1–60000 milliseconds')
-    const operations = protocolAccess(camera).driver.registry.operations
+    const operations = driver.registry.operations
     const deadline = Date.now() + timeoutMilliseconds
     let lastError: unknown
     do {
         try {
-            for (const handle of await readCameraObjectHandles(camera)) {
+            for (const handle of await readCameraObjectHandles(driver)) {
                 if (baseline.has(handle)) continue
-                const response = await protocolAccess(camera).send(operations.GetObjectInfo, {ObjectHandle: handle})
+                const response = await driver.send(operations.GetObjectInfo, {ObjectHandle: handle})
                 const info = response.data, bytes = Number(info?.objectCompressedSize)
                 if (response.code === 0x2001 && Number.isSafeInteger(bytes) && bytes > 0 && info?.associationType === 0
                     && /\.(mp4|mov|mxf|mts|m2ts|avi|crm)$/i.test(info?.filename || '')) return {...info, handle}

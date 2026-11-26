@@ -44,7 +44,6 @@ import {
     requireImage,
     requirePoint,
     restoreAll,
-    storageHost,
     supported,
     unstatedSize,
     unsupported,
@@ -1343,7 +1342,7 @@ export class CanonCamera extends GenericCamera {
                 return state === 'CARD' ? 'recording' : state === 'NONE' || state === 'SDRAM' ? 'idle' : 'unknown'
             },
             checkCard: async () => {
-                const cards = await readCameraStorages(storageHost(this))
+                const cards = await readCameraStorages(this)
                 if (!cards.some(card => card.writable && card.freeBytes > 0))
                     throw new CameraRefusedError('startRecording', 'Insert a writable memory card with free space before recording')
             },

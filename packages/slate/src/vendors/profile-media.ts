@@ -24,12 +24,12 @@ export async function captureProfilePhoto(
     const capture = async () => {
         if (options.destination === 'memory')
             return release({ includeInfo: true, includeData: true, ...options })
-        const baseline = await readCameraObjectHandles(camera)
+        const baseline = await readCameraObjectHandles(session.driver)
         await release({ includeInfo: false, includeData: false, ...options })
         const deadline = Date.now() + 8000
         do {
             try {
-                for (const handle of await readCameraObjectHandles(camera)) {
+                for (const handle of await readCameraObjectHandles(session.driver)) {
                     if (baseline.has(handle)) continue
                     const response = await session.send(session.driver.registry.operations.GetObjectInfo, {
                         ObjectHandle: handle,

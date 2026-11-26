@@ -796,7 +796,7 @@ describe('a simulated Sony body', () => {
         const photo = (await camera.listMedia()).find(item => item.name === 'DSC00001.ARW')!
         await camera.downloadMedia(photo.id)
         // A recording or capture workflow reads the handles it compares against later.
-        expect(await readCameraObjectHandles(camera)).toEqual(new Set([0x21, 0x22]))
+        expect(await readCameraObjectHandles(driver)).toEqual(new Set([0x21, 0x22]))
         expect(body.operatingMode).toBe(2)
         await expect(protocolSession(camera).driver.captureLiveView({ includeInfo: false })).rejects.toMatchObject({ code: 0x200f })
         expect(reopen).not.toHaveBeenCalled()

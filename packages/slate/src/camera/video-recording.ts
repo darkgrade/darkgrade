@@ -30,14 +30,14 @@ export class UsbVideoRecording {
         return protocolAccess(this.camera).driver.registry.operations
     }
     private handles() {
-        return readCameraObjectHandles(this.camera)
+        return readCameraObjectHandles(protocolAccess(this.camera).driver)
     }
     /** Nikon reports sizes over 4 GiB through its own object-size property. */
     private size(handle: number, reported: number) {
         return this.vendor === 'nikon' ? protocolAccess(this.camera).driver.fullObjectSize(handle, reported) : reported
     }
     async prepare() {
-        const storages = await readCameraStorages(this.camera)
+        const storages = await readCameraStorages(protocolAccess(this.camera).driver)
         if (!storages.some(card => card.writable && card.freeBytes > 0))
             throw new Error('Insert a writable memory card with free space before recording')
         if (this.vendor === 'canon' && (await this.camera.getRecordingState()) === 'recording')

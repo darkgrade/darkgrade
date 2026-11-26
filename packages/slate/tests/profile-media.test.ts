@@ -24,6 +24,8 @@ it.each([false, true])('recorded Nikon card photo transfers only the new object;
             return {code: 0x2001, data: {filename: 'NEW.NEF', associationType: 0, objectCompressedSize: 3}}
         },
     }
+    // The card readings go to the driver, as Camera's own driver answers them.
+    Object.assign(camera.driver, {send: camera.send})
     const photo = captureProfilePhoto(camera as unknown as Camera, {autofocus: false, destination: 'card'}, release)
     if (truncated) await expect(photo).rejects.toThrow('length mismatch')
     else expect((await photo).data?.length).toBe(3)

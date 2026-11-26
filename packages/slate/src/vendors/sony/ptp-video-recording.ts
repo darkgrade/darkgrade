@@ -29,7 +29,7 @@ export class SonyPtpVideoRecording {
         this.stoppedResult=undefined
         if(await this.state()!==0)throw new Error('Sony is already recording or finalizing a movie')
         // Camera.startRecording selects the movie mode; its stopRecording restores it after idle.
-        this.baseline=await readCameraObjectHandles(this.camera)
+        this.baseline=await readCameraObjectHandles(protocolAccess(this.camera).driver)
         this.prepared=true
     }
     async start(){
@@ -128,7 +128,7 @@ export class SonyPtpVideoRecording {
         do{
             try{
                 const media:TakeMedia[]=[]
-                for(const handle of await readCameraObjectHandles(this.camera)){
+                for(const handle of await readCameraObjectHandles(protocolAccess(this.camera).driver)){
                     if(this.baseline.has(handle))continue
                     const file=await this.info(handle)
                     if(file)media.push(file)
@@ -146,7 +146,7 @@ export class SonyPtpVideoRecording {
         // Sony's object index is session-local. Querying a saved handle immediately
         // after reconnect left the a6700 unresponsive at GetObjectInfo. Enumerate
         // the current index before dereferencing any saved original identity.
-        const handles=await readCameraObjectHandles(this.camera)
+        const handles=await readCameraObjectHandles(protocolAccess(this.camera).driver)
         if(!handles.has(handle))throw new Error('Sony original handle is no longer in the current card index; transfer refused')
         const fresh=await this.info(handle)
         if(!fresh||fresh.filename!==file.filename||fresh.bytes!==file.bytes)throw new Error('Sony original identity changed; transfer refused')

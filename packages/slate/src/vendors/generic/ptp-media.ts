@@ -2,9 +2,8 @@ import type { CameraCapabilities } from '@camera/controls'
 import type { CardStatus, MediaDownloadOptions, MediaItem, MediaPreviewSize } from '@camera/driver'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { CameraRefusedError, CameraUnsupportedError } from '@camera/errors'
-import type { Camera } from '@camera/index'
 import type { CameraDriverInstance } from '@camera/camera-context'
-import { readCameraStorages } from '@vendors/generic/storage'
+import { readCameraStorages, type StorageDriver } from '@vendors/generic/storage'
 import { GetThumb } from '@ptp/definitions/operation-definitions'
 import { completePreview } from '@vendors/generic/jpeg-end'
 import { OK } from '@ptp/definitions/response-definitions'
@@ -22,8 +21,8 @@ function objectReference(operation: string, id: string): ObjectMediaReference {
 }
 
 /** Card space from each populated storage's StorageInfo (standard PTP bodies: Canon, Nikon and others). */
-export async function readStorageCardStatus(owner: Camera): Promise<CardStatus[]> {
-    const storages = await readCameraStorages(owner)
+export async function readStorageCardStatus(driver: StorageDriver): Promise<CardStatus[]> {
+    const storages = await readCameraStorages(driver)
     return storages.map((storage): CardStatus => ({
         slot: storage.slot,
         state: 'ready',
@@ -51,10 +50,10 @@ async function objectSize(driver: CameraDriverInstance, indexed: IndexedObject):
  * Card media through standard PTP object handles: StorageInfo for space, ObjectInfo for the list,
  * GetThumb for thumbnails and the driver's own chunked transfer for downloads.
  */
-export function ptpMediaCapability(driver: CameraDriverInstance, owner: Camera): MediaCapability {
+export function ptpMediaCapability(driver: CameraDriverInstance): MediaCapability {
     const index = new PtpObjectIndex(driver)
     return {
-        getCardStatus: () => reportingRefusals('getCardStatus', () => readStorageCardStatus(owner)),
+        getCardStatus: () => reportingRefusals('getCardStatus', () => readStorageCardStatus(driver)),
 
         async listMedia(): Promise<MediaItem[]> {
             const objects = await reportingRefusals('listMedia', () => index.list('listMedia'))

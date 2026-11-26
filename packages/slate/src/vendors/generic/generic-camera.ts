@@ -1377,7 +1377,7 @@ export class GenericCamera {
     /** The card-media group; Sony overrides it with its own card index. */
     protected async mediaGroup(): Promise<MediaCapability> {
         const { ptpMediaCapability } = await import('@vendors/generic/ptp-media')
-        return (this.#mediaGroup ??= ptpMediaCapability(this, this.requireOwner()))
+        return (this.#mediaGroup ??= ptpMediaCapability(this))
     }
 
     /** Sony's remote session overrides this to say whether it may write its two host preferences. */
