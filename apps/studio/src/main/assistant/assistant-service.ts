@@ -121,13 +121,8 @@ function describeResult(tool: string, data: Record<string, unknown>): string {
     switch (tool) {
         case 'camera_set_control':
             return `${CAMERA_CONTROL_LABELS[data.id as keyof typeof CAMERA_CONTROL_LABELS] ?? data.id}: ${data.value}`
-        case 'adjust_exposure': {
-            const switched = data.switchedFromAuto as { setting: string; nowManual: string } | undefined
-            const change = `${data.changed} ${data.from} → ${data.to}`
-            return switched
-                ? `${switched.setting} was on auto, so I set it to ${switched.nowManual} first. ${change}`
-                : change
-        }
+        case 'adjust_exposure':
+            return `${data.changed} ${data.from} → ${data.to}`
         case 'adjust_color_temperature': {
             const changes = (data.changes as { colorTemperature?: { from: unknown; to: unknown } }[]) ?? []
             const temperature = changes.find(change => change.colorTemperature)?.colorTemperature

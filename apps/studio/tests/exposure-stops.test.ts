@@ -3,7 +3,6 @@ import {
     apertureToNumber,
     isAutoValue,
     isoToNumber,
-    nearestNumericOption,
     shutterToNumber,
     shutterDialToNumber,
     stepValue,
@@ -39,20 +38,10 @@ describe('stepValue over an advertised list', () => {
     })
 })
 
-describe('switching an auto setting to manual', () => {
+describe('a setting the camera chooses itself', () => {
     it('recognises a setting the camera is choosing itself', () => {
         expect(isAutoValue('ISO AUTO', isoToNumber)).toBe(true)
         expect(isAutoValue('ISO 400', isoToNumber)).toBe(false)
         expect(isAutoValue(null, isoToNumber)).toBe(false)
-    })
-
-    it.each([
-        ['ISO at base, skipping auto', ['ISO AUTO', 'ISO 100', 'ISO 125', 'ISO 200'], isoToNumber, 100, 'ISO 100'],
-        ['ISO nearest base', ['ISO AUTO', 'ISO 160', 'ISO 200'], isoToNumber, 100, 'ISO 160'],
-        ['a normal shutter', ['BULB', '1/30', '1/50', '1/125'], shutterToNumber, 1 / 60, '1/50'],
-        ['a common aperture', ['f/2.8', 'f/4', 'f/8'], apertureToNumber, 4, 'f/4'],
-        ['nothing when no option is numeric', ['ISO AUTO'], isoToNumber, 100, null],
-    ])('starts at %s', (_name, options, toNumber, target, expected) => {
-        expect(nearestNumericOption(options, toNumber, target)).toBe(expected)
     })
 })
