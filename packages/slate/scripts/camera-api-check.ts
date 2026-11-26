@@ -7,11 +7,15 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { Camera } from '@camera/index'
 import { typedSettingIds } from '@camera/settings/typed-settings'
 import { killMacCameraDaemons } from '@transport/usb/macos-camera-daemons'
+import { vendorTable } from '@vendors/vendors'
 
 type Outcome = 'pass' | 'unsupported' | 'read-only' | 'fail'
 interface Step { step: string; outcome: Outcome; milliseconds: number; detail: string }
 
-const VENDORS: Record<number, string> = { 0x054c: 'sony', 0x04a9: 'canon', 0x04b0: 'nikon' }
+/** The vendors with a driver of their own, by the vendor table's make ('sony', 'canon', 'nikon'). */
+const VENDORS: Record<number, string> = Object.fromEntries(
+    vendorTable.filter(vendor => vendor.driver === 'dedicated').map(vendor => [vendor.vendorId, vendor.make.toLowerCase()])
+)
 const STEP_TIMEOUT_MILLISECONDS = 30_000
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : undefined
 

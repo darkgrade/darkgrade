@@ -1,7 +1,8 @@
 import type { DiscoveredCamera } from '@camera/driver'
 import type { Camera, CameraOptions } from '@camera/index'
 import type { Terminal } from '@cli/terminal'
-import { getVendorName, isSupportedVendor, VendorIDs } from '@ptp/definitions/vendor-ids'
+import { getVendorName } from '@ptp/definitions/vendor-ids'
+import { vendorEntry, vendorTable } from '@vendors/vendors'
 import type { BenchmarkCheck, runBenchmark } from '@workflows/telemetry-benchmark'
 import { formatUsbDeviceId, parseUsbDeviceId } from '@transport/usb/usb-device-id'
 export type { DiscoveredCamera }
@@ -81,7 +82,7 @@ export function selectBenchmarkCamera(
         const elsewhere = otherModes.map(device => `  ${describeDevice(device)} is attached but not in PTP mode.`)
         return { message: ['No camera found.', ...elsewhere, connectionHelp].join('\n') }
     }
-    const cameras = devices.filter(device => isSupportedVendor(device.vendorId))
+    const cameras = devices.filter(device => vendorEntry(device.vendorId))
     if (cameras.length === 1) return { device: cameras[0] }
     return {
         message: [
@@ -121,7 +122,7 @@ export async function camerasInOtherModes(): Promise<DiscoveredCamera[]> {
         const { Logger } = await import('@core/logger')
         const { USBTransport } = await import('@transport/usb/usb-transport')
         const transport = new USBTransport(new Logger())
-        const devices = await transport.discover({ usb: { filters: Object.values(VendorIDs).map(vendorId => ({ vendorId })) } })
+        const devices = await transport.discover({ usb: { filters: vendorTable.map(({ vendorId }) => ({ vendorId })) } })
         return devices.filter(device => device.classCode !== 0x06)
     } catch {
         return []
