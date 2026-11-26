@@ -49,6 +49,10 @@ export class SonyRemoteSdkTransport implements TransportInterface {
         return TransportType.IP
     }
 
+    connectionKind(): 'wifi' {
+        return 'wifi'
+    }
+
     isLittleEndian(): boolean {
         return true
     }

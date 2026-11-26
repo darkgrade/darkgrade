@@ -54,7 +54,6 @@ import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import { vendorEntry } from '@vendors/vendors'
-import { SonyRemoteSdkTransport } from '@transport/sony-remote/sony-remote-sdk-transport'
 import type { MediaCapability } from '@vendors/generic/capability-groups'
 import { OBJECT_SIZE_UNREPORTED, reportingRefusals } from '@vendors/generic/ptp-object-index'
 import { afterShutterRelease, cardObjectFile, classified, shutterOutcomeUnknown, shutterRefused } from '@vendors/generic/shutter-outcome'
@@ -1412,10 +1411,9 @@ export class GenericCamera {
         })
     }
 
-    /** Sony's authenticated SDK channel is carried over Wi-Fi IP, but it is not PTP/IP. */
+    /** What the transport says it is, else USB or PTP/IP by its type. */
     private connectionKind(): CameraInfo['connection'] {
-        if (this.transport instanceof SonyRemoteSdkTransport) return 'wifi'
-        return this.transport.getType() === TransportType.USB ? 'usb' : 'ip'
+        return this.transport.connectionKind?.() ?? (this.transport.getType() === TransportType.USB ? 'usb' : 'ip')
     }
 
     async getCapabilities(requested?: CameraControlId): Promise<CameraCapabilities> {
