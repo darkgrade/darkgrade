@@ -1372,13 +1372,16 @@ export class CanonCamera extends GenericCamera {
 
     /**
      * Mode selection can be acknowledged before it takes effect. When the body reports FixedMovie,
-     * fresh event readback is required before a release, Record or restoration proceeds.
+     * its fresh event readback is polled until it shows the mode, before a release, Record or
+     * restoration proceeds; only a body without it waits the fixed settle time for movie mode.
      */
     private async settleMovieMode(expected: 0 | 1, requiresReadback: boolean): Promise<void> {
-        if (!requiresReadback && expected === 0) return
-        await wait(MODE_SETTLE_MILLISECONDS)
-        if (!requiresReadback) return
-        const deadline = Date.now() + 2000
+        if (!requiresReadback) {
+            if (expected === 1) await wait(MODE_SETTLE_MILLISECONDS)
+            return
+        }
+        // As patient as the fixed settle and the readback it was followed by together.
+        const deadline = Date.now() + MODE_SETTLE_MILLISECONDS + 2000
         do {
             await this.withoutPolling(() => this.refreshEventProperties())
             if (this.fixedMovie() === expected) return

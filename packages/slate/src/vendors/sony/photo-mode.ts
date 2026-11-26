@@ -90,6 +90,21 @@ export function sonyPhotoModeDriver(driver: SonyCamera): SonyPhotoModeDriver {
 const SONY_EXPOSURE_PROGRAM_MODE = 0x500e
 const SONY_STILL_MODES = ['Manual', 'Program Auto', 'Program', 'Still']
 
+/** How long the body may take to show the still mode it was set to, and how often it is read meanwhile. */
+const STILL_MODE_READBACK_MILLISECONDS = 2000
+const STILL_MODE_POLL_MILLISECONDS = 100
+
+/** Waits until the body's exposure program reads `target` (in place of a fixed half second). */
+async function stillModeShown(driver: SonyPhotoModeDriver, target: unknown): Promise<void> {
+    const deadline = Date.now() + STILL_MODE_READBACK_MILLISECONDS
+    do {
+        const mode = (await driver.refreshPropertyStates()).find(property => property.code === SONY_EXPOSURE_PROGRAM_MODE)
+        if (mode?.value === target) return
+        await new Promise(resolve => setTimeout(resolve, STILL_MODE_POLL_MILLISECONDS))
+    } while (Date.now() < deadline)
+    throw new Error(`Sony did not show ${String(target)} after it was selected for the photo`)
+}
+
 /** Hold an advertised still mode across capture/transfer and restore the original movie mode. */
 export async function withSonyPhotoMode<T>(driver: SonyPhotoModeDriver, capture: () => Promise<T>): Promise<T> {
     const mode = (await driver.refreshPropertyStates()).find(property => property.code === SONY_EXPOSURE_PROGRAM_MODE)
@@ -102,7 +117,7 @@ export async function withSonyPhotoMode<T>(driver: SonyPhotoModeDriver, capture:
     let failure: unknown
     try {
         await driver.setExposureProgram(String(target))
-        await new Promise(resolve => setTimeout(resolve, 500))
+        await stillModeShown(driver, target)
         return await capture()
     } catch (error) {
         failure = error
