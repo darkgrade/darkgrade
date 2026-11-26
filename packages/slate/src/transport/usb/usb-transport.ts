@@ -5,7 +5,7 @@ import { DeviceDescriptor } from '@transport/interfaces/device.interface'
 import { TransportType } from '@transport/interfaces/transport-types'
 import { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 import type { USBTransportOptions } from '@transport/transport-factory'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { ContainerType, parseContainer } from '@ptp/container'
 import { InEndpoint, Interface, usb } from 'usb'
 
 export interface EndpointConfiguration {
@@ -436,7 +436,7 @@ export class USBTransport implements TransportInterface {
         transactionId: number,
         status: USBTransferStatus
     ): void {
-        const { type } = USBContainerBuilder.parseContainer(data)
+        const { type } = parseContainer(data)
         this.logger.addLog({
             type: 'usb_transfer',
             level: 'info',
@@ -446,7 +446,7 @@ export class USBTransport implements TransportInterface {
             endpointAddress: `0x${endpoint.toString(16)}`,
             sessionId,
             transactionId,
-            phase: type === USBContainerType.COMMAND ? 'request' : type === USBContainerType.DATA ? 'data' : 'response',
+            phase: type === ContainerType.COMMAND ? 'request' : type === ContainerType.DATA ? 'data' : 'response',
             status,
         })
     }
@@ -655,7 +655,7 @@ export class USBTransport implements TransportInterface {
     private handleInterruptData(data: Uint8Array, status: USBTransferStatus): void {
         if (!this.endpoints) return
 
-        const container = USBContainerBuilder.parseEvent(data)
+        const container = parseContainer(data, ContainerType.EVENT)
         const view = new DataView(container.payload.buffer, container.payload.byteOffset, container.payload.byteLength)
         const event: PTPEvent = { code: container.code, transactionId: container.transactionId, parameters: [] }
 

@@ -42,7 +42,8 @@ import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { randomSessionId } from '@ptp/definitions/session'
-import { CONTAINER_TYPE, TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
+import { buildContainer, ContainerType } from '@ptp/container'
+import { TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
 import { EventDefinition, EventEmitter } from '@ptp/types/event'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -883,7 +884,7 @@ export class GenericCamera {
         }
         const slots = new Uint8Array(encodedParams.length * 4)
         encodedParams.forEach((parameter, index) => slots.set(parameter, index * 4))
-        await this.channel.send(this.container(CONTAINER_TYPE.command, operation.code, transactionId, slots), sessionId, context)
+        await this.channel.send(buildContainer(ContainerType.COMMAND, operation.code, transactionId, slots), sessionId, context)
 
         let receivedData: Uint8Array | undefined
         let decodedData: unknown
@@ -891,7 +892,7 @@ export class GenericCamera {
         if (operation.dataDirection === 'in' && data) {
             decodedData = this.describeOutgoingData(operation, paramsRecord, data)
             logDataPhase('in', data, decodedData)
-            await this.channel.send(this.container(CONTAINER_TYPE.data, operation.code, transactionId, data), sessionId, context)
+            await this.channel.send(buildContainer(ContainerType.DATA, operation.code, transactionId, data), sessionId, context)
         } else if (operation.dataDirection === 'out') {
             const dataContainer = await this.channel.receive(sessionId, {
                 ...context,
@@ -901,7 +902,7 @@ export class GenericCamera {
                 maxLength: maxDataLength || 256 * 1024,
             })
             receivedData = dataContainer.payload
-            if (dataContainer.type === CONTAINER_TYPE.response) {
+            if (dataContainer.type === ContainerType.RESPONSE) {
                 logResponse(dataContainer.code)
                 return {
                     code: dataContainer.code,
@@ -952,7 +953,7 @@ export class GenericCamera {
             returnData = decodedData
         return {
             code: responseContainer.code,
-            parameters: responseContainer.type === CONTAINER_TYPE.response ? parameters : undefined,
+            parameters: responseContainer.type === ContainerType.RESPONSE ? parameters : undefined,
             data: returnData,
         } as OperationResponse<Op>
     }
@@ -1352,16 +1353,6 @@ export class GenericCamera {
     }
 
     /** A PTP container: length, type, code and transaction ID, then the payload. */
-    private container(type: number, code: number, transactionId: number, payload: Uint8Array): Uint8Array {
-        const buffer = new Uint8Array(12 + payload.length)
-        buffer.set(this.registry.codecs.uint32.encode(buffer.length), 0)
-        buffer.set(this.registry.codecs.uint16.encode(type), 4)
-        buffer.set(this.registry.codecs.uint16.encode(code), 6)
-        buffer.set(this.registry.codecs.uint32.encode(transactionId), 8)
-        buffer.set(payload, 12)
-        return buffer
-    }
-
     /** Response (and response-as-data) containers carry up to five UINT32 parameters; vendor commands report status there. */
     private decodeResponseParameters(payload: Uint8Array): number[] | undefined {
         if (payload.length === 0 || payload.length % 4 !== 0) return undefined

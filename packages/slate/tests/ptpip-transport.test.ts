@@ -9,7 +9,7 @@ import {
     PTPIPPacketType,
     takePTPIPPackets,
 } from '@transport/ip/ptpip-packet'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { buildContainer, ContainerType, parseContainer } from '@ptp/container'
 import { createServer, Server, Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -163,21 +163,21 @@ describe('PTP/IP transport', () => {
         transport.on(event => events.push(event))
 
         await transport.connect()
-        await transport.send(USBContainerBuilder.buildCommand(0x1001, 1, []), 1, 1)
-        const data = USBContainerBuilder.parseContainer(await transport.receive(1024, 1, 1), USBContainerType.DATA)
-        const response = USBContainerBuilder.parseContainer(
+        await transport.send(buildContainer(ContainerType.COMMAND, 0x1001, 1), 1, 1)
+        const data = parseContainer(await transport.receive(1024, 1, 1), ContainerType.DATA)
+        const response = parseContainer(
             await transport.receive(512, 1, 1),
-            USBContainerType.RESPONSE
+            ContainerType.RESPONSE
         )
 
         expect(data.payload).toEqual(Uint8Array.of(1, 2, 3, 4, 5))
         expect(response.code).toBe(0x2001)
 
-        await transport.send(USBContainerBuilder.buildCommand(0x1016, 2, [uint32(0x5001)]), 1, 2)
-        await transport.send(USBContainerBuilder.buildData(0x1016, 2, Uint8Array.of(9, 8, 7)), 1, 2)
-        const setResponse = USBContainerBuilder.parseContainer(
+        await transport.send(buildContainer(ContainerType.COMMAND, 0x1016, 2, uint32(0x5001)), 1, 2)
+        await transport.send(buildContainer(ContainerType.DATA, 0x1016, 2, Uint8Array.of(9, 8, 7)), 1, 2)
+        const setResponse = parseContainer(
             await transport.receive(512, 1, 2),
-            USBContainerType.RESPONSE
+            ContainerType.RESPONSE
         )
 
         expect(setResponse.payload).toEqual(uint32(99))
@@ -205,14 +205,14 @@ describe('PTP/IP transport', () => {
         const transport = testTransport({ address: mock.address, port: mock.port, timeout: 500 })
         try {
             await transport.connect()
-            await transport.send(USBContainerBuilder.buildCommand(0x9001, 1, []), 1, 1)
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x9001, 1), 1, 1)
             await expect(transport.receive(512, 1, 1)).rejects.toBeInstanceOf(PTPIPTransactionCancelledError)
             expect(transport.isConnected()).toBe(true)
-            await transport.send(USBContainerBuilder.buildCommand(0x1001, 2, []), 1, 2)
-            expect(USBContainerBuilder.parseContainer(await transport.receive(512, 1, 2)).type).toBe(
-                USBContainerType.DATA
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x1001, 2), 1, 2)
+            expect(parseContainer(await transport.receive(512, 1, 2)).type).toBe(
+                ContainerType.DATA
             )
-            expect(USBContainerBuilder.parseContainer(await transport.receive(512, 1, 2)).code).toBe(0x2001)
+            expect(parseContainer(await transport.receive(512, 1, 2)).code).toBe(0x2001)
         } finally {
             await transport.disconnect()
         }
@@ -229,13 +229,13 @@ describe('PTP/IP transport', () => {
         const transport=testTransport({address:mock.address,port:mock.port,timeout:500})
         try{
             await transport.connect()
-            await transport.send(USBContainerBuilder.buildCommand(0x9431,1,[]),1,1)
-            const rejected=USBContainerBuilder.parseContainer(await transport.receive(512,1,1))
-            expect(rejected.type).toBe(USBContainerType.RESPONSE);expect(rejected.code).toBe(0x2013)
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x9431,1),1,1)
+            const rejected=parseContainer(await transport.receive(512,1,1))
+            expect(rejected.type).toBe(ContainerType.RESPONSE);expect(rejected.code).toBe(0x2013)
             expect(transport.isConnected()).toBe(true)
-            await transport.send(USBContainerBuilder.buildCommand(0x1001,2,[]),1,2)
-            expect(USBContainerBuilder.parseContainer(await transport.receive(512,1,2)).type).toBe(USBContainerType.DATA)
-            expect(USBContainerBuilder.parseContainer(await transport.receive(512,1,2)).code).toBe(0x2001)
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x1001,2),1,2)
+            expect(parseContainer(await transport.receive(512,1,2)).type).toBe(ContainerType.DATA)
+            expect(parseContainer(await transport.receive(512,1,2)).code).toBe(0x2001)
         }finally{await transport.disconnect()}
     })
 
@@ -257,7 +257,7 @@ describe('PTP/IP transport', () => {
             const transport = testTransport({ address: mock.address, port: mock.port, timeout: 500 })
             try {
                 await transport.connect()
-                await transport.send(USBContainerBuilder.buildCommand(0x9002, 1, []), 1, 1)
+                await transport.send(buildContainer(ContainerType.COMMAND, 0x9002, 1), 1, 1)
                 const started = Date.now()
                 await expect(transport.receive(32, 1, 1)).rejects.toThrow()
                 expect(Date.now() - started).toBeLessThan(400)
@@ -276,9 +276,9 @@ describe('PTP/IP transport', () => {
             await transport.connect()
             await new Promise(resolve => setTimeout(resolve, 75))
             expect(transport.isConnected()).toBe(true)
-            await transport.send(USBContainerBuilder.buildCommand(0x1001, 1, []), 1, 1)
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x1001, 1), 1, 1)
             await transport.receive(512, 1, 1)
-            expect(USBContainerBuilder.parseContainer(await transport.receive(512, 1, 1)).code).toBe(0x2001)
+            expect(parseContainer(await transport.receive(512, 1, 1)).code).toBe(0x2001)
         } finally {
             await transport.disconnect()
         }
@@ -294,7 +294,7 @@ describe('PTP/IP transport', () => {
         const transport = testTransport({ address: mock.address, port: mock.port, timeout: 50 })
         try {
             await transport.connect()
-            await transport.send(USBContainerBuilder.buildCommand(0x9003, 1, []), 1, 1)
+            await transport.send(buildContainer(ContainerType.COMMAND, 0x9003, 1), 1, 1)
             const started = Date.now()
             await expect(transport.receive(512, 1, 1)).rejects.toThrow(/time|Timed/)
             expect(Date.now() - started).toBeLessThan(500)

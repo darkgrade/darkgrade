@@ -1,3 +1,4 @@
+import { CONTAINER_HEADER_BYTES, ContainerType, readContainerHeader } from '@ptp/container'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 export interface CapturedPtpTransaction {
@@ -24,16 +25,13 @@ export function recordPtpTransport(source: TransportInterface, accept: (transact
     const observe = (bytes: Uint8Array, outgoing: boolean) => {
         let observedTransaction: number | undefined
         try {
-            if (bytes.length < 12) throw new Error('Incomplete PTP header')
-            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-            observedTransaction = view.getUint32(8, true)
-            if (view.getUint32(0, true) !== bytes.length) throw new Error('Incomplete PTP container')
-            const type = view.getUint16(4, true)
-            const code = view.getUint16(6, true)
-            const transactionId = view.getUint32(8, true)
-            const body = bytes.subarray(12)
+            if (bytes.length < CONTAINER_HEADER_BYTES) throw new Error('Incomplete PTP header')
+            const { length, type, code, transactionId } = readContainerHeader(bytes)
+            observedTransaction = transactionId
+            if (length !== bytes.length) throw new Error('Incomplete PTP container')
+            const body = bytes.subarray(CONTAINER_HEADER_BYTES)
             if (body.length > maximumPayload) throw new Error('PTP trace payload limit exceeded')
-            if (outgoing && type === 1) {
+            if (outgoing && type === ContainerType.COMMAND) {
                 if (pending.has(transactionId)) incomplete++
                 pending.set(transactionId, { operation: code, transactionId, parameters: words(body) })
                 lastOperation = code
@@ -41,11 +39,11 @@ export function recordPtpTransport(source: TransportInterface, accept: (transact
             }
             const transaction = pending.get(transactionId)
             if (!transaction) return
-            if (type === 2) {
+            if (type === ContainerType.DATA) {
                 if (code !== transaction.operation) throw new Error('PTP data operation mismatch')
                 if (outgoing) transaction.dataFromHost = body.slice()
                 else transaction.data = body.slice()
-            } else if (!outgoing && type === 3) {
+            } else if (!outgoing && type === ContainerType.RESPONSE) {
                 const { data, ...request } = transaction
                 pending.delete(transactionId)
                 accept({ ...request, response: { code, parameters: words(body), ...(data && { data }) } })

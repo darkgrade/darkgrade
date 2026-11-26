@@ -19,7 +19,7 @@ import {
     PTPIPPacketType,
     takePTPIPPackets,
 } from '@transport/ip/ptpip-packet'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { buildContainer, ContainerType, parseContainer, type ParsedContainer } from '@ptp/container'
 import type { Socket } from 'node:net'
 
 export interface IPTransportOptions {
@@ -172,7 +172,7 @@ export class IPTransport implements TransportInterface {
     private eventConnection?: PTPIPConnection
     private eventHandler?: (event: PTPEvent) => void
     private eventTask?: Promise<void>
-    private pendingCommand?: ReturnType<typeof USBContainerBuilder.parseContainer>
+    private pendingCommand?: ParsedContainer
     private operationCodes = new Map<number, number>()
     private options: Required<Omit<IPTransportOptions, 'localAddress' | 'clientGuid' | 'telemetryEvidence'>> &
         Pick<IPTransportOptions, 'localAddress' | 'clientGuid'>
@@ -297,12 +297,12 @@ export class IPTransport implements TransportInterface {
 
     async send(data: Uint8Array, _sessionId: number, transactionId: number): Promise<void> {
         const connection = this.requireCommandConnection()
-        const container = USBContainerBuilder.parseContainer(data)
+        const container = parseContainer(data)
         if (container.length !== data.length) throw new Error('PTP/IP USB container length does not match its bytes')
         if (container.transactionId !== transactionId)
             throw new Error('PTP/IP transaction ID does not match its container')
 
-        if (container.type === USBContainerType.COMMAND) {
+        if (container.type === ContainerType.COMMAND) {
             if (this.pendingCommand || this.operationCodes.size)
                 throw new Error('Previous PTP/IP transaction has not finished')
             if (container.payload.length % 4 || container.payload.length > 20)
@@ -311,7 +311,7 @@ export class IPTransport implements TransportInterface {
             this.operationCodes.set(transactionId, container.code)
             return
         }
-        if (container.type !== USBContainerType.DATA)
+        if (container.type !== ContainerType.DATA)
             throw new Error(`Cannot send USB container type ${container.type} over PTP/IP`)
         const command = this.requirePendingCommand(transactionId, container.code)
         try {
@@ -379,7 +379,7 @@ export class IPTransport implements TransportInterface {
                 const code = this.operationCodes.get(transactionId)
                 if (code === undefined)
                     throw new Error(`No operation is registered for PTP/IP transaction ${transactionId}`)
-                return USBContainerBuilder.build(USBContainerType.DATA, code, transactionId, data)
+                return buildContainer(ContainerType.DATA, code, transactionId, data)
             }
             if (packet.type === PTPIPPacketType.OperationResponse) {
                 const response = parseResponse(packet)
@@ -400,8 +400,8 @@ export class IPTransport implements TransportInterface {
         this.operationCodes.delete(transactionId)
         if (12 + response.parameters.length > maxLength || response.parameters.length > 20)
             throw new Error('Invalid or oversized PTP/IP response parameters')
-        return USBContainerBuilder.build(
-            USBContainerType.RESPONSE,
+        return buildContainer(
+            ContainerType.RESPONSE,
             response.code,
             response.transactionId,
             response.parameters

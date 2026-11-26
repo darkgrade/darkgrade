@@ -1,5 +1,6 @@
 import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext, type PTPProtocolViolation } from '@core/ptp-errors'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { CONTAINER_HEADER_BYTES, ContainerType, readContainerHeader } from '@ptp/container'
 
 /** How long and how often darkgrade waits for a camera before giving up on a transaction. */
 export interface TransactionPolicy {
@@ -40,8 +41,6 @@ export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
     automaticUSBReset: true,
 }
 
-export const CONTAINER_TYPE = { command: 1, data: 2, response: 3, event: 4 } as const
-const HEADER_BYTES = 12
 const CLOSE_SESSION = 0x1003
 /** A reply this many transactions old is treated as a late answer to an abandoned transaction. */
 const STALE_WINDOW = 1024
@@ -209,26 +208,25 @@ export class TransactionChannel {
     }
 
     private parse(raw: Uint8Array, context: PTPErrorContext): Container {
-        if (raw.length < HEADER_BYTES)
+        if (raw.length < CONTAINER_HEADER_BYTES)
             throw new PTPProtocolError(
                 'short-container',
                 `container of ${raw.length} bytes has no complete header`,
                 context
             )
-        const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength)
-        const declaredLength = view.getUint32(0, true)
-        if (declaredLength < HEADER_BYTES)
+        const { length: declaredLength, type, code, transactionId } = readContainerHeader(raw)
+        if (declaredLength < CONTAINER_HEADER_BYTES)
             throw new PTPProtocolError('short-container', `container declares ${declaredLength} bytes`, context)
         if (raw.length < declaredLength) {
             const detail = `container declares ${declaredLength} bytes but ${raw.length} arrived`
             throw new PTPProtocolError('truncated-container', detail, context)
         }
         return {
-            type: view.getUint16(4, true),
-            code: view.getUint16(6, true),
-            transactionId: view.getUint32(8, true),
+            type,
+            code,
+            transactionId,
             // Bytes past the declared length are not part of the container and are ignored.
-            payload: raw.slice(HEADER_BYTES, declaredLength),
+            payload: raw.slice(CONTAINER_HEADER_BYTES, declaredLength),
         }
     }
 
@@ -243,14 +241,14 @@ export class TransactionChannel {
     private isCloseSessionReply(container: Container, expected: ExpectedContainer): boolean {
         return (
             expected.operationCode === CLOSE_SESSION &&
-            container.type === CONTAINER_TYPE.response &&
+            container.type === ContainerType.RESPONSE &&
             container.transactionId === 0
         )
     }
 
     private check(container: Container, expected: ExpectedContainer, context: PTPErrorContext): Container {
         const allowed: number[] =
-            expected.phase === 'data' ? [CONTAINER_TYPE.data, CONTAINER_TYPE.response] : [CONTAINER_TYPE.response]
+            expected.phase === 'data' ? [ContainerType.DATA, ContainerType.RESPONSE] : [ContainerType.RESPONSE]
         const fail = (reason: PTPProtocolViolation, detail: string): never => {
             throw new PTPProtocolError(reason, detail, context)
         }
@@ -262,12 +260,12 @@ export class TransactionChannel {
                 `reply belongs to transaction ${container.transactionId}, expected ${expected.transactionId}`
             )
         const { type, code, payload } = container
-        if (type === CONTAINER_TYPE.data && code !== expected.operationCode && code !== expected.dataOperationCode)
+        if (type === ContainerType.DATA && code !== expected.operationCode && code !== expected.dataOperationCode)
             fail(
                 'operation-mismatch',
                 `data belongs to opcode 0x${code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`
             )
-        if (type === CONTAINER_TYPE.response && (payload.length % 4 || payload.length > 20))
+        if (type === ContainerType.RESPONSE && (payload.length % 4 || payload.length > 20))
             fail('unexpected-container-type', 'response has invalid UINT32 parameter framing')
         return container
     }

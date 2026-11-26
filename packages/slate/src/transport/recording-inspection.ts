@@ -1,3 +1,4 @@
+import { readContainerHeader } from '@ptp/container'
 import { openRecordingBundle, recordingHash, type RecordingKeys } from '@transport/recording-storage'
 
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
@@ -70,10 +71,8 @@ export async function inspectRecording(directory: string, keys?: RecordingKeys) 
     const pending = new Map<string, { operation: string; started: number }>()
     const streams = new Map<string, { header: Buffer; remaining: number; started: number }>()
     const completed = (direction: string, header: Buffer, started: number, finished: number) => {
-        const length = header.readUInt32LE(0),
-            kind = header.readUInt16LE(4),
-            value = header.readUInt16LE(6)
-        const key = `${session}:${header.readUInt32LE(8)}`
+        const { length, type: kind, code: value, transactionId } = readContainerHeader(header)
+        const key = `${session}:${transactionId}`
         if (kind === 1 && direction === 'send') {
             const name = code(value)
             const operation = operations.get(name) ?? { count: 0, responses: {}, dataBytes: 0, maximumMilliseconds: 0 }

@@ -1,4 +1,5 @@
 import { DISCLOSURE, SCHEMA, type CameraContext, type Contribution, type DiagnosticEntry } from '@contribute/schema'
+import { CONTAINER_HEADER_BYTES, ContainerType, readContainerHeader } from '@ptp/container'
 
 export function newContribution(camera: CameraContext, entries: DiagnosticEntry[], droppedEntries = 0): Contribution {
     return { schema: SCHEMA, disclosure: DISCLOSURE, id: crypto.randomUUID(), camera, entries, droppedEntries }
@@ -31,17 +32,17 @@ export interface CameraTransport<Device = unknown, Kind extends string = string>
 
 /** Read only a complete normalized PTP container header. Never retain payloads or parameters. */
 const containerKinds: Partial<Record<number, DiagnosticEntry['kind']>> = {
-    1: 'command',
-    2: 'data',
-    3: 'response',
-    4: 'event',
+    [ContainerType.COMMAND]: 'command',
+    [ContainerType.DATA]: 'data',
+    [ContainerType.RESPONSE]: 'response',
+    [ContainerType.EVENT]: 'event',
 }
 function header(bytes: Uint8Array): Pick<DiagnosticEntry, 'kind' | 'code' | 'transactionId'> {
-    if (bytes.byteLength < 12) return { kind: 'unknown' }
-    const view = new DataView(bytes.buffer, bytes.byteOffset, 12)
-    if (view.getUint32(0, true) !== bytes.byteLength) return { kind: 'unknown' }
-    const kind = containerKinds[view.getUint16(4, true)]
-    return kind ? { kind, code: view.getUint16(6, true), transactionId: view.getUint32(8, true) } : { kind: 'unknown' }
+    if (bytes.byteLength < CONTAINER_HEADER_BYTES) return { kind: 'unknown' }
+    const { length, type, code, transactionId } = readContainerHeader(bytes)
+    if (length !== bytes.byteLength) return { kind: 'unknown' }
+    const kind = containerKinds[type]
+    return kind ? { kind, code, transactionId } : { kind: 'unknown' }
 }
 
 const STANDARD_OPERATION_NAMES: Readonly<Record<number, string>> = {

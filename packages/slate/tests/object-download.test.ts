@@ -3,7 +3,7 @@ import { NikonCamera } from '@vendors/nikon/nikon-camera'
 import { SonyCamera } from '@vendors/sony/sony-camera'
 import { Logger } from '@core/logger'
 import type { TransportInterface } from '@transport/interfaces/transport.interface'
-import { USBContainerBuilder, USBContainerType } from '@transport/usb/usb-container'
+import { buildContainer, ContainerType, parseContainer } from '@ptp/container'
 import { describe, expect, it } from 'vitest'
 import { ptpContainer } from '@tests/fixtures/ptp-wire'
 
@@ -22,13 +22,13 @@ function fixture(driver: (typeof drivers)[number], chunks: Uint8Array[], respons
         isLittleEndian: () => true,
         isConnected: () => true,
         async send(bytes: Uint8Array) {
-            const request = USBContainerBuilder.parseContainer(bytes, USBContainerType.COMMAND)
+            const request = parseContainer(bytes, ContainerType.COMMAND)
             expect(request.code).toBe(driver.operation)
             const view = new DataView(request.payload.buffer, request.payload.byteOffset, request.payload.byteLength)
             requests.push(Array.from({ length: view.byteLength / 4 }, (_, index) => view.getUint32(index * 4, true)))
             const chunk = chunks.shift()
-            if (chunk) replies.push(USBContainerBuilder.buildData(driver.operation, request.transactionId, chunk))
-            replies.push(ptpContainer(USBContainerType.RESPONSE, responseCode, request.transactionId))
+            if (chunk) replies.push(buildContainer(ContainerType.DATA, driver.operation, request.transactionId, chunk))
+            replies.push(ptpContainer(ContainerType.RESPONSE, responseCode, request.transactionId))
         },
         async receive() {
             const response = replies.shift()
