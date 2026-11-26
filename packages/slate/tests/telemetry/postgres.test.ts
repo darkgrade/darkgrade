@@ -960,6 +960,65 @@ test('busy replies are warnings with their own signals, issues name the command 
     }finally{await handle(request('/v2/installation','DELETE',user.installKey));await pool.end();await database.close()}
 })
 
+test('v1 upgrades allow raw-event writers, resume around busy sessions and restore signal summaries', {skip:!process.env.DATABASE_URL}, async()=>{
+    let database=await postgresDatabase(process.env.DATABASE_URL!)
+    let handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+    const user=await enroll(handle),pool=new Pool({connectionString:process.env.DATABASE_URL!})
+    const blocker=await pool.connect(),sessions=Array.from({length:30},()=>randomUUID())
+    const payload=batch(),entry=payload.contributions[0].entries[0]
+    payload.contributions[0].entries=[...sessions.map(sessionId=>({...entry,kind:'response',direction:'in',code:0x2019,sessionId})),
+        {...entry,kind:'response',direction:'in',code:0x2019}]
+    try{
+        const uploaded=await handle(request('/v2/batches','POST',user.installKey,payload))
+        assert.equal(uploaded.status,202,await uploaded.text())
+        await pool.query("INSERT INTO telemetry_rollup_state VALUES('sessions-v1',now()) ON CONFLICT DO NOTHING")
+        await pool.query("DELETE FROM telemetry_rollup_state WHERE name IN ('sessions-v2','sessions-v2-queued')")
+        await pool.query('UPDATE telemetry_sessions SET errors=99 WHERE installation_id=$1',[user.installId])
+        await pool.query("UPDATE telemetry_session_signals SET signal='legacy-busy' WHERE installation_id=$1",[user.installId])
+        // The old full rebuild blocks behind this ordinary writer's table lock.
+        await blocker.query('BEGIN; LOCK TABLE telemetry_events IN ROW EXCLUSIVE MODE')
+        await database.close()
+        database=await postgresDatabase(process.env.DATABASE_URL!,{deferSummaryRebuild:true})
+        handle=createTelemetry(database,{publicUrl:'https://telemetry.example'})
+        await Promise.race([database.rebuildSummaries(),new Promise((_,reject)=>{
+            setTimeout(()=>reject(new Error('The upgrade blocked a raw-event writer')),2000).unref()
+        })])
+        const summaries=await pool.query('SELECT events::int,errors::int,stale FROM telemetry_sessions WHERE installation_id=$1',[user.installId])
+        assert.equal(summaries.rowCount,31,'includes the sessionless summary')
+        assert.ok(summaries.rows.every(row=>row.events===1&&row.errors===0&&!row.stale))
+        const signals=await pool.query('SELECT signal,events::int FROM telemetry_session_signals WHERE installation_id=$1',[user.installId])
+        assert.equal(signals.rowCount,31)
+        assert.ok(signals.rows.every(row=>row.signal==='response:0x2019'&&row.events===1))
+        await blocker.query('ROLLBACK')
+
+        // A queued upgrade must not claim completion while a summary is owned elsewhere.
+        await pool.query("DELETE FROM telemetry_rollup_state WHERE name='sessions-v2'")
+        await pool.query('UPDATE telemetry_sessions SET errors=99,stale=true WHERE installation_id=$1',[user.installId])
+        await blocker.query('BEGIN')
+        await blocker.query('SELECT 1 FROM telemetry_sessions WHERE installation_id=$1 AND session_id=$2 FOR UPDATE',
+            [user.installId,sessions[0]])
+        await database.rebuildSummaries()
+        assert.equal((await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v2'")).rowCount,0)
+        assert.equal((await pool.query('SELECT 1 FROM telemetry_sessions WHERE installation_id=$1 AND stale',[user.installId])).rowCount,1)
+        const next=batch()
+        Object.assign(next.contributions[0].entries[0],{sessionId:randomUUID()})
+        const accepted=await handle(request('/v2/batches','POST',user.installKey,next))
+        assert.equal(accepted.status,202,await accepted.text(),'another session can upload before the upgrade finishes')
+        await blocker.query('ROLLBACK')
+        await database.rebuildSummaries()
+        assert.equal((await pool.query("SELECT 1 FROM telemetry_rollup_state WHERE name='sessions-v2'")).rowCount,1)
+        assert.equal((await pool.query('SELECT 1 FROM telemetry_sessions WHERE installation_id=$1 AND stale',[user.installId])).rowCount,0)
+        assert.equal((await database.get(`diagnostics/${user.installId}_${payload.id}`))?.payload,JSON.stringify(payload),
+            'the signed original is not rewritten')
+    }finally{
+        await blocker.query('ROLLBACK').catch(()=>{})
+        blocker.release()
+        await handle(request('/v2/installation','DELETE',user.installKey))
+        await pool.end()
+        await database.close()
+    }
+})
+
 test('a revision suggestion names the camera of one session that carried it', {skip:!process.env.DATABASE_URL}, async()=>{
     let now=new Date(Date.now()-60_000)
     const database=await postgresDatabase(process.env.DATABASE_URL!),handle=createTelemetry(database,{publicUrl:'https://telemetry.example',now:()=>now})

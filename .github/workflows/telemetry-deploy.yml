@@ -16,7 +16,18 @@ jobs:
             PROJECT: ${{ vars.TELEMETRY_PROJECT }}
             REGION: ${{ vars.TELEMETRY_REGION }}
             PUBLIC_URL: ${{ vars.TELEMETRY_PUBLIC_URL }}
+            WIF_PROVIDER: ${{ vars.TELEMETRY_WIF_PROVIDER }}
+            DEPLOY_ACCOUNT: ${{ vars.TELEMETRY_DEPLOY_ACCOUNT }}
         steps:
+            - name: Check deployment configuration
+              run: |
+                  set -euo pipefail
+                  for name in PROJECT REGION PUBLIC_URL WIF_PROVIDER DEPLOY_ACCOUNT; do
+                      if [ -z "${!name}" ]; then
+                          echo "::error::Missing telemetry deployment configuration: $name"
+                          exit 1
+                      fi
+                  done
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
               with:
@@ -26,12 +37,10 @@ jobs:
                   node-version: '24'
             - run: bun install --frozen-lockfile --ignore-scripts
             - run: npm run test:contribute --prefix packages/slate && npm run test:telemetry --prefix packages/slate
-            - name: Check deployment configuration
-              run: test -n "$PROJECT" && test -n "$REGION" && test -n "$PUBLIC_URL"
             - uses: google-github-actions/auth@v2
               with:
-                  workload_identity_provider: ${{ vars.TELEMETRY_WIF_PROVIDER }}
-                  service_account: ${{ vars.TELEMETRY_DEPLOY_ACCOUNT }}
+                  workload_identity_provider: ${{ env.WIF_PROVIDER }}
+                  service_account: ${{ env.DEPLOY_ACCOUNT }}
             - uses: google-github-actions/setup-gcloud@v2
             - name: Publish reviewed image
               run: |
