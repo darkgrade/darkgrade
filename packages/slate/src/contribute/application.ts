@@ -96,6 +96,28 @@ function legacyBatch(batch: DiagnosticBatch): DiagnosticBatch | undefined {
     return { ...batch, contributions: contributions.filter(camera => camera.entries.length || camera.droppedEntries) }
 }
 
+/** The batch without the camera results inside OK responses (Slate 2026-11-26), or undefined when it has none. */
+function withoutResultCodes(batch: DiagnosticBatch): DiagnosticBatch | undefined {
+    if (!batch.contributions.some(camera => camera.entries.some(entry => entry.resultCode !== undefined))) return
+    return {
+        ...batch,
+        contributions: batch.contributions.map(camera => ({
+            ...camera,
+            entries: camera.entries.map(({ resultCode: _resultCode, ...entry }) => entry),
+        })),
+    }
+}
+/**
+ * The steps down for an older collector, newest field first: each gives the batch as a collector
+ * before that field accepts it, or undefined when the batch has nothing it would remove. A collector
+ * that rejects only the newest field keeps everything older (command codes, calls, request evidence).
+ */
+const STEPS_DOWN: readonly ((batch: DiagnosticBatch) => DiagnosticBatch | undefined)[] = [withoutResultCodes, legacyBatch]
+/** The batch with the first `steps` steps down applied. */
+function steppedDown(batch: DiagnosticBatch, steps: number): DiagnosticBatch {
+    return STEPS_DOWN.slice(0, steps).reduce((lowered, step) => step(lowered) ?? lowered, batch)
+}
+
 /** Create once per application process and observe every camera through this shared queue. */
 export async function createApplicationDiagnostics(options: ApplicationDiagnosticsOptions) {
     const url = new URL(options.endpoint)
@@ -128,7 +150,8 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
         dropped = 0,
         retryAt = 0
     let storageError = false,
-        legacyCollector = false,
+        // How many steps down this collector needed, remembered for the process.
+        collectorSteps = 0,
         lastError: string | null = null
     const queue = new Map<string, Contribution>()
     let pending: DiagnosticBatch | undefined
@@ -290,7 +313,7 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
             count = 0
             queueBytes = 0
         }
-        if (legacyCollector) pending = legacyBatch(pending) ?? pending
+        pending = steppedDown(pending, collectorSteps)
         const batch = pending
         try {
             validateBatch(batch)
@@ -313,13 +336,14 @@ export async function createApplicationDiagnostics(options: ApplicationDiagnosti
                 return 'disabled'
             }
             if ([400, 404, 405, 409, 413, 415, 422].includes(response.status)) {
-                // A collector older than public-call records, command codes and request evidence
-                // rejects the whole batch: send what it knows again, and leave the rest out from now on.
-                const legacy = legacyCollector ? undefined : legacyBatch(batch)
-                if (legacy) {
-                    legacyCollector = true
-                    pending = legacy
-                    return send()
+                // An older collector rejects the whole batch: send it again one step down (the newest
+                // field first), and leave out from now on only what this collector needed left out.
+                while (collectorSteps < STEPS_DOWN.length) {
+                    const lowered = STEPS_DOWN[collectorSteps++](batch)
+                    if (lowered) {
+                        pending = lowered
+                        return send()
+                    }
                 }
                 pending = undefined
                 lastError = 'Collector rejected this diagnostic batch'
