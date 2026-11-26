@@ -211,6 +211,19 @@ or another shared camera package. Test harnesses consume these modules and keep
 independent fixtures; they must not introduce production packages in the Darkgrade repo.
 Read these rules regardless of the agent harness (Codex, Claude, Gemini or another agent).
 
+# Vendor SDKs
+
+Never commit, publish, bundle or redistribute a camera vendor's SDK: no binaries, libraries,
+frameworks, headers, sample code, manuals or archives (Canon EDSDK, Sony Camera Remote SDK,
+Nikon MAID/SDK, Fujifilm, OM System, Panasonic or any other), in any repository, package,
+Studio build or test fixture. An SDK lives outside the repositories, installed by an operator,
+and Slate reaches it only through an operator-installed bridge executable (Sony Wi-Fi today:
+`vendors/sony/sdk-node-bridge.ts`, `transport/sony-remote`). USB functionality is native
+PTP/USB in Slate only: it never calls, loads or depends on a vendor SDK or its bridge, and no
+USB feature waits for an SDK. SDK documents may inform research, attributed and kept private;
+never copy their code. `check:guards` fails on tracked SDK-looking files and on USB transport
+or native driver modules importing the SDK modules.
+
 # Project Cheat Sheet
 
 ## Tech Stack:
