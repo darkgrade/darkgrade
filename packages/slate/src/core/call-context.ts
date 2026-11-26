@@ -16,7 +16,7 @@ interface ContextStorage {
     run<Result>(scope: CallScope, work: () => Result): Result
     getStore(): CallScope | undefined
 }
-type CallSurface = 'library' | 'mcp' | 'cli' | 'studio'
+export type CallSurface = 'library' | 'mcp' | 'cli' | 'studio'
 
 const storage = ((): ContextStorage | undefined => {
     try {
@@ -31,7 +31,6 @@ const storage = ((): ContextStorage | undefined => {
 const running = new Set<CallScope>()
 /** Without async context: the call whose synchronous part is executing (a typed setter calling setControl). */
 let synchronous: CallScope | undefined
-let announced: CallSurface | undefined
 
 export const callAttribution = storage ? 'async-context' : 'only-active-call'
 
@@ -70,16 +69,18 @@ export function callFinished(scope: CallScope): void {
     running.delete(scope)
 }
 
-/** The MCP runtime and the CLI name themselves just before they call a Camera method. */
-export function announceCallSurface(surface: CallSurface | undefined): void {
-    announced = surface
-}
-
-/** Read once by the call that starts next, synchronously; any other call is the library's (Studio's under Electron). */
-export function takeCallSurface(): CallSurface {
-    const surface = announced
-    announced = undefined
-    if (surface) return surface
+/** The surface of a call no surface named: the library's, or Studio's under Electron. */
+export function defaultCallSurface(): CallSurface {
     const versions = (globalThis as { process?: { versions?: Record<string, string | undefined> } }).process?.versions
     return versions?.electron ? 'studio' : 'library'
+}
+
+/** Where an instrumented Camera method keeps its entry for a call that names its surface. */
+export const surfaceCall = Symbol('surfaceCall')
+
+/** Calls a public Camera method as the named surface (MCP, CLI) made the call. */
+export function callFromSurface(method: unknown, camera: object, values: unknown[], surface: CallSurface | undefined): unknown {
+    if (typeof method !== 'function') throw new TypeError('Not a Camera operation')
+    const named: unknown = surface && Reflect.get(method, surfaceCall)
+    return typeof named === 'function' ? named(camera, values, surface) : Reflect.apply(method, camera, values)
 }

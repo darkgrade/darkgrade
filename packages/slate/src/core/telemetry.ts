@@ -16,13 +16,14 @@ import {
     callAttribution,
     callFinished,
     enclosingCall,
+    defaultCallSurface,
     runInCall,
-    takeCallSurface,
+    surfaceCall,
     type CallScope,
+    type CallSurface,
 } from '@core/call-context'
 import { PTPResponseError } from '@core/ptp-errors'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
-import { isSonyModelName } from '@vendors/sony/model-name'
 
 declare const __SLATE_TELEMETRY_REVISION__: string
 declare const __SLATE_TELEMETRY_DIRTY__: boolean
@@ -74,7 +75,8 @@ export function resetReportedFacts() {
     processFacts.clear()
     persistentFacts = undefined
 }
-async function diagnosticsClient() {
+/** The telemetry client in use: the configured one, else this Node installation's own. */
+export async function diagnosticsClient() {
     const node = typeof process !== 'undefined' && !!process.versions?.node
     return configured ?? (node ? await (await import('@contribute/settings')).nodeDiagnostics() : undefined)
 }
@@ -235,99 +237,6 @@ export function slateTelemetry(source: TransportInterface) {
     return observer
 }
 
-const sdkOperationName = (command: Record<string, string>) =>
-    command.cmd !== 'command' || command.id !== '1' || !['0', '1'].includes(command.param)
-        ? command.cmd
-        : command.param === '1'
-          ? 'record_start'
-          : 'record_stop'
-
-/** SDK calls are named operations, not invented PTP packets. Arguments/results never enter records. */
-export function sdkTelemetry(evidence: 'hardware' | 'synthetic' = 'hardware') {
-    let model = 'Unknown'
-    let hardwareFingerprint: string | undefined
-    let sessionId = globalThis.crypto?.randomUUID?.()
-    let transport: 'usb' | 'wifi' | 'unknown' = 'unknown'
-    let awaitingWifiConnect = false
-    return {
-        async operation(command: Record<string, string>, work: () => Promise<Record<string, unknown>>) {
-            const started = performance.now()
-            const callId = attributedCallId()
-            // A Wi-Fi connection begins with the trust (fingerprint) step; it belongs to the same
-            // session as the connect that follows it.
-            const continuesWifi = awaitingWifiConnect && command.cmd !== 'connect' && command.cmd !== 'fingerprint'
-            if (['connect', 'connect_wifi', 'connect_bluetooth_direct', 'fingerprint'].includes(command.cmd) && !continuesWifi) {
-                sessionId = globalThis.crypto?.randomUUID?.()
-                model = 'Unknown'
-                hardwareFingerprint = undefined
-                transport = command.cmd === 'connect' ? 'usb' : 'wifi'
-            }
-            awaitingWifiConnect = command.cmd === 'fingerprint'
-            // The caller names the body it is reaching over Wi-Fi; a failed attempt is still about that body.
-            if (['connect_wifi', 'connect_bluetooth_direct', 'fingerprint'].includes(command.cmd) &&
-                isSonyModelName(command.model)) model = command.model
-            let failed = false
-            try {
-                const result = await work()
-                if (command.cmd === 'connect' && isSonyModelName(result.model)) model = result.model
-                if (command.cmd === 'connect' && result.ok === true && evidence === 'hardware' && model !== 'Unknown') {
-                    // The SDK bridge selects a device by this exact USB serial before acknowledging connection.
-                    try {
-                        const body = { manufacturer: 'Sony', model, serialNumber: command.serial }
-                        hardwareFingerprint = await cameraHardwareFingerprint(body)
-                    } catch {
-                        hardwareFingerprint = undefined
-                    }
-                }
-                if (['connect_wifi', 'connect_bluetooth_direct'].includes(command.cmd) && isSonyModelName(command.model))
-                    model = command.model
-                return result
-            } catch (error) {
-                failed = true
-                throw error
-            } finally {
-                try {
-                    if (/^[a-z_]{1,40}$/.test(command.cmd)) {
-                        const client = await diagnosticsClient()
-                        const build = client && (await slateBuildMetadata())
-                        if (build)
-                            client?.record(
-                                {
-                                    ...(hardwareFingerprint && { hardwareFingerprint }),
-                                    manufacturer: 'Sony',
-                                    model,
-                                    firmware: 'unknown',
-                                    revision: build.revision,
-                                    dirty: build.dirty,
-                                    transport,
-                                    backend: 'vendor-api',
-                                    evidence,
-                                },
-                                {
-                                    kind: 'command',
-                                    operation: sdkOperationName(command),
-                                    direction: 'out',
-                                    bytes: 0,
-                                    failed,
-                                    durationMilliseconds: Math.min(3_600_000, Math.round(performance.now() - started)),
-                                    occurredAt: new Date().toISOString(),
-                                    sessionId,
-                                    ...(callId && { callId }),
-                                }
-                            )
-                    }
-                } catch {
-                    /* SDK behavior must not depend on telemetry or settings availability. */
-                }
-                if (command.cmd === 'disconnect') {
-                    model = 'Unknown'
-                    hardwareFingerprint = undefined
-                }
-            }
-        },
-    }
-}
-
 /** What the instrumentation needs of one public operation (`SurfaceOperation` from the generated table). */
 interface InstrumentedOperation {
     name: string
@@ -428,8 +337,7 @@ export function instrumentCameraOperations<Target extends object>(
     for (const operation of operations) {
         const method: unknown = Reflect.get(prototype, operation.name)
         if (operation.static || typeof method !== 'function') continue
-        const instrumented = function (this: Target, ...values: unknown[]): unknown {
-            const surface = takeCallSurface()
+        const invoke = function (this: Target, surface: CallSurface, values: unknown[]): unknown {
             const id = enclosingCall() ? undefined : globalThis.crypto?.randomUUID?.()
             if (!id) return Reflect.apply(method, this, values)
             const scope: CallScope = { id, active: true }
@@ -481,6 +389,12 @@ export function instrumentCameraOperations<Target extends object>(
                 }
             )
         }
+        const instrumented = function (this: Target, ...values: unknown[]): unknown {
+            return invoke.call(this, defaultCallSurface(), values)
+        }
+        Object.defineProperty(instrumented, surfaceCall, {
+            value: (target: Target, values: unknown[], surface: CallSurface) => invoke.call(target, surface, values),
+        })
         Object.defineProperty(prototype, operation.name, {
             value: instrumented,
             writable: true,
