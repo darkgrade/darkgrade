@@ -1,5 +1,6 @@
 import type { Camera } from '@camera/index'
-import { cameraCommandDependencies, chooseCameraDevice, describeDevice, type DiscoveredCamera } from '@cli/benchmark'
+import type { DiscoveredCamera } from '@camera/driver'
+import { cameraCommandDependencies, chooseCameraDevice, describeDevice } from '@cli/camera-selection'
 import type { Terminal } from '@cli/terminal'
 import { readOperationInput, runOperation, type OperationFile, type SurfaceOperation } from '@runtime/operations'
 

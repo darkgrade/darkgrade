@@ -1,4 +1,4 @@
-import { connectionHelp, usbId } from '@cli/benchmark'
+import { connectionHelp, usbId } from '@cli/camera-selection'
 import { attachedCameras, cameraName, defaultCameraDiscovery, type CameraDiscovery } from '@cli/cameras'
 import type { Terminal } from '@cli/terminal'
 import { settingsDirectory, sharedSettings } from '@contribute/settings'
