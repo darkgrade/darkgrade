@@ -7,6 +7,7 @@ import {
 } from '@main/models/model-cache'
 import { preferences } from '@main/preferences'
 import { ensureVisionEnvironment, visionSidecarProcess } from '@main/vision/vision-sidecar-process'
+import { LocalEngine } from '@main/models/local-engine'
 import type { LocalServerProcess } from '@main/models/local-server'
 import { studioModelCache, studioPythonRuntime } from '@main/models/studio-models'
 import { IPC_EVENTS, type LogEntry, type Preferences } from '@shared/ipc'
@@ -48,10 +49,10 @@ function isWanted(id: VisionModelId, current: Preferences): boolean {
 
 /** One vision model's server: downloaded once, then kept loaded until it is turned off. */
 class VisionEngine {
-    private server: LocalServerProcess | null = null
-    private preparing: Promise<number> | null = null
-    private releasing: Promise<void> | null = null
-    private loadedKey: string | null = null
+    private engine = new LocalEngine({
+        start: key => this.start(key),
+        stopped: () => this.setStatus({ phase: 'off', message: null }),
+    })
     /** The model that last failed to start; it isn't retried on every settings change, only when asked for again. */
     failedKey: string | null = null
     status: VisionEngineStatus = { phase: 'off', receivedBytes: 0, totalBytes: 0, message: null }
@@ -62,36 +63,20 @@ class VisionEngine {
     ) {}
 
     get loaded(): string | null {
-        return this.loadedKey
+        return this.engine.loaded
     }
 
-    async prepare(): Promise<number> {
-        await this.releasing
-        const { key } = engineFiles(this.id, preferences.get())
-        if (this.loadedKey && this.loadedKey !== key) await this.release()
-        if (this.server?.port) return this.server.port
-        this.preparing ??= this.start().finally(() => {
-            this.preparing = null
-        })
-        return this.preparing
+    prepare(): Promise<number> {
+        return this.engine.prepare(engineFiles(this.id, preferences.get()).key)
     }
 
     release(): Promise<void> {
-        this.releasing ??= (async () => {
-            await this.preparing?.catch(() => undefined)
-            await this.server?.stop()
-            this.server = null
-            this.loadedKey = null
-            this.setStatus({ phase: 'off', message: null })
-        })().finally(() => {
-            this.releasing = null
-        })
-        return this.releasing
+        return this.engine.release()
     }
 
-    private async start(): Promise<number> {
+    private async start(key: string): Promise<LocalServerProcess> {
         const name = visionModel(this.id).name
-        const { models, key } = engineFiles(this.id, preferences.get())
+        const { models } = engineFiles(this.id, preferences.get())
         try {
             const pythonPath = await this.host.environment(this)
             const directories = await this.download(models)
@@ -106,19 +91,16 @@ class VisionEngine {
                 modelArguments,
                 onLog: line => this.host.writeEngineLog(`[${this.id}] ${line}`),
                 onUnexpectedExit: description => {
-                    this.server = null
-                    this.loadedKey = null
+                    this.engine.lost()
                     this.host.log(`${name} stopped (${description})`, 'error')
                     this.setStatus({ phase: 'error', message: `${name} stopped unexpectedly` })
                 },
             })
-            const port = await server.start()
-            this.server = server
-            this.loadedKey = key
+            await server.start()
             this.setStatus({ phase: 'ready', message: null })
             this.failedKey = null
             this.host.log(`${name} ready`)
-            return port
+            return server
         } catch (error) {
             const message = errorMessage(error)
             this.host.log(`${name}: ${message}`, 'error')
