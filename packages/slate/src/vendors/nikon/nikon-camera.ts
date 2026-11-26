@@ -58,6 +58,7 @@ import { prepareNikonManualExposure } from '@vendors/nikon/manual-exposure'
 import { withNikonRawCompression } from '@vendors/nikon/raw-capture'
 import { readNikonRecordingStatus } from '@vendors/nikon/recording-status'
 import { nikonStorageCanRecord } from '@vendors/nikon/card-storage'
+import { decodeNikonVendorCodes, NIKON_VENDOR_CODES_MAXIMUM } from '@vendors/nikon/vendor-codes'
 import { matchesNikonShutter, nikonShutterLabel } from '@vendors/nikon/shutter-values'
 import { createNikonRegistry, type NikonRegistry } from '@vendors/registry'
 
@@ -610,17 +611,13 @@ export class NikonCamera extends GenericCamera {
     async getVendorPropertyCodes(): Promise<number[]> {
         const operation = this.registry.operations.GetVendorCodes
         await this.requireFocusOperations([operation])
-        const maximumCount = 4096
-        const response = await this.send(operation, { Kind: 13 }, undefined, 4 + maximumCount * 4 + 12)
+        const response = await this.send(operation, { Kind: 13 }, undefined, 4 + NIKON_VENDOR_CODES_MAXIMUM * 4 + 12)
         const data = response.data
         if (response.code !== OK.code || !(data instanceof Uint8Array) || data.length < 4)
             throw new Error('Nikon vendor property enumeration failed')
-        const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
-        const littleEndian = this.transport.isLittleEndian()
-        const count = view.getUint32(0, littleEndian)
-        if (count > maximumCount || data.length !== 4 + count * 4)
-            throw new Error('Nikon vendor property enumeration returned an invalid array length')
-        return Array.from({ length: count }, (_, index) => view.getUint32(4 + index * 4, littleEndian))
+        const codes = decodeNikonVendorCodes(data, this.transport.isLittleEndian())
+        if (!codes) throw new Error('Nikon vendor property enumeration returned an invalid array length')
+        return codes
     }
 
     /** The advertised operations each focus action needs, live view included. */
