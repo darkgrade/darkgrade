@@ -103,7 +103,7 @@ try {
     symlinkSync(realpathSync(require.resolve('usb/package.json')).replace(/\/package\.json$/, ''),
         join(isolated, 'node_modules/usb'), 'dir')
     const consumer = `
-        import { Camera, configureSlateTelemetry, type DeviceInfo,
+        import { Camera, configureSlateTelemetry,
             type CameraCapabilities, type ExposureTime, type CameraControlSession, type CameraControlState,
             type CameraRecordingState, type ShutterSpeed, type TypedSettingMethods,
             type Aperture, type Iso, type ExposureMode, type ExposureCompensation, type MeteringMode,
@@ -116,7 +116,7 @@ try {
             type DigitalZoom, type LiveViewQuality, type LiveViewFrame, type FocusFrame, type CameraLens,
             runBenchmark } from '@darkgrade/slate'
         import { protocolSession, SonyWifiCamera, SonyCamera, type ProtocolSession, genericOperationRegistry, genericPropertyRegistry,
-            genericEventRegistry, TransportFactory, TransportType } from '@darkgrade/slate/protocol'
+            genericEventRegistry, TransportFactory, TransportType, type DeviceInfo } from '@darkgrade/slate/protocol'
         // @ts-expect-error Transports and registries are protocol-level; they are in @darkgrade/slate/protocol.
         import { TransportFactory as RootTransportFactory } from '@darkgrade/slate'
         // @ts-expect-error Vendor drivers left the main entry; they are in @darkgrade/slate/protocol.

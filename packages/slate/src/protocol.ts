@@ -122,3 +122,15 @@ export {
     NIKON_BLUETOOTH_REMOTE_COMMAND,
 } from '@vendors/nikon/bluetooth-remote'
 export type { NikonBluetoothChannel, NikonBluetoothKey } from '@vendors/nikon/bluetooth-remote'
+
+// PTP types, codecs and datasets, for reading what protocolSession returns.
+export * from '@ptp/types/codec'
+export * from '@ptp/types/datatype'
+export * from '@ptp/types/event'
+export * from '@ptp/types/operation'
+export * from '@ptp/types/parameter'
+export * from '@ptp/types/property'
+export * from '@ptp/types/response'
+export * from '@ptp/datasets/device-info-dataset'
+export * from '@ptp/datasets/object-info-dataset'
+export * from '@ptp/datasets/storage-info-dataset'

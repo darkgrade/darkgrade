@@ -53,7 +53,6 @@ import { TransportInterface } from '@transport/interfaces/transport.interface'
 import { USBTransport } from '@transport/usb/usb-transport'
 import { createCameraDriver, descriptorVendor, discoverCameras, driverServesVendor } from '@vendors/drivers'
 import type { CameraRecoveryOptions } from '@vendors/generic/generic-camera'
-export { readCameraObjectHandles, readCameraStorages, waitForNewCameraMovie } from '@vendors/generic/storage'
 
 export interface CameraOptions {
     logger?: Partial<LoggerConfig>
@@ -522,17 +521,3 @@ function reattachNamedEvents(camera: Camera): void {
         subscription.stop = driver.subscribe(subscription.event, subscription.handler)
     }
 }
-
-export { DEFAULT_TRANSACTION_POLICY, type TransactionPolicy } from '@ptp/transaction-channel'
-export { CanonCamera } from '@vendors/canon/canon-camera'
-export { GenericCamera } from '@vendors/generic/generic-camera'
-export { VendorExtensionCamera } from '@vendors/generic/vendor-extension-camera'
-export { NikonCamera } from '@vendors/nikon/nikon-camera'
-export { SONY_CAMERA_BUTTONS, SonyCamera } from '@vendors/sony/sony-camera'
-export type { SonyCameraButton, SonyOsdImage, SonyPropertyState } from '@vendors/sony/sony-camera'
-
-export { sonyWifiKeyboardCharacter, typeSonyWifiKeyboard } from '@vendors/sony/wifi-keyboard'
-export type { SonyKeyboardControls, SonyKeyboardImage } from '@vendors/sony/wifi-keyboard'
-
-export { inspectMovieTrackHandlers, readCameraMovieAudio, type CameraMovieAudio } from '@camera/movie-audio'
-export type { NikonFocusPointResult, NikonFocusResult, NikonLiveViewMetadata } from '@vendors/nikon/nikon-camera'

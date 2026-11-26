@@ -91,21 +91,6 @@ export {
 export { defaultLoggerConfig } from '@core/logger-config'
 export type { LoggerConfig } from '@core/logger-config'
 
-// Core type definitions
-export * from '@ptp/types/codec'
-export * from '@ptp/types/datatype'
-export * from '@ptp/types/event'
-export * from '@ptp/types/operation'
-export * from '@ptp/types/parameter'
-export * from '@ptp/types/property'
-export * from '@ptp/types/response'
-
-
-// Data sets (PTP datasets with codecs)
-export * from '@ptp/datasets/device-info-dataset'
-export * from '@ptp/datasets/object-info-dataset'
-export * from '@ptp/datasets/storage-info-dataset'
-
 // Vendor-named drivers, registries, transports and diagnostics are in @darkgrade/slate/protocol (src/protocol.ts).
 export {VideoTake} from '@workflows/video-take'
 export type {VideoTakeState,TakeCamera,TakeCameraState,TakeMedia} from '@workflows/video-take'
