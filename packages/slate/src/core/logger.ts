@@ -1,5 +1,9 @@
-import { Registry } from '@vendors/registry'
 import { LoggerConfig, defaultLoggerConfig } from './logger-config'
+
+/** What the logger reads from a driver's registry: its response names (core imports no vendor table). */
+interface ResponseNames {
+    responses: Record<string, { code: number; name: string; description: string }>
+}
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -98,7 +102,7 @@ export class Logger {
     private activeTransfers: Map<number, number> = new Map()
     /** Which transaction each log id belongs to, so updates find their log without a scan. */
     private logKeys: Map<number, string> = new Map()
-    private registry: Registry | null = null
+    private registry: ResponseNames | null = null
     constructor(config: Partial<LoggerConfig> = {}) {
         this.config = { ...defaultLoggerConfig, ...config }
 
@@ -203,11 +207,12 @@ export class Logger {
         return this.config
     }
 
-    setRegistry(registry: Registry): void {
+    /** The driver's registry, read only for its response names. */
+    setRegistry(registry: ResponseNames): void {
         this.registry = registry
     }
 
-    getResponseRegistry(): Record<string, { code: number; name: string; description: string }> {
+    getResponseRegistry(): ResponseNames['responses'] {
         return this.registry?.responses || {}
     }
 
