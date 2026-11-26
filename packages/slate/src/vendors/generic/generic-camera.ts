@@ -41,7 +41,7 @@ import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/d
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
-import { buildContainer, ContainerType } from '@ptp/container'
+import { buildContainer, ContainerType, MAXIMUM_PARAMETERS } from '@ptp/container'
 import { TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
 import { EventDefinition, EventEmitter } from '@ptp/types/event'
@@ -630,7 +630,7 @@ export class GenericCamera {
             if (encoded.length > 4) throw new Error(`Parameter ${paramDef.name} exceeds a UINT32 slot`)
             encodedParams.push(encoded)
         }
-        if (encodedParams.length > 5) throw new Error('PTP commands accept at most five parameters')
+        if (encodedParams.length > MAXIMUM_PARAMETERS) throw new Error('PTP commands accept at most five parameters')
         return encodedParams
     }
 

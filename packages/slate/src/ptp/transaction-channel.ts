@@ -1,6 +1,6 @@
 import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext, type PTPProtocolViolation } from '@core/ptp-errors'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
-import { CONTAINER_HEADER_BYTES, ContainerType, readContainerHeader } from '@ptp/container'
+import { CONTAINER_HEADER_BYTES, ContainerType, isParameterBlock, readContainerHeader } from '@ptp/container'
 
 /** How long and how often darkgrade waits for a camera before giving up on a transaction. */
 export interface TransactionPolicy {
@@ -265,7 +265,7 @@ export class TransactionChannel {
                 'operation-mismatch',
                 `data belongs to opcode 0x${code.toString(16)}, expected 0x${expected.operationCode.toString(16)}`
             )
-        if (type === ContainerType.RESPONSE && (payload.length % 4 || payload.length > 20))
+        if (type === ContainerType.RESPONSE && !isParameterBlock(payload))
             fail('unexpected-container-type', 'response has invalid UINT32 parameter framing')
         return container
     }

@@ -19,7 +19,7 @@ import {
     PTPIPPacketType,
     takePTPIPPackets,
 } from '@transport/ip/ptpip-packet'
-import { buildContainer, ContainerType, parseContainer, type ParsedContainer } from '@ptp/container'
+import { buildContainer, ContainerType, isParameterBlock, parseContainer, type ParsedContainer } from '@ptp/container'
 import type { Socket } from 'node:net'
 
 export interface IPTransportOptions {
@@ -305,7 +305,7 @@ export class IPTransport implements TransportInterface {
         if (container.type === ContainerType.COMMAND) {
             if (this.pendingCommand || this.operationCodes.size)
                 throw new Error('Previous PTP/IP transaction has not finished')
-            if (container.payload.length % 4 || container.payload.length > 20)
+            if (!isParameterBlock(container.payload))
                 throw new Error('PTP/IP commands accept at most five UINT32 parameters')
             this.pendingCommand = container
             this.operationCodes.set(transactionId, container.code)
@@ -454,8 +454,7 @@ export class IPTransport implements TransportInterface {
                 const response = parseResponse(packet)
                 if (
                     response.transactionId !== expectedTransactionId ||
-                    response.parameters.length % 4 ||
-                    response.parameters.length > 20
+                    !isParameterBlock(response.parameters)
                 )
                     throw new Error('Invalid PTP/IP data-phase rejection')
                 // A camera may reject card access after opening an empty data phase.

@@ -20,6 +20,21 @@ export interface ParsedContainer extends ContainerHeader {
     payload: Uint8Array
 }
 
+/** A command or response carries zero to five UINT32 parameters (ISO 15740 §D.7.1.1). */
+export const MAXIMUM_PARAMETERS = 5
+
+/** Whether these bytes are a parameter block: whole UINT32 words, at most five. */
+export function isParameterBlock(bytes: Uint8Array): boolean {
+    return bytes.length % 4 === 0 && bytes.length <= MAXIMUM_PARAMETERS * 4
+}
+
+/** The UINT32 parameters of a parameter block; undefined when the bytes are not one. */
+export function readParameters(bytes: Uint8Array): number[] | undefined {
+    if (!isParameterBlock(bytes)) return undefined
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return Array.from({ length: bytes.length / 4 }, (_, index) => view.getUint32(index * 4, true))
+}
+
 const TYPE_NAMES: Record<number, string> = { 1: 'command', 2: 'data', 3: 'response', 4: 'event' }
 
 /** The header of a container of at least CONTAINER_HEADER_BYTES; callers judge length and type themselves. */

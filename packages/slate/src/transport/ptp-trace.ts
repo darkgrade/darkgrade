@@ -1,4 +1,4 @@
-import { CONTAINER_HEADER_BYTES, ContainerType, readContainerHeader } from '@ptp/container'
+import { CONTAINER_HEADER_BYTES, ContainerType, MAXIMUM_PARAMETERS, readContainerHeader, readParameters } from '@ptp/container'
 import type { PTPEvent, TransportInterface } from '@transport/interfaces/transport.interface'
 
 export interface CapturedPtpTransaction {
@@ -18,9 +18,9 @@ export function recordPtpTransport(source: TransportInterface, accept: (transact
     let eventHandler: ((event: PTPEvent) => void) | undefined
     const maximumPayload = 1024 * 1024
     const words = (bytes: Uint8Array) => {
-        if (bytes.length % 4 || bytes.length > 20) throw new Error('Invalid PTP parameter words')
-        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-        return Array.from({ length: bytes.length / 4 }, (_, index) => view.getUint32(index * 4, true))
+        const parameters = readParameters(bytes)
+        if (!parameters) throw new Error('Invalid PTP parameter words')
+        return parameters
     }
     const observe = (bytes: Uint8Array, outgoing: boolean) => {
         let observedTransaction: number | undefined
@@ -55,7 +55,7 @@ export function recordPtpTransport(source: TransportInterface, accept: (transact
         }
     }
     source.on?.(event => {
-        if (events.length < 4096 && event.parameters.length <= 5)
+        if (events.length < 4096 && event.parameters.length <= MAXIMUM_PARAMETERS)
             events.push({ code: event.code, parameters: [...event.parameters], afterOperation: lastOperation })
         eventHandler?.(event)
     })
