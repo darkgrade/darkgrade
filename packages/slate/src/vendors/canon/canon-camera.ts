@@ -1373,18 +1373,28 @@ export class CanonCamera extends GenericCamera {
     /**
      * Mode selection can be acknowledged before it takes effect. When the body reports FixedMovie,
      * its fresh event readback is polled until it shows the mode, before a release, Record or
-     * restoration proceeds; only a body without it waits the fixed settle time for movie mode.
+     * restoration proceeds; a body without it waits the settle time for movie mode only.
+     *
+     * FixedMovie reading back is not readiness: the R6 III's autofocus photo straight after it failed
+     * 3 of 3 (shutter result 0x1, resetFocusPoint 0x2019) when the settle was dropped (bench,
+     * 2026-11-26), and EOS reports no other readiness signal. So a readback never returns before
+     * MODE_SETTLE_MILLISECONDS from the selection.
      */
     private async settleMovieMode(expected: 0 | 1, requiresReadback: boolean): Promise<void> {
         if (!requiresReadback) {
             if (expected === 1) await wait(MODE_SETTLE_MILLISECONDS)
             return
         }
+        const settled = Date.now() + MODE_SETTLE_MILLISECONDS
         // As patient as the fixed settle and the readback it was followed by together.
-        const deadline = Date.now() + MODE_SETTLE_MILLISECONDS + 2000
+        const deadline = settled + 2000
         do {
             await this.withoutPolling(() => this.refreshEventProperties())
-            if (this.fixedMovie() === expected) return
+            if (this.fixedMovie() === expected) {
+                const remaining = settled - Date.now()
+                if (remaining > 0) await wait(remaining)
+                return
+            }
             await wait(100)
         } while (Date.now() < deadline)
         throw new Error(`Canon did not confirm ${expected === 1 ? 'Movie' : 'Photo'} mode after selection`)
