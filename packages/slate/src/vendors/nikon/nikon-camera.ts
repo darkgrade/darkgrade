@@ -20,7 +20,7 @@ import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/device-prop-desc-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { DeviceBusy, OK } from '@ptp/definitions/response-definitions'
+import { AccessDenied, DeviceBusy, DevicePropNotSupported, OK, OperationNotSupported } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { OperationDefinition } from '@ptp/types/operation'
@@ -330,7 +330,7 @@ export class NikonCamera extends GenericCamera {
     /** Drain one event batch explicitly; opening a camera does not start a background poll. */
     async pollEvents(): Promise<NikonQueuedEvent[]> {
         const extended = await this.send(this.registry.operations.GetEventEx, {})
-        const legacy = extended.code === 0x2005 ? await this.send(this.registry.operations.GetEvent, {}) : undefined
+        const legacy = extended.code === OperationNotSupported.code ? await this.send(this.registry.operations.GetEvent, {}) : undefined
         const response = legacy ?? extended
         const operation = legacy ? 'GetEvent' : 'GetEventEx'
         if (response.code !== OK.code) throw new PTPResponseError(response.code, undefined, { operation })
@@ -873,7 +873,7 @@ export class NikonCamera extends GenericCamera {
             const response = await this.send(this.registry.operations.ChangeApplicationMode, { Mode: mode })
             if (response.code === OK.code) return
             const failure = `Nikon ChangeApplicationMode ${mode} failed: ${this.responseDescription(response.code)}`
-            if (response.code !== 0x200f) throw new Error(failure)
+            if (response.code !== AccessDenied.code) throw new Error(failure)
             // A denial may mean the body already has that state: accept only a fresh observation, else retry briefly.
             const condition = await this.get(this.registry.properties.MovieRecProhibitionCondition)
             const observed = condition.includes('notInApplicationMode') ? 'OFF' : 'ON'
@@ -1380,10 +1380,10 @@ const nikonResponseError = (code: number, operation: string) =>
 
 /** Only OperationNotSupported permits the standard fallback; a refused property is not a missing operation. */
 const standardFallback = (code: number, property: PropertyDefinition) =>
-    code === 0x2005 && property.code >= 0 && property.code <= 0xffff
+    code === OperationNotSupported.code && property.code >= 0 && property.code <= 0xffff
 
 const isUnsupportedProperty = (error: unknown) =>
-    error instanceof PTPResponseError && [0x2005, 0x200a].includes(error.code)
+    error instanceof PTPResponseError && (error.code === OperationNotSupported.code || error.code === DevicePropNotSupported.code)
 
 /**
  * Reports a failure of a Nikon operation that is not one of the three public errors: a refused

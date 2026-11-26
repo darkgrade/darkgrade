@@ -17,7 +17,7 @@ import { Logger } from '@core/logger'
 import { PTPDecodeError, PTPResponseError } from '@core/ptp-errors'
 import type { DeviceInfo } from '@ptp/datasets/device-info-dataset'
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
-import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
+import { DeviceBusy, OK, OperationNotSupported, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -58,7 +58,6 @@ import { CanonRegistry, createCanonRegistry } from '@vendors/registry'
 const MAXIMUM_INITIAL_EVENT_ROUNDS = 64
 /** EDSDK shutter result for a half-press whose autofocus failed (EDSDKErrors.h TAKE_PICTURE_AF_NG). */
 const CANON_RELEASE_RESULT_FOCUS_FAILED = 1
-const CANON_DEVICE_BUSY = 0x2019
 const canonClockUnpublished = 'This camera does not publish its clock (EOS UTCTime) over USB'
 const CANON_FOCUS_DURATION_MILLISECONDS = 800
 /** FixedMovie: 1 while the body is in movie mode (libgphoto2 PTP_DPC_CANON_EOS_FixedMovie). */
@@ -220,7 +219,7 @@ export class CanonCamera extends GenericCamera {
     /** Refresh a benchmark's event evidence while preserving the session's property cache and events. */
     async refreshEventProperties(): Promise<void> {
         const response = await this.getEvents()
-        if (response.code !== 0x2001 || !Array.isArray(response.data)) throw new Error('No Canon event inventory')
+        if (response.code !== OK.code || !Array.isArray(response.data)) throw new Error('No Canon event inventory')
         this.processEvents(response.data)
     }
 
@@ -391,7 +390,7 @@ export class CanonCamera extends GenericCamera {
                 this.assertResponseOk(response.code, `${property.name} write`)
                 return
             } catch (error) {
-                if ((error as { code?: number }).code !== CANON_DEVICE_BUSY || attempt >= 5) throw error
+                if ((error as { code?: number }).code !== DeviceBusy.code || attempt >= 5) throw error
                 await wait(100)
             }
         }
@@ -552,7 +551,7 @@ export class CanonCamera extends GenericCamera {
             for (let attempt = 0; attempt < 4; attempt++) {
                 const response = await this.send(operation, {})
                 if (response.code === OK.code) return
-                if (response.code !== CANON_DEVICE_BUSY || attempt === 3) this.assertResponseOk(response.code, action)
+                if (response.code !== DeviceBusy.code || attempt === 3) this.assertResponseOk(response.code, action)
                 await wait(500)
             }
         })
@@ -617,7 +616,7 @@ export class CanonCamera extends GenericCamera {
         if (this.lastKeepAliveAttempt !== undefined && now - this.lastKeepAliveAttempt < 10_000) return
         this.lastKeepAliveAttempt = now
         const response = await this.send(this.registry.operations.CanonKeepDeviceOn, {})
-        if (response.code === 0x2005) this.keepAliveUnavailable = true
+        if (response.code === OperationNotSupported.code) this.keepAliveUnavailable = true
         this.assertResponseOk(response.code, 'automatic keep device on')
     }
 
@@ -659,7 +658,7 @@ export class CanonCamera extends GenericCamera {
                     const answer = `Canon ${afMode} shutter press returned 0x${shutter.code.toString(16)}`
                     // DeviceBusy at an AF full press generally means the body could not lock focus.
                     shutterRefusal =
-                        afMode === 'AF' && shutter.code === CANON_DEVICE_BUSY
+                        afMode === 'AF' && shutter.code === DeviceBusy.code
                             ? shutterRefused(
                                   new PTPResponseError(
                                       shutter.code,
@@ -797,7 +796,7 @@ export class CanonCamera extends GenericCamera {
                     0x00200000
                 )
                 if (response.code === OK.code && response.data?.image) return response.data
-                if (![CANON_DEVICE_BUSY, this.registry.responses.ObjectNotReady.code].includes(response.code))
+                if (response.code !== DeviceBusy.code && response.code !== this.registry.responses.ObjectNotReady.code)
                     this.assertResponseOk(response.code, 'viewfinder read')
                 await wait(100)
             }
@@ -912,7 +911,7 @@ export class CanonCamera extends GenericCamera {
                     await this.set(property, 'NONE')
                     stopRequested = true
                 } catch (error) {
-                    if ((error as { code?: number }).code !== CANON_DEVICE_BUSY) throw error
+                    if ((error as { code?: number }).code !== DeviceBusy.code) throw error
                 }
             }
             await wait(250)

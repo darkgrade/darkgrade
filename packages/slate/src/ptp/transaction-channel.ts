@@ -1,5 +1,6 @@
 import { PTPProtocolError, PTPTimeoutError, type PTPErrorContext, type PTPProtocolViolation } from '@core/ptp-errors'
 import { TransportInterface } from '@transport/interfaces/transport.interface'
+import { genericOperationRegistry } from '@ptp/definitions/operation-definitions'
 import { CONTAINER_HEADER_BYTES, ContainerType, isParameterBlock, readContainerHeader } from '@ptp/container'
 
 /** How long and how often darkgrade waits for a camera before giving up on a transaction. */
@@ -41,7 +42,6 @@ export const DEFAULT_TRANSACTION_POLICY: TransactionPolicy = {
     automaticUSBReset: true,
 }
 
-const CLOSE_SESSION = 0x1003
 /** A reply this many transactions old is treated as a late answer to an abandoned transaction. */
 const STALE_WINDOW = 1024
 const MAXIMUM_DISCARDED_CONTAINERS = 8
@@ -264,7 +264,7 @@ export class TransactionChannel {
 
     private isCloseSessionReply(container: Container, expected: ExpectedContainer): boolean {
         return (
-            expected.operationCode === CLOSE_SESSION &&
+            expected.operationCode === genericOperationRegistry.CloseSession.code &&
             container.type === ContainerType.RESPONSE &&
             container.transactionId === 0
         )

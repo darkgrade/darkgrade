@@ -19,6 +19,7 @@ import {
     PTPIPPacketType,
     takePTPIPPackets,
 } from '@transport/ip/ptpip-packet'
+import { OK } from '@ptp/definitions/response-definitions'
 import { buildContainer, ContainerType, isParameterBlock, parseContainer, type ParsedContainer } from '@ptp/container'
 import type { Socket } from 'node:net'
 
@@ -459,7 +460,7 @@ export class IPTransport implements TransportInterface {
                     throw new Error('Invalid PTP/IP data-phase rejection')
                 // A camera may reject card access after opening an empty data phase.
                 // Deliver its actual refusal without treating it as a broken connection.
-                if (response.code !== 0x2001) return packet
+                if (response.code !== OK.code) return packet
             }
             if (packet.type !== PTPIPPacketType.Data && packet.type !== PTPIPPacketType.EndData) {
                 throw new Error(
