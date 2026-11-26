@@ -4,6 +4,7 @@ import { InspectorSection } from '@renderer/components/InspectorSection'
 import { createStore } from '@renderer/lib/external-store'
 import { WINDOW_MATERIALS, type Preferences, type WindowMaterial } from '@shared/ipc'
 import { useEffect, useState } from 'react'
+import { persisted } from '@renderer/lib/persisted'
 
 /** The tint laid over the window's vibrancy and the main card's surface, each a colour and an opacity (0–100). */
 export interface Appearance {
@@ -21,16 +22,11 @@ const DEFAULT_APPEARANCE: Appearance = {
 }
 const STORAGE_KEY = 'studio.appearance'
 
-function load(): Appearance {
-    try {
-        return {
-            ...DEFAULT_APPEARANCE,
-            ...(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<Appearance>),
-        }
-    } catch {
-        return DEFAULT_APPEARANCE
-    }
-}
+const stored = persisted<Appearance>(
+    STORAGE_KEY,
+    text => ({ ...DEFAULT_APPEARANCE, ...(JSON.parse(text ?? '{}') as Partial<Appearance>) }),
+    DEFAULT_APPEARANCE
+)
 
 function rgba(hex: string, opacity: number): string {
     const value = Number.parseInt(hex.slice(1), 16)
@@ -44,15 +40,11 @@ function apply(value: Appearance): void {
 }
 
 /** The appearance as tuned: applied and kept in this window as it changes, read by the viewer for its layout. */
-export const appearance = createStore<Appearance>(load())
+export const appearance = createStore<Appearance>(stored.load())
 
 function save(value: Appearance): void {
     apply(value)
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(value))
-    } catch {
-        // Not kept; the colours still apply for this session.
-    }
+    stored.save(value, JSON.stringify)
 }
 
 // Tuned colours apply from launch, whether or not Developer Mode shows the tuner, and follow a change made in
@@ -60,7 +52,7 @@ function save(value: Appearance): void {
 apply(appearance.get())
 window.addEventListener('storage', event => {
     if (event.key !== STORAGE_KEY) return
-    const next = load()
+    const next = stored.load()
     appearance.set(next)
     apply(next)
 })

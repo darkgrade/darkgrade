@@ -16,6 +16,7 @@ import {
 import type { TranscriptionCommand, TranscriptionEvent } from '@voice/transcription-protocol'
 import TranscriptionWorker from '@voice/transcription.worker?worker'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { persisted } from '@renderer/lib/persisted'
 
 export interface Microphone {
     deviceId: string
@@ -30,21 +31,9 @@ const PARAGRAPH_PAUSE_MS = 1400
 /** A session that hasn't wound down this long after Stop is ended anyway, so voice never sticks between sessions. */
 const STOP_TIMEOUT_MS = 8000
 
-function readStoredMicrophone(): string {
-    try {
-        return localStorage.getItem(MICROPHONE_STORAGE_KEY) ?? 'default'
-    } catch {
-        return 'default'
-    }
-}
-
-function storeMicrophone(deviceId: string): void {
-    try {
-        localStorage.setItem(MICROPHONE_STORAGE_KEY, deviceId)
-    } catch {
-        // Remembering the choice is a convenience only.
-    }
-}
+const storedMicrophone = persisted<string>(MICROPHONE_STORAGE_KEY, saved => saved ?? undefined, 'default')
+const readStoredMicrophone = () => storedMicrophone.load()
+const storeMicrophone = (deviceId: string) => storedMicrophone.save(deviceId)
 
 async function listMicrophones(): Promise<Microphone[]> {
     const devices = await navigator.mediaDevices.enumerateDevices()
