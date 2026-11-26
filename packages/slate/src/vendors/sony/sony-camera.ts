@@ -40,7 +40,6 @@ import { recognizedDescriptorValues } from '@ptp/datasets/device-prop-desc-datas
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
-import { randomSessionId } from '@ptp/definitions/session'
 import { VendorIDs } from '@ptp/definitions/vendor-ids'
 import type { CodecType } from '@ptp/types/codec'
 import type { PropertyDefinition } from '@ptp/types/property'
@@ -358,7 +357,7 @@ export class SonyCamera extends GenericCamera {
         const functionMode = options.mode === 'menus' ? 'CONTENT_TRANSFER' : 'REMOTE_AND_CONTENT_TRANSFER'
         await this.connectTransport({ ...device, ...(this.vendorId && { vendorId: this.vendorId }) })
 
-        const sessionId = (this.sessionId = randomSessionId())
+        const sessionId = (this.sessionId = this.createSessionId())
         const open = () =>
             this.send(this.registry.operations.SDIO_OpenSession, { SessionId: sessionId, FunctionMode: functionMode })
         let openResult = await open()

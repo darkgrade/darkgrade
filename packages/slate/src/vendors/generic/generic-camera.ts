@@ -41,7 +41,6 @@ import { recognizedDescriptorValues, type DevicePropDesc } from '@ptp/datasets/d
 import { ObjectInfo } from '@ptp/datasets/object-info-dataset'
 import { getDatatypeByCode } from '@ptp/definitions/datatype-definitions'
 import { DeviceBusy, IncompleteTransfer, OK, SessionAlreadyOpen } from '@ptp/definitions/response-definitions'
-import { randomSessionId } from '@ptp/definitions/session'
 import { buildContainer, ContainerType } from '@ptp/container'
 import { TransactionChannel, type TransactionPolicy } from '@ptp/transaction-channel'
 import type { CodecDefinition, CodecInstance, CodecType } from '@ptp/types/codec'
@@ -329,8 +328,9 @@ export class GenericCamera {
         }
     }
 
+    /** A new session's id: never 0, which ISO 15740 reserves (OpenSession refuses it with InvalidParameter). */
     protected createSessionId(): number {
-        return randomSessionId()
+        return 1 + Math.floor(Math.random() * 0xfffffffe)
     }
 
     /** @internal Vendor admission may preserve an observed active session after transport loss. */
