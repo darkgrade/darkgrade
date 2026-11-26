@@ -16,19 +16,24 @@ function protect<T extends Record<string, unknown>>(callback: (argumentsValue: T
             const content: ToolContent[] = [{ type: 'text', text }, ...images]
             return { content }
         } catch (error) {
-            return {
-                isError: true,
-                ...(error instanceof HardwareBusyError && {
-                    structuredContent: {
-                        error: error.message,
-                        code: error.code,
-                        busy: true,
-                        retryAfterMilliseconds: error.retryAfterMilliseconds,
-                    },
-                }),
-                content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
-            }
+            return toolError(error)
         }
+    }
+}
+
+/** An MCP tool's error result; a busy camera keeps its code and retry hint for the client. */
+export function toolError(error: unknown) {
+    return {
+        isError: true,
+        ...(error instanceof HardwareBusyError && {
+            structuredContent: {
+                error: error.message,
+                code: error.code,
+                busy: true,
+                retryAfterMilliseconds: error.retryAfterMilliseconds,
+            },
+        }),
+        content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }],
     }
 }
 

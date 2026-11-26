@@ -1,4 +1,4 @@
-import { readOperationInput, runOperation } from '@darkgrade/slate/runtime'
+import { readOperationInput } from '@darkgrade/slate/runtime'
 import { cameraToolDefinitions } from '@darkgrade/slate/runtime/mcp'
 import { cameraService } from '@main/camera-service'
 import { studioView } from '@main/studio-view'
@@ -425,7 +425,7 @@ function writtenSetting(operation: string, input: Record<string, unknown>): Sett
 
 /**
  * Slate's generated camera tools (`camera_take_photo`, `camera_set_iso`, …), run on the Camera
- * Studio holds through its operation queue. A setting value is matched loosely against the
+ * Studio holds through Slate's runtime, the queue the window's requests use too. A setting value is matched loosely against the
  * choices the camera reports ("f8", "800"), and a changed setting can be undone.
  */
 const CAMERA_TOOLS: StudioTool[] = cameraToolDefinitions({ cameraArgument: false })
@@ -444,20 +444,18 @@ const CAMERA_TOOLS: StudioTool[] = cameraToolDefinitions({ cameraArgument: false
             const requested = typeof input.value === 'string' ? input.value : undefined
             const value =
                 setting && control?.options.length && requested ? (matchOption(setting, requested, control.options) ?? requested) : input.value
-            const accepted = readOperationInput(operation, value === undefined ? input : { ...input, value })
-            const camera = operation.readOnly ? cameraService.requireCamera() : cameraService.requireCameraForControl()
-            const call = () => runOperation(camera, operation.name, accepted)
-            // Stop never waits behind other camera work.
-            const outcome = operation.immediate ? await call() : await cameraService.enqueue(call)
+            const given = value === undefined ? input : { ...input, value }
+            const accepted = readOperationInput(operation, given)
+            const reply = await cameraService.operation(operation.name, given)
             if (setting && control && typeof accepted.value === 'string' && accepted.value !== control.value)
                 recordChange({ setting, from: control.value, to: accepted.value })
             if (!operation.readOnly) cameraService.scheduleSettingsRefresh()
-            const image = outcome.files.find(file => file.mimeType === 'image/jpeg' || file.mimeType === 'image/png')
+            const image = reply.images?.[0]
             return {
-                data: outcome.result,
+                data: reply.result,
                 ...(image && {
                     image: {
-                        base64: Buffer.from(image.data).toString('base64'),
+                        base64: image.base64,
                         mimeType: image.mimeType === 'image/png' ? ('image/png' as const) : ('image/jpeg' as const),
                     },
                 }),

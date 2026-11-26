@@ -4,12 +4,12 @@ import { STUDIO_TOOLS, type ToolResult } from '@main/tools/studio-tools'
 import { VISION_TOOLS } from '@main/vision/vision-tools'
 import { localhostHostValidation, localhostOriginValidation, toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
+import { toolError } from '@darkgrade/slate/runtime/mcp'
 import type { McpServerStatus } from '@shared/ipc'
 import { SHOOTING_GUIDANCE } from '@shared/shooting-guidance'
 import { app } from 'electron'
 import { createServer, type Server } from 'node:http'
 import * as z from 'zod/v4'
-import { errorMessage } from '@shared/format'
 
 const INSTRUCTIONS = `Darkgrade Studio controls the camera connected to this Mac. Tools adapt to whatever camera is plugged in: read camera_get_capabilities first to see what it offers.\n\n${SHOOTING_GUIDANCE}`
 
@@ -41,12 +41,8 @@ function buildServer(): McpServer {
                 try {
                     return { content: toContent(await tool.run(input ?? {})) }
                 } catch (error) {
-                    return {
-                        content: [
-                            { type: 'text' as const, text: errorMessage(error) },
-                        ],
-                        isError: true,
-                    }
+                    // Slate's error result: a busy camera keeps its code and retry hint.
+                    return toolError(error)
                 }
             }
         )

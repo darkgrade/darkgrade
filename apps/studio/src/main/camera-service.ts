@@ -1,4 +1,11 @@
 import { Camera, runBenchmark, type CameraInfo, type CameraRecordingState } from '@darkgrade/slate'
+import {
+    CameraRuntime,
+    surfaceOperation,
+    type CameraProvider,
+    type OperationInput,
+    type OperationReply,
+} from '@darkgrade/slate/runtime'
 import { bodyOperations, type BodyOperations } from '@main/camera-service/body'
 import { connectionOperations, type ConnectionOperations } from '@main/camera-service/connection'
 import { eventsOperations, type EventsOperations } from '@main/camera-service/events'
@@ -35,6 +42,9 @@ import { IPC_EVENTS } from '@shared/ipc'
 import { app } from 'electron'
 import { join } from 'node:path'
 
+/** Studio holds one camera; Slate's runtime queues its work under this identity. */
+export const STUDIO_CAMERA = 'studio'
+
 export class CameraService {
     camera: Camera | null = null
     connected = false
@@ -60,8 +70,29 @@ export class CameraService {
     downloadDir: string
     broadcast: Broadcast = () => {}
 
+    /**
+     * PTP allows one transaction at a time. The window's requests and the camera tools all run
+     * through this one runtime, so live-view frames, captures and property reads take turns on the
+     * wire, and stopping never waits behind other work.
+     */
+    readonly runtime: CameraRuntime
+
     constructor() {
         this.downloadDir = join(app.getPath('pictures'), 'Darkgrade Studio')
+        this.runtime = new CameraRuntime(this.provider(), { surface: 'studio' })
+    }
+
+    /** Studio as Slate's camera host: the camera it holds, and when an operation may run on it. */
+    private provider(): CameraProvider {
+        return {
+            discover: () => Camera.discover(),
+            camera: () => this.requireCamera(),
+            assertAllowed: (_camera, operation) => {
+                if (surfaceOperation(operation)?.readOnly) this.requireCamera()
+                else this.requireCameraForControl()
+            },
+            benchmark: () => this.benchmarkNow(),
+        }
     }
 
     setBroadcast(broadcast: Broadcast): void {
@@ -138,12 +169,6 @@ export class CameraService {
 
     // -------------------------------------------------------- operation queue
 
-    /**
-     * PTP allows one transaction at a time. Every camera operation funnels
-     * through this queue so live-view frames, captures, and property reads
-     * can never interleave on the wire. NOTE: never call enqueue() from
-     * inside an enqueued operation — that deadlocks.
-     */
     benchmarkRunning = false
     async benchmarkDiagnostics(): Promise<{
         passed: boolean
@@ -153,31 +178,46 @@ export class CameraService {
         if (!this.camera || this.recording || this.benchmarkRunning)
             throw new Error('Connect an idle camera before benchmarking')
         this.benchmarkRunning = true
-        return this.withLiveViewPaused(() =>
-            this.enqueue(async () => {
-                if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
-                const diagnostics = await import('@darkgrade/slate/telemetry/settings')
-                const result = await runBenchmark(this.camera, {
-                    flushEvidence: async () => (await diagnostics.nodeDiagnostics()).flush(),
-                })
-                const path = diagnostics.saveDiagnosticProfile(result.profile)
-                await diagnostics.nodeDiagnostics().then(client => client.flush())
-                return { ...result, path }
-            })
+        return this.withLiveViewPaused(
+            () => this.runtime.benchmark(STUDIO_CAMERA) as ReturnType<CameraService['benchmarkNow']>
         ).finally(() => {
             this.benchmarkRunning = false
         })
     }
 
-    operationQueue: Promise<unknown> = Promise.resolve()
+    /** The runtime's benchmark hook: runs on its queue, with live view already paused. */
+    private async benchmarkNow() {
+        if (!this.camera || this.recording) throw new Error('Camera is no longer idle')
+        const diagnostics = await import('@darkgrade/slate/telemetry/settings')
+        const flush = async () => (await diagnostics.nodeDiagnostics()).flush()
+        const result = await runBenchmark(this.camera, { flushEvidence: flush })
+        const path = diagnostics.saveDiagnosticProfile(result.profile)
+        // runBenchmark flushes after each operation check; the property checks at the end are sent here.
+        await flush()
+        return { ...result, path }
+    }
 
+    /**
+     * Window requests run on the runtime's queue. Never call enqueue() from inside an enqueued
+     * operation: it waits behind itself.
+     */
     enqueue<T>(operation: () => Promise<T>): Promise<T> {
-        const result = this.operationQueue.then(operation, operation)
-        this.operationQueue = result.catch(() => {})
+        const result = this.runtime.runExclusive(STUDIO_CAMERA, operation)
         result.catch(error => {
             if (requiresReconnect(error)) this.scheduleRecovery(error)
         })
         return result
+    }
+
+    /** One public Camera operation, as Studio's camera tools call it, through the same runtime. */
+    async operation(name: string, input: OperationInput): Promise<OperationReply> {
+        try {
+            return await this.runtime.operation(STUDIO_CAMERA, name, input)
+        } catch (error) {
+            // Stopping runs outside the queue and never started a reconnect.
+            if (!surfaceOperation(name)?.immediate && requiresReconnect(error)) this.scheduleRecovery(error)
+            throw error
+        }
     }
 
     /**

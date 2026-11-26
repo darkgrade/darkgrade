@@ -1,5 +1,6 @@
 import type { DiscoveredCamera } from '@camera/driver'
 import type { Camera } from '@camera/index'
+import type { CallSurface } from '@core/call-context'
 import { CameraOperationQueue } from '@core/operation-queue'
 import { readOperationInput, runOperation, surfaceOperation, type OperationFile, type OperationInput } from '@runtime/operations'
 
@@ -54,7 +55,14 @@ function base64(data: Uint8Array): string {
  */
 export class CameraRuntime implements CameraClient {
     private readonly operations = new CameraOperationQueue()
-    constructor(private readonly provider: CameraProvider) {}
+    private readonly surface: CallSurface
+    /** `surface` names who made the calls in telemetry: MCP unless the host is Studio itself. */
+    constructor(
+        private readonly provider: CameraProvider,
+        options: { surface?: CallSurface } = {}
+    ) {
+        this.surface = options.surface ?? 'mcp'
+    }
 
     /** Owning hosts use the same queue for connection lifecycle and recording operations. */
     runExclusive<T>(camera: string, operation: () => Promise<T>): Promise<T> {
@@ -87,7 +95,7 @@ export class CameraRuntime implements CameraClient {
             await this.provider.assertAllowed(camera, name)
             // Resolved after queuing: the host may have replaced its camera meanwhile.
             const target = await this.provider.camera(camera)
-            const outcome = await runOperation(target, name, accepted, 'mcp')
+            const outcome = await runOperation(target, name, accepted, this.surface)
             return this.reply(camera, outcome.result, outcome.files)
         }
         return this.run(camera, execute, operation.immediate)
