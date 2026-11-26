@@ -1301,7 +1301,7 @@ export class CanonCamera extends GenericCamera {
     async takePhoto({ autofocus, destination }: { autofocus: boolean; destination: PhotoDestination }): Promise<ConfirmedPhotoFile> {
         return classified(async confirmed => {
             const wantsData = destination === 'computer'
-            const capture = await this.withPhotoMode(async () => {
+            const capture = await this.withStillMode(async () => {
                 const captured = await this.captureImage({ autofocus, includeInfo: true, includeData: wantsData })
                 confirmed()
                 return captured
@@ -1420,12 +1420,14 @@ export class CanonCamera extends GenericCamera {
         throw new Error(`Canon did not confirm ${expected === 1 ? 'Movie' : 'Photo'} mode after selection`)
     }
 
+    override readonly captureOptions = { memory: false, withoutAutofocus: true, rawCompression: false }
+
     /**
      * Holds still mode across one capture and its transfer, then puts the operator's movie mode and
      * manual exposure back. A body whose physical selector holds movie mode cannot take a photo: that
      * is reported as unsupported before any shutter command is sent. @internal
      */
-    async withPhotoMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+    override async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {
         if (this.fixedMovie() !== 1) return capture()
         const before = this.exposureSnapshot()
         let failure: unknown

@@ -148,6 +148,8 @@ export class NikonCamera extends GenericCamera {
             throw new CameraRefusedError('recover', 'Nikon advertises file transfer without camera controls; inspect camera power and mode')
     }
 
+    override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: true }
+
     /** Host read/delete access is enough when the body's own movie prohibition flags clear the card. */
     override async storageCanRecord(_storageId: number, accessCapability: number) {
         return nikonStorageCanRecord(this, accessCapability)

@@ -142,6 +142,13 @@ export function standardPropertyState(descriptor: DevicePropDesc): StandardPrope
     }
 }
 
+/** The release options a driver's captureImage takes; see `GenericCamera.captureOptions`. */
+export interface CaptureOptions {
+    memory: boolean
+    withoutAutofocus: boolean
+    rawCompression: boolean
+}
+
 /** What a driver says about recording to one card; brands may add their own evidence fields. */
 export interface StorageRecording {
     writable: boolean
@@ -1149,6 +1156,17 @@ export class GenericCamera {
 
     async setIso(value: string): Promise<void> {
         return this.setStandardProperty('ExposureIndex', value)
+    }
+
+    /**
+     * The release options this driver's captureImage takes beyond a plain card release: a transfer
+     * to host memory, a release without autofocus, a per-capture RAW compression.
+     */
+    readonly captureOptions: CaptureOptions = { memory: false, withoutAutofocus: false, rawCompression: false }
+
+    /** Holds still mode across one capture and its transfer; a body without a movie mode just captures. */
+    async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+        return capture()
     }
 
     /** One InitiateCapture. With info or data, resolves with the new object's handle once ObjectAdded names it. */

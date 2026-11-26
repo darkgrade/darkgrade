@@ -1093,6 +1093,13 @@ export class SonyCamera extends GenericCamera {
         }
     }
 
+    override readonly captureOptions = { memory: true, withoutAutofocus: true, rawCompression: false }
+
+    /** Holds an advertised still mode across one capture and its transfer, then restores the movie mode. */
+    override async withStillMode<Result>(capture: () => Promise<Result>): Promise<Result> {
+        return withSonyPhotoMode(sonyPhotoModeDriver(this), capture)
+    }
+
     /** The host sees Sony's card as read-only; the body's native card status says whether it records. */
     override async storageCanRecord(storageId: number) {
         return sonyStorageCanRecord({
@@ -1742,7 +1749,7 @@ export class SonyCamera extends GenericCamera {
             const watch = (await this.announcesCardIndex()) ? this.watchCardIndex('takePhoto') : undefined
             let capture: SonyImage
             try {
-                capture = await withSonyPhotoMode(sonyPhotoModeDriver(this), async () => {
+                capture = await this.withStillMode(async () => {
                     const captured = await this.captureImage({
                         autofocus,
                         includeInfo: true,
